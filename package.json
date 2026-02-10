@@ -1,0 +1,11 @@
+{
+  "name": "life-dashboard",
+  "version": "0.1.10",
+  "private": true,
+  "description": "Obsidian Life Dashboard plugin development helpers",
+  "scripts": {
+    "build": "node scripts/sync-plugin.mjs --bump",
+    "dev": "node scripts/sync-plugin.mjs --watch",
+    "check": "node --check main.js"
+  }
+}
