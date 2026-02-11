@@ -4,9 +4,12 @@ An Obsidian plugin that shows a sidebar outline of notes filtered by a frontmatt
 
 - Compatible with latest Obsidian Desktop public release only (`minAppVersion: 1.11.0`)
 - Versioning starts at `0.1.0`; every `npm run build` increments patch (`z`) in `x.y.z`
-- Filters notes by frontmatter key and optional value
-- Builds a collapsible note tree using frontmatter `parent`
-- Click note to open it
+- Task tracker panel with start/stop and task picker
+- Filters task notes by frontmatter (default: `type=concen`)
+- Optional second filter (property + value) configurable in settings
+- Collapsible task tree using frontmatter `parent`
+- Outline shows cumulative recursive tracked time for each task
+- Click task note to open it
 
 ## Files in this plugin
 
@@ -55,6 +58,36 @@ If you install the community plugin [Hot-Reload](https://github.com/pjeby/hot-re
 Build updates `.hotreload` and copies it to your plugin folder, which gives Hot-Reload a guaranteed file change to react to.
 The plugin also remembers whether its pane was open and restores it on startup/reload.
 
+## Time tracking behavior
+
+- Start/stop tracking from the top panel (`+` and `-` buttons).
+- Start/stop tracking from the top panel (`Start` / `Stop` button).
+- `Change task...` opens a selector limited to filtered task notes.
+- `Clear task` clears selection (disabled while running).
+- If tracking is not running and the active note matches task filters, it is auto-selected.
+- Every stopped session is appended to JSON log file.
+- If a tracked task note has no frontmatter `id`, plugin auto-creates one (UUID) and uses it for tracking records.
+
+Default log file:
+- `time-tracked.json` in vault root
+
+Configurable in settings:
+- `Time log file path` (vault-relative path)
+
+Stored entry format:
+
+```json
+{
+  "noteId": "2a6c0ec4-2c4f-471f-8b35-13fbe5f15932",
+  "start": "2026.02.11-09:15",
+  "durationMinutes": 50
+}
+```
+
+Migration:
+- Existing legacy entries (`notePath`, `finish`, `durationSeconds`) are migrated once to v2 (`noteId`, `durationMinutes`).
+- After migration, plugin uses only v2 schema.
+
 ## Manual install (fallback)
 
 1. Open your vault folder.
@@ -73,9 +106,12 @@ The plugin also remembers whether its pane was open and restores it on startup/r
 
 1. Go to **Settings -> Life Dashboard**.
 2. Set:
-   - **Property name** (example: `status`)
-   - **Property value** (example: `active`, or leave empty to include any note that has the property)
+   - **Task property name** (default `type`)
+   - **Task property value** (default `concen`)
+   - **Additional filter property** (optional)
+   - **Additional filter value** (optional)
    - **Case sensitive** toggle
+   - **Time log file path** (default `time-tracked.json`)
    - Optional note hierarchy:
      - Set frontmatter `parent` on child note to parent note name/path/wiki-link
 

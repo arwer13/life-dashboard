@@ -2,6 +2,89 @@
   padding: 10px;
 }
 
+.frontmatter-outline-view .fmo-tracker {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--background-secondary);
+}
+
+.frontmatter-outline-view .fmo-tracker-title {
+  text-align: center;
+  color: var(--text-accent);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.frontmatter-outline-view .fmo-ring {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 3px solid var(--background-modifier-border);
+  margin: 0 auto 12px auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.frontmatter-outline-view .fmo-timer-value {
+  font-size: 42px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.frontmatter-outline-view .fmo-main-toggle {
+  min-width: 100px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-weight: 600;
+}
+
+.frontmatter-outline-view .fmo-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.frontmatter-outline-view .fmo-action-btn {
+  border: 1px solid var(--background-modifier-border);
+}
+
+.frontmatter-outline-view .fmo-selected-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--background-primary-alt);
+}
+
+.frontmatter-outline-view .fmo-selected-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  display: inline-block;
+}
+
+.frontmatter-outline-view .fmo-selected-sub,
+.frontmatter-outline-view .fmo-suggestion-path {
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: block;
+  font-size: 12px;
+  word-break: break-word;
+}
+
 .frontmatter-outline-view .fmo-header {
   background: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);
@@ -33,7 +116,6 @@
   font-size: 12px;
 }
 
-.frontmatter-outline-view .fmo-root,
 .frontmatter-outline-view .fmo-tree {
   list-style: none;
   padding-left: 12px;
@@ -76,10 +158,21 @@
 
 .frontmatter-outline-view .fmo-note-link {
   text-decoration: none;
+  min-width: 0;
 }
 
 .frontmatter-outline-view .fmo-note-link:hover {
   text-decoration: underline;
+}
+
+.frontmatter-outline-view .fmo-time-badge {
+  margin-left: auto;
+  color: var(--text-accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 6px;
 }
 
 .frontmatter-outline-view .fmo-tree-children {
