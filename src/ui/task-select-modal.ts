@@ -1,6 +1,6 @@
-import { SuggestModal, type App, type TFile } from "obsidian";
+import { FuzzySuggestModal, type App, type FuzzyMatch, type TFile } from "obsidian";
 
-export class TaskSelectModal extends SuggestModal<TFile> {
+export class TaskSelectModal extends FuzzySuggestModal<TFile> {
   private readonly tasks: TFile[];
   private readonly onChoose: (file: TFile) => void;
 
@@ -11,21 +11,21 @@ export class TaskSelectModal extends SuggestModal<TFile> {
     this.setPlaceholder("Select task note...");
   }
 
-  getSuggestions(query: string): TFile[] {
-    const q = query.trim().toLowerCase();
-    if (!q) return this.tasks;
-
-    return this.tasks.filter((file) => {
-      return file.basename.toLowerCase().includes(q) || file.path.toLowerCase().includes(q);
-    });
+  getItems(): TFile[] {
+    return this.tasks;
   }
 
-  renderSuggestion(file: TFile, el: HTMLElement): void {
+  getItemText(file: TFile): string {
+    return `${file.basename} ${file.path}`;
+  }
+
+  renderSuggestion(value: FuzzyMatch<TFile>, el: HTMLElement): void {
+    const file = value.item;
     el.createEl("div", { text: file.basename });
     el.createEl("small", { text: file.path, cls: "fmo-suggestion-path" });
   }
 
-  onChooseSuggestion(file: TFile): void {
+  onChooseItem(file: TFile): void {
     this.onChoose(file);
   }
 }

@@ -157,13 +157,6 @@ export class LifeDashboardView extends ItemView {
 
   private buildTaskTree(tasks: TaskItem[]): { roots: TaskTreeNode[]; cumulativeSeconds: Map<string, number> } {
     const nodesByPath = new Map<string, TaskTreeNode>();
-    const notesByRef = new Map<string, TaskItem[]>();
-
-    const addRef = (ref: string, item: TaskItem): void => {
-      const key = ref.toLowerCase();
-      if (!notesByRef.has(key)) notesByRef.set(key, []);
-      notesByRef.get(key)?.push(item);
-    };
 
     for (const item of tasks) {
       nodesByPath.set(item.file.path, {
@@ -172,57 +165,10 @@ export class LifeDashboardView extends ItemView {
         children: [],
         parentPath: null
       });
-      addRef(item.file.path, item);
-      addRef(item.file.path.replace(/\.md$/i, ""), item);
-      addRef(item.file.basename, item);
     }
 
-    const normalizeParentRef = (value: unknown): string => {
-      if (Array.isArray(value)) {
-        for (const part of value) {
-          const normalized = normalizeParentRef(part);
-          if (normalized) return normalized;
-        }
-        return "";
-      }
-
-      if (value == null) return "";
-      let ref = String(value).trim();
-      if (!ref) return "";
-
-      if (ref.startsWith("[[") && ref.endsWith("]]")) {
-        ref = ref.slice(2, -2).trim();
-      }
-      if (ref.includes("|")) {
-        ref = ref.split("|")[0]?.trim() ?? "";
-      }
-      if (ref.includes("#")) {
-        ref = ref.split("#")[0]?.trim() ?? "";
-      }
-
-      return ref;
-    };
-
-    const resolveParentPath = (parentRaw: unknown): string | null => {
-      const normalized = normalizeParentRef(parentRaw);
-      if (!normalized) return null;
-
-      const direct = notesByRef.get(normalized.toLowerCase()) ?? [];
-      if (direct.length === 1) return direct[0]?.file.path ?? null;
-
-      const withoutExt = normalized.replace(/\.md$/i, "");
-      const byPathNoExt = notesByRef.get(withoutExt.toLowerCase()) ?? [];
-      if (byPathNoExt.length === 1) return byPathNoExt[0]?.file.path ?? null;
-
-      const lastSegment = withoutExt.split("/").pop() ?? withoutExt;
-      const byBasename = notesByRef.get(lastSegment.toLowerCase()) ?? [];
-      if (byBasename.length === 1) return byBasename[0]?.file.path ?? null;
-
-      return null;
-    };
-
     for (const node of nodesByPath.values()) {
-      const parentPath = resolveParentPath(node.item.parentRaw);
+      const parentPath = this.resolveParentPath(node.item.parentRaw, node.item.file.path);
       if (!parentPath || parentPath === node.path || !nodesByPath.has(parentPath)) continue;
       node.parentPath = parentPath;
       nodesByPath.get(parentPath)?.children.push(node);
@@ -260,6 +206,51 @@ export class LifeDashboardView extends ItemView {
     }
 
     return { roots, cumulativeSeconds };
+  }
+
+  private resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
+    for (const candidate of this.extractParentCandidates(parentRaw)) {
+      const file = this.app.metadataCache.getFirstLinkpathDest(candidate, sourcePath);
+      if (file) return file.path;
+    }
+    return null;
+  }
+
+  private extractParentCandidates(value: unknown): string[] {
+    const candidates: string[] = [];
+
+    const addCandidate = (raw: string): void => {
+      let ref = raw.trim();
+      if (!ref) return;
+
+      if (ref.startsWith("[[") && ref.endsWith("]]")) {
+        ref = ref.slice(2, -2).trim();
+      }
+      if (ref.includes("|")) {
+        ref = ref.split("|")[0]?.trim() ?? "";
+      }
+      if (ref.includes("#")) {
+        ref = ref.split("#")[0]?.trim() ?? "";
+      }
+
+      ref = ref.replace(/^\/+/, "").trim();
+      if (!ref) return;
+      candidates.push(ref);
+    };
+
+    const visit = (next: unknown): void => {
+      if (Array.isArray(next)) {
+        for (const entry of next) {
+          visit(entry);
+        }
+        return;
+      }
+      if (next == null) return;
+      addCandidate(String(next));
+    };
+
+    visit(value);
+    return Array.from(new Set(candidates));
   }
 
   private renderTreeNode(
