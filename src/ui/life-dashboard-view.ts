@@ -5,6 +5,11 @@ import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
 
 export const VIEW_TYPE_LIFE_DASHBOARD = "life-dashboard-view";
+type TaskTreeData = {
+  roots: TaskTreeNode[];
+  cumulativeSeconds: Map<string, number>;
+  nodesByPath: Map<string, TaskTreeNode>;
+};
 
 export class LifeDashboardView extends ItemView {
   private readonly plugin: LifeDashboardPlugin;
@@ -46,14 +51,15 @@ export class LifeDashboardView extends ItemView {
     contentEl.addClass("frontmatter-outline-view");
 
     const tasks = this.plugin.getTaskTreeItems();
+    const tree = this.buildTaskTree(tasks);
 
-    this.renderTrackerPanel(contentEl, tasks);
-    this.renderOutline(contentEl, tasks);
+    this.renderTrackerPanel(contentEl, tasks, tree);
+    this.renderOutline(contentEl, tasks, tree);
 
     this.updateLiveTimer();
   }
 
-  private renderTrackerPanel(contentEl: HTMLElement, tasks: TaskItem[]): void {
+  private renderTrackerPanel(contentEl: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
     const panel = contentEl.createEl("div", { cls: "fmo-tracker" });
 
     const timerRing = panel.createEl("div", { cls: "fmo-ring" });
@@ -71,53 +77,129 @@ export class LifeDashboardView extends ItemView {
       void (isTracking ? this.plugin.stopTracking() : this.plugin.startTracking());
     });
 
-    const actionRow = panel.createEl("div", { cls: "fmo-action-row" });
+    this.renderTrackedContext(panel, tasks, tree);
+  }
 
-    const changeBtn = actionRow.createEl("button", {
-      cls: "fmo-action-btn",
-      text: "Change task..."
-    });
-    changeBtn.addEventListener("click", () => {
-      const taskFiles = tasks.map((item) => item.file);
-      const modal = new TaskSelectModal(this.app, taskFiles, (file) => {
-        void this.plugin.setSelectedTaskPath(file.path);
-      });
-      modal.open();
-    });
-
-    const clearBtn = actionRow.createEl("button", {
-      cls: "fmo-action-btn",
-      text: "Clear task"
-    });
-    clearBtn.disabled = Boolean(this.plugin.settings.activeTrackingStart);
-    clearBtn.addEventListener("click", () => {
-      void this.plugin.setSelectedTaskPath("");
-    });
+  private renderTrackedContext(panel: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
+    const block = panel.createEl("div", { cls: "fmo-context-block" });
 
     const activeTaskPath = this.plugin.getActiveTaskPath();
-    const activeTaskFile = activeTaskPath
-      ? this.plugin.app.vault.getAbstractFileByPath(activeTaskPath)
-      : null;
+    if (!activeTaskPath) {
+      block.createEl("div", { cls: "fmo-selected-sub", text: "No task selected" });
+      this.renderChangeTaskButton(block, tasks);
+      return;
+    }
 
-    const selectedCard = panel.createEl("div", { cls: "fmo-selected-card" });
-    if (activeTaskFile instanceof TFile) {
-      const row = selectedCard.createEl("div", { cls: "fmo-selected-main" });
+    const activeTaskFile = this.plugin.app.vault.getAbstractFileByPath(activeTaskPath);
+    if (!(activeTaskFile instanceof TFile)) {
+      block.createEl("div", { cls: "fmo-selected-sub", text: "Selected task note was not found" });
+      this.renderChangeTaskButton(block, tasks);
+      return;
+    }
+
+    const activeNode = tree.nodesByPath.get(activeTaskPath);
+    if (!activeNode) {
+      const fallback = block.createEl("div", { cls: "fmo-selected-card" });
+      const row = fallback.createEl("div", { cls: "fmo-selected-main" });
       row.createEl("span", { cls: "fmo-dot", text: "" });
       const label = row.createEl("a", { cls: "fmo-note-link", href: "#", text: activeTaskFile.basename });
       label.addEventListener("click", (evt) => {
         evt.preventDefault();
         void this.plugin.openFile(activeTaskFile.path);
       });
-      selectedCard.createEl("div", { cls: "fmo-selected-sub", text: activeTaskFile.path });
-    } else {
-      selectedCard.createEl("div", {
+      fallback.createEl("div", { cls: "fmo-selected-sub", text: activeTaskFile.path });
+      fallback.createEl("div", {
         cls: "fmo-selected-sub",
-        text: "No task selected"
+        text: "Task is outside current filter."
+      });
+      this.renderChangeTaskButton(fallback, tasks);
+      return;
+    }
+
+    const chain = this.buildTrackedContextChain(activeNode, tree.nodesByPath);
+    const card = block.createEl("div", { cls: "fmo-context-card" });
+    const chainEl = card.createEl("div", { cls: "fmo-context-chain" });
+
+    for (let i = 0; i < chain.length; i += 1) {
+      const node = chain[i];
+      if (!node) continue;
+
+      const isTracked = i === 0;
+      const item = chainEl.createEl("div", {
+        cls: isTracked ? "fmo-context-item fmo-context-item-tracked" : "fmo-context-item fmo-context-item-parent"
+      });
+
+      const row = item.createEl("div", { cls: "fmo-context-row" });
+      row.createEl("span", {
+        cls: "fmo-context-prefix",
+        text: this.getContextPrefix(i)
+      });
+      const link = row.createEl("a", {
+        cls: isTracked ? "fmo-note-link fmo-context-link-tracked" : "fmo-note-link",
+        text: node.item.file.basename,
+        href: "#"
+      });
+      link.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        void this.plugin.openFile(node.item.file.path);
+      });
+
+      if (isTracked) {
+        this.renderChangeTaskButton(row, tasks);
+      }
+
+      const total = tree.cumulativeSeconds.get(node.path) ?? 0;
+      const own = this.plugin.getTrackedSeconds(node.path);
+      row.createEl("span", {
+        cls: "fmo-time-badge fmo-context-time-badge",
+        text: this.plugin.formatShortDuration(total),
+        attr: {
+          title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+        }
       });
     }
   }
 
-  private renderOutline(contentEl: HTMLElement, tasks: TaskItem[]): void {
+  private getContextPrefix(depth: number): string {
+    if (depth <= 0) return "● ";
+    return `${"  ".repeat(Math.max(0, depth - 1))}└─ `;
+  }
+
+  private renderChangeTaskButton(containerEl: HTMLElement, tasks: TaskItem[]): void {
+    const button = containerEl.createEl("button", {
+      cls: "fmo-context-change-btn",
+      text: "🔁",
+      attr: {
+        type: "button",
+        "aria-label": "Change task",
+        title: "Change task"
+      }
+    });
+    button.addEventListener("click", () => {
+      const taskFiles = tasks.map((item) => item.file);
+      const modal = new TaskSelectModal(this.app, taskFiles, (file) => {
+        void this.plugin.setSelectedTaskPath(file.path);
+      });
+      modal.open();
+    });
+  }
+
+  private buildTrackedContextChain(
+    node: TaskTreeNode,
+    nodesByPath: Map<string, TaskTreeNode>
+  ): TaskTreeNode[] {
+    const chain: TaskTreeNode[] = [];
+    let current: TaskTreeNode | undefined = node;
+
+    while (current) {
+      chain.push(current);
+      current = current.parentPath ? nodesByPath.get(current.parentPath) : undefined;
+    }
+
+    return chain;
+  }
+
+  private renderOutline(contentEl: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const prop = this.plugin.settings.propertyName.trim();
     const value = this.plugin.settings.propertyValue.trim();
@@ -147,15 +229,14 @@ export class LifeDashboardView extends ItemView {
       return;
     }
 
-    const tree = this.buildTaskTree(tasks);
     const rootList = contentEl.createEl("ul", { cls: "fmo-tree" });
 
     for (const root of tree.roots) {
-      this.renderTreeNode(rootList, root, tree.cumulativeSeconds, new Set());
+      this.renderTreeNode(rootList, root, tree.cumulativeSeconds, new Set(), {});
     }
   }
 
-  private buildTaskTree(tasks: TaskItem[]): { roots: TaskTreeNode[]; cumulativeSeconds: Map<string, number> } {
+  private buildTaskTree(tasks: TaskItem[]): TaskTreeData {
     const nodesByPath = new Map<string, TaskTreeNode>();
 
     for (const item of tasks) {
@@ -205,7 +286,7 @@ export class LifeDashboardView extends ItemView {
       computeCumulative(root, new Set());
     }
 
-    return { roots, cumulativeSeconds };
+    return { roots, cumulativeSeconds, nodesByPath };
   }
 
   private resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
@@ -257,7 +338,8 @@ export class LifeDashboardView extends ItemView {
     containerEl: HTMLElement,
     node: TaskTreeNode,
     cumulativeSeconds: Map<string, number>,
-    ancestry: Set<string>
+    ancestry: Set<string>,
+    options: { expandedPaths?: Set<string>; focusPath?: string }
   ): void {
     if (ancestry.has(node.path)) return;
 
@@ -272,15 +354,16 @@ export class LifeDashboardView extends ItemView {
 
     let childrenList: HTMLElement | null = null;
     if (node.children.length > 0) {
+      const isExpanded = options.expandedPaths?.has(node.path) ?? false;
       const toggle = row.createEl("button", {
         cls: "fmo-toggle",
         attr: {
           type: "button",
-          "aria-expanded": "false",
+          "aria-expanded": String(isExpanded),
           "aria-label": `Expand ${node.item.file.basename}`
         }
       });
-      toggle.setText("▸");
+      toggle.setText(isExpanded ? "▾" : "▸");
 
       toggle.addEventListener("click", () => {
         const expanded = toggle.getAttribute("aria-expanded") === "true";
@@ -293,7 +376,7 @@ export class LifeDashboardView extends ItemView {
       });
 
       childrenList = li.createEl("ul", { cls: "fmo-tree fmo-tree-children" });
-      childrenList.hidden = true;
+      childrenList.hidden = !isExpanded;
     } else {
       row.createEl("span", { cls: "fmo-toggle-spacer", text: "" });
     }
@@ -309,19 +392,21 @@ export class LifeDashboardView extends ItemView {
       void this.plugin.openFile(node.item.file.path);
     });
 
-    if (total > 0) {
-      row.createEl("span", {
-        cls: "fmo-time-badge",
-        text: this.plugin.formatShortDuration(total),
-        attr: {
-          title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
-        }
-      });
+    if (options.focusPath && options.focusPath === node.path) {
+      link.addClass("fmo-note-link-active");
     }
+
+    row.createEl("span", {
+      cls: "fmo-time-badge",
+      text: this.plugin.formatShortDuration(total),
+      attr: {
+        title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+      }
+    });
 
     if (childrenList) {
       for (const child of node.children) {
-        this.renderTreeNode(childrenList, child, cumulativeSeconds, nextAncestry);
+        this.renderTreeNode(childrenList, child, cumulativeSeconds, nextAncestry, options);
       }
     }
   }
