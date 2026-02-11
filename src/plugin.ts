@@ -508,44 +508,8 @@ export default class LifeDashboardPlugin extends Plugin {
   private async migrateTimeLogToMapFormat(): Promise<void> {
     const raw = await this.readTimeLogRaw();
 
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      const obj = raw as Record<string, unknown>;
-      const hasEntriesArray = Array.isArray(obj.entries);
-      if (!hasEntriesArray) {
-        const normalized = this.normalizeAndValidateTimeLogMap(raw);
-        await this.writeTimeLog(normalized);
-        return;
-      }
-
-      const entries = obj.entries as Array<Record<string, unknown>>;
-      const byId: TimeLogByNoteId = {};
-
-      for (const entry of entries) {
-        if (!entry || typeof entry !== "object") continue;
-        if (typeof entry.noteId !== "string" || !entry.noteId.trim()) continue;
-        if (typeof entry.start !== "string" || !entry.start.trim()) continue;
-
-        let minutes = Number(entry.durationMinutes);
-        if (!Number.isFinite(minutes) || minutes <= 0) {
-          const legacySeconds = Number(entry.durationSeconds);
-          if (Number.isFinite(legacySeconds) && legacySeconds > 0) {
-            minutes = Math.max(1, Math.round(legacySeconds / 60));
-          }
-        }
-        if (!Number.isFinite(minutes) || minutes <= 0) continue;
-
-        const token = this.formatIntervalToken(entry.start, Math.max(1, Math.round(minutes)));
-        const key = entry.noteId.trim();
-        if (!byId[key]) byId[key] = [];
-        byId[key].push(token);
-      }
-
-      const normalized = this.normalizeAndValidateTimeLogMap(byId);
-      await this.writeTimeLog(normalized);
-      return;
-    }
-
-    await this.writeTimeLog({});
+    const normalized = this.normalizeAndValidateTimeLogMap(raw);
+    await this.writeTimeLog(normalized);
   }
 
   private async readTimeLogMap(): Promise<TimeLogByNoteId> {

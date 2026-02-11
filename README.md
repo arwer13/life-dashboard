@@ -74,7 +74,6 @@ Behavior:
 - when first tracking a note, plugin ensures frontmatter `id` exists (UUID) and uses that stable ID in log entries
 - per-note arrays are sorted by start time ascending
 - intervals for one note are validated to prevent overlap
-- previous `{version, entries[]}` format is migrated automatically once
 
 ## Task filtering
 
