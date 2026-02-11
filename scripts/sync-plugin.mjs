@@ -1,14 +1,16 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { execFileSync, spawn } from "node:child_process";
 
 const ROOT = process.cwd();
 const ENV_PATH = path.join(ROOT, ".env");
 const MANIFEST_PATH = path.join(ROOT, "manifest.json");
 const PACKAGE_PATH = path.join(ROOT, "package.json");
 const VERSIONS_PATH = path.join(ROOT, "versions.json");
-const MAIN_PATH = path.join(ROOT, "main.js");
+const VERSION_SOURCE_PATH = path.join(ROOT, "src", "version.ts");
 const HOT_RELOAD_PATH = path.join(ROOT, ".hotreload");
+
 const WATCH_MODE = process.argv.includes("--watch");
 const BUMP_MODE = process.argv.includes("--bump");
 const FILES_TO_SYNC = ["manifest.json", "main.js", "styles.css", "versions.json", ".hotreload"];
@@ -115,12 +117,41 @@ function watchFiles(targetDir) {
         try {
           await syncFile(fileName, targetDir);
         } catch (err) {
-          console.error(`[sync:error] ${fileName}: ${err.message}`);
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[sync:error] ${fileName}: ${message}`);
         }
       }, 50);
       timers.set(fileName, timer);
     });
   }
+}
+
+function runBuildOnce() {
+  execFileSync("node", ["esbuild.config.mjs", "production"], {
+    cwd: ROOT,
+    stdio: "inherit"
+  });
+}
+
+function startBuildWatch() {
+  const child = spawn("node", ["esbuild.config.mjs", "watch"], {
+    cwd: ROOT,
+    stdio: "inherit"
+  });
+
+  const stop = () => {
+    if (!child.killed) child.kill();
+  };
+
+  process.on("exit", stop);
+  process.on("SIGINT", () => {
+    stop();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    stop();
+    process.exit(0);
+  });
 }
 
 async function bumpProjectVersion(minAppVersion) {
@@ -149,20 +180,20 @@ async function bumpProjectVersion(minAppVersion) {
   const versions = {};
   versions[bumped] = minAppVersion;
 
-  const mainRaw = await fsp.readFile(MAIN_PATH, "utf8");
-  const nextMain = mainRaw.replace(
-    /const DISPLAY_VERSION = "[^"]+";/,
-    `const DISPLAY_VERSION = "${bumped}";`
+  const versionSourceRaw = await fsp.readFile(VERSION_SOURCE_PATH, "utf8");
+  const nextVersionSource = versionSourceRaw.replace(
+    /export const DISPLAY_VERSION = "[^"]+";/,
+    `export const DISPLAY_VERSION = "${bumped}";`
   );
-  if (nextMain === mainRaw) {
-    throw new Error("Could not update DISPLAY_VERSION in main.js");
+  if (nextVersionSource === versionSourceRaw) {
+    throw new Error("Could not update DISPLAY_VERSION in src/version.ts");
   }
 
   await Promise.all([
     fsp.writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n"),
     fsp.writeFile(PACKAGE_PATH, JSON.stringify(pkg, null, 2) + "\n"),
     fsp.writeFile(VERSIONS_PATH, JSON.stringify(versions, null, 2) + "\n"),
-    fsp.writeFile(MAIN_PATH, nextMain, "utf8")
+    fsp.writeFile(VERSION_SOURCE_PATH, nextVersionSource, "utf8")
   ]);
 
   console.log(`[version] bumped to ${bumped}`);
@@ -174,11 +205,25 @@ async function touchHotReloadMarker() {
   console.log("[hotreload] touched .hotreload");
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   const { targetDir, pluginId, minAppVersion } = await readConfig();
 
   if (BUMP_MODE) {
     await bumpProjectVersion(minAppVersion);
+  }
+
+  if (WATCH_MODE) {
+    startBuildWatch();
+    await sleep(800);
+  } else {
+    runBuildOnce();
+  }
+
+  if (BUMP_MODE) {
     await touchHotReloadMarker();
   }
 
@@ -195,6 +240,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`[fatal] ${err.message}`);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[fatal] ${message}`);
   process.exit(1);
 });
