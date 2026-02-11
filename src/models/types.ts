@@ -1,8 +1,9 @@
-import type { TFile } from "obsidian";
+import type { FrontMatterCache, TFile } from "obsidian";
 
 export interface TaskItem {
   file: TFile;
   parentRaw: unknown;
+  frontmatter: FrontMatterCache | undefined;
 }
 
 export interface TaskTreeNode {

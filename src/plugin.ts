@@ -20,6 +20,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private trackingService!: TrackingService;
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
+  private outlineFilterSaveTimer: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -100,6 +101,12 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    if (this.outlineFilterSaveTimer !== null) {
+      window.clearTimeout(this.outlineFilterSaveTimer);
+      this.outlineFilterSaveTimer = null;
+      await this.saveSettings();
+    }
+
     await this.trackingService.flushActiveTrackingOnUnload();
     await this.persistVisibilityState(true);
   }
@@ -138,6 +145,16 @@ export default class LifeDashboardPlugin extends Plugin {
     this.settings.selectedTaskPath = path;
     await this.saveSettings();
     this.refreshView();
+  }
+
+  getOutlineFilterQuery(): string {
+    return this.settings.outlineFilterQuery || "";
+  }
+
+  setOutlineFilterQuery(query: string): void {
+    if (this.settings.outlineFilterQuery === query) return;
+    this.settings.outlineFilterQuery = query;
+    this.scheduleOutlineFilterSave();
   }
 
   async activateView(): Promise<void> {
@@ -231,6 +248,17 @@ export default class LifeDashboardPlugin extends Plugin {
   private async reloadTotalsAndRefresh(): Promise<void> {
     await this.reloadTimeTotalsSafely();
     this.refreshView();
+  }
+
+  private scheduleOutlineFilterSave(): void {
+    if (this.outlineFilterSaveTimer !== null) {
+      window.clearTimeout(this.outlineFilterSaveTimer);
+    }
+
+    this.outlineFilterSaveTimer = window.setTimeout(() => {
+      this.outlineFilterSaveTimer = null;
+      void this.saveSettings();
+    }, 300);
   }
 
   private scheduleStartupTotalsLoad(): void {

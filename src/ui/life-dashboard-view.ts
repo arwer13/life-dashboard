@@ -1,4 +1,12 @@
-import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
+import {
+  ItemView,
+  Modal,
+  SearchComponent,
+  TFile,
+  prepareSimpleSearch,
+  setTooltip,
+  type WorkspaceLeaf
+} from "obsidian";
 import { DISPLAY_VERSION } from "../version";
 import type { TaskTreeNode, TaskItem } from "../models/types";
 import { TaskSelectModal } from "./task-select-modal";
@@ -10,10 +18,15 @@ type TaskTreeData = {
   cumulativeSeconds: Map<string, number>;
   nodesByPath: Map<string, TaskTreeNode>;
 };
+type OutlineFilterToken =
+  | { key: "any" | "path" | "file"; value: string; negated: boolean }
+  | { key: "prop"; prop: string; value: string | null; negated: boolean };
 
 export class LifeDashboardView extends ItemView {
   private readonly plugin: LifeDashboardPlugin;
   private liveTimerEl: HTMLElement | null = null;
+  private outlineExpandAll = false;
+  private outlineStatusDoneFilterEnabled = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
     super(leaf);
@@ -51,10 +64,10 @@ export class LifeDashboardView extends ItemView {
     contentEl.addClass("frontmatter-outline-view");
 
     const tasks = this.plugin.getTaskTreeItems();
-    const tree = this.buildTaskTree(tasks);
+    const contextTree = this.buildTaskTree(tasks);
 
-    this.renderTrackerPanel(contentEl, tasks, tree);
-    this.renderOutline(contentEl, tasks, tree);
+    this.renderTrackerPanel(contentEl, tasks, contextTree);
+    this.renderOutline(contentEl, tasks);
 
     this.updateLiveTimer();
   }
@@ -199,13 +212,59 @@ export class LifeDashboardView extends ItemView {
     return chain;
   }
 
-  private renderOutline(contentEl: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
+  private renderOutline(contentEl: HTMLElement, tasks: TaskItem[]): void {
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const prop = this.plugin.settings.propertyName.trim();
     const value = this.plugin.settings.propertyValue.trim();
+    const persistedFilter = this.plugin.getOutlineFilterQuery();
+
+    const filterRow = header.createEl("div", { cls: "fmo-outline-filter-row" });
+    const filterInput = filterRow.createEl("div", { cls: "fmo-outline-filter" });
+    const filter = new SearchComponent(filterInput);
+    filter.setPlaceholder("Filter (path:, file:, prop:key=value, -term, \"phrase\")");
+    filter.setValue(persistedFilter);
+
+    const actions = filterRow.createEl("div", { cls: "fmo-outline-filter-actions" });
+    const toggleExpandBtn = actions.createEl("button", {
+      cls: "fmo-outline-filter-btn",
+      text: this.outlineExpandAll ? "−" : "+",
+      attr: {
+        type: "button",
+        "aria-label": this.getExpandAllTooltip()
+      }
+    });
+    setTooltip(toggleExpandBtn, this.getExpandAllTooltip());
+
+    const toggleDoneFilterBtn = actions.createEl("button", {
+      cls: this.outlineStatusDoneFilterEnabled
+        ? "fmo-outline-filter-btn fmo-outline-filter-btn-active"
+        : "fmo-outline-filter-btn",
+      text: "done",
+      attr: {
+        type: "button",
+        "aria-label": "Toggle status done filter"
+      }
+    });
+    setTooltip(
+      toggleDoneFilterBtn,
+      this.getDoneFilterTooltip()
+    );
+
+    const helpBtn = actions.createEl("button", {
+      cls: "fmo-outline-filter-btn fmo-outline-filter-help",
+      text: "?",
+      attr: {
+        type: "button",
+        "aria-label": "Outline filter format help"
+      }
+    });
+    setTooltip(helpBtn, "Filter format help");
+    helpBtn.addEventListener("click", () => {
+      this.openOutlineFilterHelp();
+    });
 
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Tasks Outline" });
+    headerTop.createEl("h3", { text: "Concerns Outline" });
     headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
 
     header.createEl("div", {
@@ -213,26 +272,220 @@ export class LifeDashboardView extends ItemView {
       text: value.length > 0 ? `Filter: ${prop} = ${value}` : `Filter: has property \"${prop}\"`
     });
 
-    if (!prop) {
-      contentEl.createEl("p", {
-        cls: "fmo-empty",
-        text: "Set a task frontmatter property in plugin settings."
-      });
-      return;
+    const outlineBody = contentEl.createEl("div", { cls: "fmo-outline-body" });
+    const renderFilteredOutline = (query: string): void => {
+      outlineBody.empty();
+
+      if (!prop) {
+        outlineBody.createEl("p", {
+          cls: "fmo-empty",
+          text: "Set a task frontmatter property in plugin settings."
+        });
+        return;
+      }
+
+      const queryWithButtonFilters = this.withButtonFilters(query);
+      const filtered = this.filterTasksForOutline(tasks, queryWithButtonFilters);
+      if (!filtered.length) {
+        outlineBody.createEl("p", {
+          cls: "fmo-empty",
+          text: "No matching concerns found for current filter."
+        });
+        return;
+      }
+
+      const tree = this.buildTaskTree(filtered);
+      const rootList = outlineBody.createEl("ul", { cls: "fmo-tree" });
+      for (const root of tree.roots) {
+        this.renderTreeNode(rootList, root, tree.cumulativeSeconds, new Set(), this.outlineExpandAll);
+      }
+    };
+
+    toggleExpandBtn.addEventListener("click", () => {
+      this.outlineExpandAll = !this.outlineExpandAll;
+      toggleExpandBtn.setText(this.outlineExpandAll ? "−" : "+");
+      toggleExpandBtn.setAttribute(
+        "aria-label",
+        this.getExpandAllTooltip()
+      );
+      setTooltip(toggleExpandBtn, this.getExpandAllTooltip());
+      renderFilteredOutline(filter.getValue());
+    });
+
+    toggleDoneFilterBtn.addEventListener("click", () => {
+      this.outlineStatusDoneFilterEnabled = !this.outlineStatusDoneFilterEnabled;
+      toggleDoneFilterBtn.toggleClass("fmo-outline-filter-btn-active", this.outlineStatusDoneFilterEnabled);
+      setTooltip(
+        toggleDoneFilterBtn,
+        this.getDoneFilterTooltip()
+      );
+      renderFilteredOutline(filter.getValue());
+    });
+
+    filter.onChange((query) => {
+      this.plugin.setOutlineFilterQuery(query);
+      renderFilteredOutline(query);
+    });
+
+    renderFilteredOutline(persistedFilter);
+  }
+
+  private withButtonFilters(query: string): string {
+    if (!this.outlineStatusDoneFilterEnabled) return query;
+    const base = query.trim();
+    return base.length > 0 ? `${base} prop:status=done` : "prop:status=done";
+  }
+
+  private getExpandAllTooltip(): string {
+    return this.outlineExpandAll ? "Collapse all concerns" : "Expand all concerns";
+  }
+
+  private getDoneFilterTooltip(): string {
+    return this.outlineStatusDoneFilterEnabled
+      ? "Done filter ON: prop:status=done"
+      : "Done filter OFF (click to enable prop:status=done)";
+  }
+
+  private openOutlineFilterHelp(): void {
+    const modal = new Modal(this.app);
+    modal.setTitle("Outline Filter Format");
+
+    const body = modal.contentEl.createEl("div", { cls: "fmo-filter-help" });
+    body.createEl("p", { text: "Terms are combined with AND (all terms must match)." });
+
+    const list = body.createEl("ul");
+    list.createEl("li", { text: "term -> match in file name or path" });
+    list.createEl("li", { text: "\"quoted phrase\" -> phrase match in file name or path" });
+    list.createEl("li", { text: "file:term -> match only file name" });
+    list.createEl("li", { text: "path:term -> match only full path" });
+    list.createEl("li", { text: "prop:key -> frontmatter key exists" });
+    list.createEl("li", { text: "prop:key=value (or fm:key=value) -> frontmatter key equals value" });
+    list.createEl("li", { text: "-term / -file:term / -path:term -> exclude matches" });
+    list.createEl("li", { text: "-prop:key / -prop:key=value -> negate property match" });
+
+    body.createEl("p", { text: "Examples:" });
+    const examples = body.createEl("ul");
+    examples.createEl("li", { text: "qq path:GTD/Graph" });
+    examples.createEl("li", { text: "\"qq wrapper\" -path:Archive" });
+    examples.createEl("li", { text: "file:wrapper -file:old" });
+    examples.createEl("li", { text: "prop:type=concern -prop:status=done" });
+
+    modal.open();
+  }
+
+  private filterTasksForOutline(tasks: TaskItem[], query: string): TaskItem[] {
+    const tokens = this.parseOutlineFilterTokens(query);
+    if (tokens.length === 0) return tasks;
+
+    return tasks.filter((item) => this.taskMatchesOutlineFilter(item, tokens));
+  }
+
+  private parseOutlineFilterTokens(query: string): OutlineFilterToken[] {
+    const out: OutlineFilterToken[] = [];
+    const pattern = /"([^"]*)"|(\S+)/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(query)) !== null) {
+      const raw = (match[1] ?? match[2] ?? "").trim();
+      if (!raw) continue;
+
+      let token = raw;
+      let negated = false;
+      if (token.startsWith("-") && token.length > 1) {
+        negated = true;
+        token = token.slice(1);
+      }
+
+      const propertyQualifier = /^(?:prop|fm):([^=:\s]+)(?:=(.+))?$/i.exec(token);
+      if (propertyQualifier) {
+        const prop = propertyQualifier[1]?.trim();
+        const rawValue = propertyQualifier[2]?.trim();
+        if (!prop) continue;
+
+        out.push({
+          key: "prop",
+          prop,
+          value: rawValue ? rawValue.replace(/^['"]|['"]$/g, "") : null,
+          negated
+        });
+        continue;
+      }
+
+      const qualifier = /^(path|file):(.*)$/i.exec(token);
+      const key = (qualifier?.[1]?.toLowerCase() as "path" | "file" | undefined) ?? "any";
+      const value = (qualifier ? qualifier[2] : token).trim();
+      if (!value) continue;
+
+      out.push({ key, value, negated });
     }
 
-    if (!tasks.length) {
-      contentEl.createEl("p", {
-        cls: "fmo-empty",
-        text: "No matching task notes found for current filter."
-      });
-      return;
+    return out;
+  }
+
+  private taskMatchesOutlineFilter(
+    task: TaskItem,
+    tokens: OutlineFilterToken[]
+  ): boolean {
+    const pathText = task.file.path.toLowerCase();
+    const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
+    const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
+
+    for (const token of tokens) {
+      if (token.key === "prop") {
+        const matches = this.matchesFrontmatterFilter(task.frontmatter, token.prop, token.value);
+        if (token.negated ? matches : !matches) {
+          return false;
+        }
+        continue;
+      }
+
+      const matcher = prepareSimpleSearch(token.value.toLowerCase());
+      const target = token.key === "path" ? pathText : token.key === "file" ? fileText : anyText;
+      const matches = matcher(target) !== null;
+
+      if (token.negated ? matches : !matches) {
+        return false;
+      }
     }
 
-    const rootList = contentEl.createEl("ul", { cls: "fmo-tree" });
+    return true;
+  }
 
-    for (const root of tree.roots) {
-      this.renderTreeNode(rootList, root, tree.cumulativeSeconds, new Set(), {});
+  private matchesFrontmatterFilter(
+    frontmatter: TaskItem["frontmatter"],
+    key: string,
+    expectedValue: string | null
+  ): boolean {
+    if (!frontmatter || !(key in frontmatter)) {
+      return false;
+    }
+
+    if (expectedValue == null) {
+      return true;
+    }
+
+    const expected = expectedValue.toLowerCase();
+    const values = this.flattenFrontmatterValues(frontmatter[key]);
+    return values.some((value) => value.toLowerCase() === expected);
+  }
+
+  private flattenFrontmatterValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
+    }
+
+    if (value == null) {
+      return [""];
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return [String(value).trim()];
+    }
+
+    try {
+      return [JSON.stringify(value)];
+    } catch {
+      return [String(value)];
     }
   }
 
@@ -339,7 +592,7 @@ export class LifeDashboardView extends ItemView {
     node: TaskTreeNode,
     cumulativeSeconds: Map<string, number>,
     ancestry: Set<string>,
-    options: { expandedPaths?: Set<string>; focusPath?: string }
+    expandAll: boolean
   ): void {
     if (ancestry.has(node.path)) return;
 
@@ -354,7 +607,7 @@ export class LifeDashboardView extends ItemView {
 
     let childrenList: HTMLElement | null = null;
     if (node.children.length > 0) {
-      const isExpanded = options.expandedPaths?.has(node.path) ?? false;
+      const isExpanded = expandAll;
       const toggle = row.createEl("button", {
         cls: "fmo-toggle",
         attr: {
@@ -392,10 +645,6 @@ export class LifeDashboardView extends ItemView {
       void this.plugin.openFile(node.item.file.path);
     });
 
-    if (options.focusPath && options.focusPath === node.path) {
-      link.addClass("fmo-note-link-active");
-    }
-
     row.createEl("span", {
       cls: "fmo-time-badge",
       text: this.plugin.formatShortDuration(total),
@@ -406,7 +655,7 @@ export class LifeDashboardView extends ItemView {
 
     if (childrenList) {
       for (const child of node.children) {
-        this.renderTreeNode(childrenList, child, cumulativeSeconds, nextAncestry, options);
+        this.renderTreeNode(childrenList, child, cumulativeSeconds, nextAncestry, expandAll);
       }
     }
   }

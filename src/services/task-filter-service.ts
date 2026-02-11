@@ -22,7 +22,8 @@ export class TaskFilterService {
 
       tasks.push({
         file,
-        parentRaw: fm?.parent
+        parentRaw: fm?.parent,
+        frontmatter: fm
       });
     }
 

@@ -10,13 +10,6 @@
   background: var(--background-secondary);
 }
 
-.frontmatter-outline-view .fmo-tracker-title {
-  text-align: center;
-  color: var(--text-accent);
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
 .frontmatter-outline-view .fmo-ring {
   width: 220px;
   height: 220px;
@@ -176,6 +169,53 @@
   font-size: 12px;
 }
 
+.frontmatter-outline-view .fmo-outline-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.frontmatter-outline-view .fmo-outline-filter {
+  flex: 1;
+}
+
+.frontmatter-outline-view .fmo-outline-filter .search-input-container {
+  width: 100%;
+}
+
+.frontmatter-outline-view .fmo-outline-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.frontmatter-outline-view .fmo-outline-filter-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  padding: 0;
+}
+
+.frontmatter-outline-view .fmo-outline-filter-help {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-outline-filter-btn-active {
+  color: var(--text-accent);
+  border-color: color-mix(in srgb, var(--text-accent) 35%, var(--background-modifier-border));
+}
+
 .frontmatter-outline-view .fmo-tree {
   list-style: none;
   padding-left: 12px;
@@ -223,11 +263,6 @@
 
 .frontmatter-outline-view .fmo-note-link:hover {
   text-decoration: underline;
-}
-
-.frontmatter-outline-view .fmo-note-link-active {
-  color: var(--text-accent);
-  font-weight: 600;
 }
 
 .frontmatter-outline-view .fmo-time-badge {

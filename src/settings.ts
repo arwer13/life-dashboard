@@ -4,6 +4,7 @@ export interface LifeDashboardSettings {
   additionalFilterPropertyName: string;
   additionalFilterPropertyValue: string;
   caseSensitive: boolean;
+  outlineFilterQuery: string;
   timeLogPath: string;
   timeLogSchemaVersion: number;
   viewWasVisible: boolean;
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   additionalFilterPropertyName: "",
   additionalFilterPropertyValue: "",
   caseSensitive: false,
+  outlineFilterQuery: "",
   timeLogPath: DEFAULT_TIME_LOG_PATH,
   timeLogSchemaVersion: 0,
   viewWasVisible: false,
