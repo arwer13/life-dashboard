@@ -80,6 +80,20 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         afterSave: refreshFilters
       },
       {
+        name: "Minimum trackable time (minutes)",
+        description: "Sessions shorter than this are discarded when pressing Stop.",
+        placeholder: "2",
+        getValue: () => String(this.plugin.settings.minimumTrackableMinutes),
+        setValue: (value) => {
+          const parsed = Number.parseInt(value, 10);
+          this.plugin.settings.minimumTrackableMinutes = Number.isFinite(parsed) && parsed >= 1 ? parsed : 2;
+        },
+        transform: (value) => value.trim(),
+        afterSave: async () => {
+          this.plugin.refreshView();
+        }
+      },
+      {
         name: "Time log file path",
         description: "JSON file path in vault where time entries are stored.",
         placeholder: DEFAULT_TIME_LOG_PATH,
@@ -111,19 +125,73 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
   }
 
   private addTextSetting(containerEl: HTMLElement, config: TextSettingConfig): void {
+    let saveTimer: number | null = null;
+    let dirty = false;
+    let persistRunning = false;
+
+    const persistIfNeeded = async (): Promise<void> => {
+      if (!dirty || persistRunning) return;
+
+      persistRunning = true;
+      dirty = false;
+      try {
+        await this.persistAndAfterSave(config.afterSave);
+      } catch (error) {
+        console.error("[life-dashboard] Failed to persist text setting:", error);
+      } finally {
+        persistRunning = false;
+        if (dirty) {
+          void persistIfNeeded();
+        }
+      }
+    };
+
+    const schedulePersist = (): void => {
+      dirty = true;
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+
+      saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        void persistIfNeeded();
+      }, 350);
+    };
+
+    const flushPersist = (): void => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      if (!dirty) return;
+      void persistIfNeeded();
+    };
+
     new Setting(containerEl)
       .setName(config.name)
       .setDesc(config.description)
-      .addText((text) =>
+      .addText((text) => {
         text
           .setPlaceholder(config.placeholder)
           .setValue(config.getValue())
-          .onChange(async (value) => {
+          .onChange((value) => {
             const transform = config.transform ?? ((next: string) => next);
             config.setValue(transform(value));
-            await this.persistAndAfterSave(config.afterSave);
-          })
-      );
+            schedulePersist();
+          });
+
+        text.inputEl.addEventListener("blur", () => {
+          flushPersist();
+        });
+
+        text.inputEl.addEventListener("keydown", (event: KeyboardEvent) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          flushPersist();
+        });
+
+        return text;
+      });
   }
 
   private addToggleSetting(containerEl: HTMLElement, config: ToggleSettingConfig): void {

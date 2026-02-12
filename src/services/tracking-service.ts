@@ -15,6 +15,7 @@ type TrackingServiceDeps = {
 type FinalizeResult =
   | { status: "ok" }
   | { status: "invalid-state" }
+  | { status: "below-minimum"; minimumMinutes: number }
   | { status: "append-failed"; message: string }
   | { status: "reload-failed"; message: string };
 
@@ -79,7 +80,8 @@ export class TrackingService {
   async stopTracking(): Promise<void> {
     const result = await this.finalizeActiveTracking({
       reloadTotals: true,
-      preserveActiveOnFailure: false
+      preserveActiveOnFailure: false,
+      enforceMinimumDuration: true
     });
 
     if (result.status === "append-failed") {
@@ -88,6 +90,8 @@ export class TrackingService {
       new Notice(`Stopped timer, but failed to refresh totals: ${result.message}`);
     } else if (result.status === "invalid-state") {
       new Notice("Stopped timer. Previous active tracking state was invalid.");
+    } else if (result.status === "below-minimum") {
+      new Notice(`Session was shorter than ${result.minimumMinutes} minute(s), so it was not saved.`);
     }
 
     if (result.status !== "ok") {
@@ -100,19 +104,22 @@ export class TrackingService {
   async flushActiveTrackingOnUnload(): Promise<void> {
     await this.finalizeActiveTracking({
       reloadTotals: false,
-      preserveActiveOnFailure: true
+      preserveActiveOnFailure: true,
+      enforceMinimumDuration: false
     });
   }
 
   private async finalizeActiveTracking(options: {
     reloadTotals: boolean;
     preserveActiveOnFailure: boolean;
+    enforceMinimumDuration: boolean;
   }): Promise<FinalizeResult> {
     if (!this.deps.settings.activeTrackingStart) return { status: "ok" };
 
     const startMs = Number(this.deps.settings.activeTrackingStart);
     const endMs = Date.now();
     const taskId = this.deps.settings.activeTrackingTaskId;
+    const minimumMinutes = Math.max(1, Math.floor(this.deps.settings.minimumTrackableMinutes || 2));
 
     if (!taskId || !Number.isFinite(startMs) || startMs <= 0 || endMs < startMs) {
       if (!options.preserveActiveOnFailure) {
@@ -120,6 +127,15 @@ export class TrackingService {
         await this.deps.saveSettings();
       }
       return { status: "invalid-state" };
+    }
+
+    if (options.enforceMinimumDuration) {
+      const elapsedMs = endMs - startMs;
+      if (elapsedMs < minimumMinutes * 60_000) {
+        this.clearActiveState();
+        await this.deps.saveSettings();
+        return { status: "below-minimum", minimumMinutes };
+      }
     }
 
     try {

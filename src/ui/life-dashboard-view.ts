@@ -221,9 +221,16 @@ export class LifeDashboardView extends ItemView {
     nodesByPath: Map<string, TaskTreeNode>
   ): TaskTreeNode[] {
     const chain: TaskTreeNode[] = [];
+    const visited = new Set<string>();
     let current: TaskTreeNode | undefined = node;
 
     while (current) {
+      if (visited.has(current.path)) {
+        console.warn("[life-dashboard] Parent cycle detected while building task context:", current.path);
+        break;
+      }
+
+      visited.add(current.path);
       chain.push(current);
       current = current.parentPath ? nodesByPath.get(current.parentPath) : undefined;
     }

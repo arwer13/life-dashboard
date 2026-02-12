@@ -41,8 +41,7 @@ export class TaskFilterService {
     if (!prop) return false;
     if (!frontmatter || !(prop in frontmatter)) return false;
 
-    const primaryActual = String(frontmatter[prop] ?? "");
-    if (!this.matchesValue(primaryActual, this.settings.propertyValue.trim())) {
+    if (!this.matchesValue(frontmatter[prop], this.settings.propertyValue.trim())) {
       return false;
     }
 
@@ -50,17 +49,39 @@ export class TaskFilterService {
     if (!extraProp) return true;
     if (!(extraProp in frontmatter)) return false;
 
-    const extraActual = String(frontmatter[extraProp] ?? "");
-    return this.matchesValue(extraActual, this.settings.additionalFilterPropertyValue.trim());
+    return this.matchesValue(frontmatter[extraProp], this.settings.additionalFilterPropertyValue.trim());
   }
 
-  private matchesValue(actual: string, expected: string): boolean {
+  private matchesValue(actual: unknown, expected: string): boolean {
     if (!expected || expected.trim().length === 0) return true;
 
-    if (this.settings.caseSensitive) {
-      return actual === expected;
+    const expectedValue = this.settings.caseSensitive ? expected : expected.toLowerCase();
+    const values = this.flattenFrontmatterValues(actual);
+
+    return values.some((value) => {
+      const normalized = this.settings.caseSensitive ? value : value.toLowerCase();
+      return normalized === expectedValue;
+    });
+  }
+
+  private flattenFrontmatterValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
     }
 
-    return actual.toLowerCase() === expected.toLowerCase();
+    if (value == null) {
+      return [""];
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return [String(value).trim()];
+    }
+
+    try {
+      return [JSON.stringify(value)];
+    } catch {
+      return [String(value)];
+    }
   }
+
 }
