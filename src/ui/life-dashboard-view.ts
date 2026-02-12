@@ -30,6 +30,7 @@ const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> =
   { value: "month", label: "this month" },
   { value: "all", label: "all time" }
 ];
+const TRACKING_ADJUST_MINUTES = 5;
 
 export class LifeDashboardView extends ItemView {
   private readonly plugin: LifeDashboardPlugin;
@@ -102,6 +103,32 @@ export class LifeDashboardView extends ItemView {
       void (isTracking ? this.plugin.stopTracking() : this.plugin.startTracking());
     });
 
+    if (isTracking) {
+      const plusBtn = timerRing.createEl("button", {
+        cls: "fmo-main-adjust",
+        text: `+${TRACKING_ADJUST_MINUTES}m`,
+        attr: {
+          type: "button",
+          "aria-label": `Add ${TRACKING_ADJUST_MINUTES} minutes`
+        }
+      });
+
+      const canExtend = this.plugin.getExtendTrackingBySecondsAvailable() > 0;
+      plusBtn.disabled = !canExtend;
+      if (!canExtend) {
+        setTooltip(
+          plusBtn,
+          "Cannot add more time without intersecting the latest saved time entry."
+        );
+      } else {
+        setTooltip(plusBtn, `Move timer start ${TRACKING_ADJUST_MINUTES} minutes earlier.`);
+      }
+
+      plusBtn.addEventListener("click", () => {
+        void this.plugin.extendActiveTrackingByMinutes(TRACKING_ADJUST_MINUTES);
+      });
+    }
+
     const activeTaskPath = this.plugin.getActiveTaskPath();
     if (activeTaskPath) {
       this.renderConcernPeriodSummary(top, activeTaskPath);
@@ -115,16 +142,20 @@ export class LifeDashboardView extends ItemView {
     const box = containerEl.createEl("div", { cls: "fmo-today-entries" });
 
     const totals = box.createEl("div", { cls: "fmo-period-totals" });
-    this.renderPeriodTotalRow(totals, "Today", summary.todaySeconds, "today");
-    this.renderPeriodTotalRow(totals, "Yesterday", summary.yesterdaySeconds, "yesterday");
     this.renderPeriodTotalRow(totals, "This week", summary.weekSeconds, "week");
+    this.renderPeriodTotalRow(totals, "Yesterday", summary.yesterdaySeconds, "yesterday");
 
-    if (summary.todayEntries.length === 0) return;
+    const todayTitle = box.createEl("div", {
+      cls: "fmo-today-entries-title",
+      text: `Today (${this.plugin.formatShortDuration(summary.todaySeconds)}):`
+    });
+    setTooltip(todayTitle, this.plugin.getTimeRangeDescription("today"));
 
-    box.createEl("div", { cls: "fmo-today-entries-title", text: "Today entries" });
-    const list = box.createEl("div", { cls: "fmo-today-entries-list" });
-    for (const label of summary.todayEntries) {
-      list.createEl("div", { cls: "fmo-today-entry", text: label });
+    if (summary.todayEntries.length > 0) {
+      const list = box.createEl("div", { cls: "fmo-today-entries-list" });
+      for (const label of summary.todayEntries) {
+        list.createEl("div", { cls: "fmo-today-entry", text: label });
+      }
     }
   }
 

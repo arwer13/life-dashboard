@@ -161,6 +161,32 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.trackingService.getCurrentElapsedSeconds();
   }
 
+  getExtendTrackingBySecondsAvailable(): number {
+    const start = this.getActiveTrackingStartMs();
+    if (start == null) return 0;
+
+    const latestEndMs = this.getLatestTrackedEndMs();
+    return Math.max(0, Math.floor((start - latestEndMs) / 1000));
+  }
+
+  async extendActiveTrackingByMinutes(minutes: number): Promise<number> {
+    const safeMinutes = Math.max(0, Math.floor(minutes));
+    if (safeMinutes <= 0) return 0;
+
+    const start = this.getActiveTrackingStartMs();
+    if (start == null) return 0;
+
+    const requestedSeconds = safeMinutes * 60;
+    const allowedSeconds = this.getExtendTrackingBySecondsAvailable();
+    const applySeconds = Math.min(requestedSeconds, allowedSeconds);
+    if (applySeconds <= 0) return 0;
+
+    this.settings.activeTrackingStart = start - applySeconds * 1000;
+    await this.saveSettings();
+    this.refreshView();
+    return applySeconds;
+  }
+
   async setSelectedTaskPath(path: string): Promise<void> {
     this.settings.selectedTaskPath = path;
     await this.saveSettings();
@@ -370,6 +396,19 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.timeEntriesById.get(noteId) ?? [];
   }
 
+  private getLatestTrackedEndMs(): number {
+    let latestEndMs = 0;
+    for (const entries of this.timeEntriesById.values()) {
+      for (const entry of entries) {
+        const endMs = entry.startMs + entry.durationMinutes * 60 * 1000;
+        if (endMs > latestEndMs) {
+          latestEndMs = endMs;
+        }
+      }
+    }
+    return latestEndMs;
+  }
+
   private getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
     if (range === "today") {
       const start = this.getDayStart(now);
@@ -453,8 +492,8 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   private handleTimerNotifications(): void {
-    const start = Number(this.settings.activeTrackingStart);
-    if (!Number.isFinite(start) || start <= 0) {
+    const start = this.getActiveTrackingStartMs();
+    if (start == null) {
       this.resetNotificationState();
       return;
     }
@@ -487,6 +526,12 @@ export default class LifeDashboardPlugin extends Plugin {
     }
 
     this.lastElapsedSecondsForNotify = elapsed;
+  }
+
+  private getActiveTrackingStartMs(): number | null {
+    const start = Number(this.settings.activeTrackingStart);
+    if (!Number.isFinite(start) || start <= 0) return null;
+    return start;
   }
 
   private resetNotificationState(): void {

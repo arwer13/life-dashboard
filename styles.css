@@ -92,6 +92,15 @@
   font-weight: 600;
 }
 
+.frontmatter-outline-view .fmo-main-adjust {
+  min-width: 100px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  background: var(--interactive-normal);
+}
+
 .frontmatter-outline-view .fmo-context-block {
   margin-top: 4px;
 }
