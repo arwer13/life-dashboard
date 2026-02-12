@@ -1,5 +1,5 @@
 import { Notice, Plugin, TFile, type FrontMatterCache } from "obsidian";
-import type { TaskItem } from "./models/types";
+import type { TaskItem, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_SETTINGS,
   type LifeDashboardSettings
@@ -10,10 +10,12 @@ import { TimeLogStore } from "./services/time-log-store";
 import { TrackingService } from "./services/tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { LifeDashboardView, VIEW_TYPE_LIFE_DASHBOARD } from "./ui/life-dashboard-view";
+import { DISPLAY_VERSION } from "./version";
 
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
   timeTotalsById: Map<string, number> = new Map();
+  timeEntriesById: Map<string, TimeLogEntry[]> = new Map();
 
   private taskFilterService!: TaskFilterService;
   private timeLogStore!: TimeLogStore;
@@ -25,6 +27,9 @@ export default class LifeDashboardPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     this.initializeServices();
+    console.info(
+      `[life-dashboard] loaded v${DISPLAY_VERSION} at ${new Date().toISOString()}`
+    );
 
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD, (leaf) => new LifeDashboardView(leaf, this));
 
@@ -170,7 +175,9 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async reloadTimeTotals(): Promise<void> {
-    this.timeTotalsById = await this.timeLogStore.loadTotals();
+    const snapshot = await this.timeLogStore.loadSnapshot();
+    this.timeTotalsById = snapshot.totals;
+    this.timeEntriesById = snapshot.entriesByNoteId;
   }
 
   getTrackedSeconds(path: string): number {
@@ -179,6 +186,39 @@ export default class LifeDashboardPlugin extends Plugin {
     const noteId = this.getTaskIdForFile(file);
     if (!noteId) return 0;
     return this.timeTotalsById.get(noteId) ?? 0;
+  }
+
+  getTodayEntryLabels(path: string): string[] {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return [];
+
+    const noteId = this.getTaskIdForFile(file);
+    if (!noteId) return [];
+
+    const entries = this.timeEntriesById.get(noteId) ?? [];
+    if (entries.length === 0) return [];
+
+    const now = new Date();
+    const todayYear = now.getFullYear();
+    const todayMonth = now.getMonth();
+    const todayDate = now.getDate();
+    const pad = (n: number): string => String(n).padStart(2, "0");
+
+    return entries
+      .filter((entry) => {
+        const start = new Date(entry.startMs);
+        return (
+          start.getFullYear() === todayYear &&
+          start.getMonth() === todayMonth &&
+          start.getDate() === todayDate
+        );
+      })
+      .sort((a, b) => a.startMs - b.startMs)
+      .map((entry) => {
+        const start = new Date(entry.startMs);
+        const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+        return `${hhmm} ${this.formatShortDuration(entry.durationMinutes * 60)}`;
+      });
   }
 
   formatClockDuration(totalSeconds: number): string {
@@ -275,6 +315,7 @@ export default class LifeDashboardPlugin extends Plugin {
       await this.reloadTimeTotals();
     } catch (error) {
       this.timeTotalsById = new Map();
+      this.timeEntriesById = new Map();
       console.error("[life-dashboard] Failed to read time totals:", error);
     }
   }

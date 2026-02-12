@@ -1,5 +1,5 @@
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
-import type { TimeLogByNoteId } from "../models/types";
+import type { TimeLogByNoteId, TimeLogEntry, TimeLogSnapshot } from "../models/types";
 import {
   CURRENT_TIME_LOG_SCHEMA_VERSION,
   DEFAULT_TIME_LOG_PATH,
@@ -34,23 +34,31 @@ export class TimeLogStore {
     return this.normalizeAndValidateTimeLogMap(raw);
   }
 
-  async loadTotals(): Promise<Map<string, number>> {
+  async loadSnapshot(): Promise<TimeLogSnapshot> {
     const data = await this.readTimeLogMap();
     const totals = new Map<string, number>();
+    const entriesByNoteId = new Map<string, TimeLogEntry[]>();
 
     for (const [noteId, intervals] of Object.entries(data)) {
+      const parsedEntries: TimeLogEntry[] = [];
       let seconds = 0;
+
       for (const token of intervals) {
         const parsed = this.parseIntervalToken(token);
         if (!parsed) continue;
         seconds += parsed.durationMinutes * 60;
+        parsedEntries.push({ startMs: parsed.startMs, durationMinutes: parsed.durationMinutes });
       }
+
       if (seconds > 0) {
         totals.set(noteId, seconds);
       }
+      if (parsedEntries.length > 0) {
+        entriesByNoteId.set(noteId, parsedEntries);
+      }
     }
 
-    return totals;
+    return { totals, entriesByNoteId };
   }
 
   private async migrateIfNeeded(): Promise<void> {

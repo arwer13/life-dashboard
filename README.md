@@ -43,11 +43,14 @@ This project follows the Obsidian sample plugin best practices from `AGENTS.md`:
 - `npm run dev`
   - runs esbuild watch and syncs plugin artifacts into your vault plugin folder
 - `npm run build`
+  - one-shot production build of `main.js` only (no version bump, no vault sync)
+- `npm run deploy`
   - bumps patch version (`x.y.z -> x.y.(z+1)`)
   - updates `src/version.ts`, `manifest.json`, `package.json`, `versions.json`
   - builds `main.js`
   - touches `.hotreload`
   - syncs artifacts into your vault plugin folder
+  - exits immediately (does not stay in watch/background mode)
 - `npm run check`
   - TypeScript type-check (`tsc --noEmit`)
 
@@ -70,10 +73,19 @@ Behavior:
 
 - `Start`/`Stop` in panel controls tracking
 - `Change task...` opens filtered task selector
+- timer panel shows today's entries for the current task as `HH:mm Xm` (start-time + duration)
+- today's entries refresh after startup and after stopping a tracking session
 - if timer is idle and active note matches task filters, it auto-selects
 - when first tracking a note, plugin ensures frontmatter `id` exists (UUID) and uses that stable ID in log entries
 - per-note arrays are sorted by start time ascending
 - intervals for one note are validated to prevent overlap
+
+## Reload debugging
+
+- on load, plugin writes to console:
+  - `[life-dashboard] loaded v<version> at <ISO timestamp>`
+- hot-reload plugin reloads this plugin when `main.js` or `styles.css` changes and `.hotreload` exists in the plugin folder
+- for one-shot distribution without background watchers, use `npm run deploy`
 
 ## Task filtering
 

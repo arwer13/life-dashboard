@@ -10,17 +10,50 @@
   background: var(--background-secondary);
 }
 
+.frontmatter-outline-view .fmo-tracker-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
 .frontmatter-outline-view .fmo-ring {
   width: 220px;
   height: 220px;
   border-radius: 50%;
   border: 3px solid var(--background-modifier-border);
-  margin: 0 auto 12px auto;
+  margin: 0 0 12px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
+}
+
+.frontmatter-outline-view .fmo-today-entries {
+  min-width: 128px;
+  max-width: 220px;
+}
+
+.frontmatter-outline-view .fmo-today-entries-title {
+  margin-top: 2px;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.frontmatter-outline-view .fmo-today-entries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.frontmatter-outline-view .fmo-today-entry {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .frontmatter-outline-view .fmo-timer-value {

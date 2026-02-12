@@ -14,3 +14,13 @@ export interface TaskTreeNode {
 }
 
 export type TimeLogByNoteId = Record<string, string[]>;
+
+export interface TimeLogEntry {
+  startMs: number;
+  durationMinutes: number;
+}
+
+export interface TimeLogSnapshot {
+  totals: Map<string, number>;
+  entriesByNoteId: Map<string, TimeLogEntry[]>;
+}

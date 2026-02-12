@@ -74,8 +74,9 @@ export class LifeDashboardView extends ItemView {
 
   private renderTrackerPanel(contentEl: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
     const panel = contentEl.createEl("div", { cls: "fmo-tracker" });
+    const top = panel.createEl("div", { cls: "fmo-tracker-top" });
 
-    const timerRing = panel.createEl("div", { cls: "fmo-ring" });
+    const timerRing = top.createEl("div", { cls: "fmo-ring" });
     this.liveTimerEl = timerRing.createEl("div", {
       cls: "fmo-timer-value",
       text: this.plugin.formatClockDuration(this.plugin.getCurrentElapsedSeconds())
@@ -90,7 +91,25 @@ export class LifeDashboardView extends ItemView {
       void (isTracking ? this.plugin.stopTracking() : this.plugin.startTracking());
     });
 
+    const activeTaskPath = this.plugin.getActiveTaskPath();
+    if (activeTaskPath) {
+      this.renderTodayEntries(top, activeTaskPath);
+    }
+
     this.renderTrackedContext(panel, tasks, tree);
+  }
+
+  private renderTodayEntries(containerEl: HTMLElement, taskPath: string): void {
+    const labels = this.plugin.getTodayEntryLabels(taskPath);
+    if (labels.length === 0) return;
+
+    const box = containerEl.createEl("div", { cls: "fmo-today-entries" });
+    box.createEl("div", { cls: "fmo-today-entries-title", text: "Today" });
+
+    const list = box.createEl("div", { cls: "fmo-today-entries-list" });
+    for (const label of labels) {
+      list.createEl("div", { cls: "fmo-today-entry", text: label });
+    }
   }
 
   private renderTrackedContext(panel: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
