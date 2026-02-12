@@ -36,8 +36,30 @@
   max-width: 220px;
 }
 
+.frontmatter-outline-view .fmo-period-totals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.frontmatter-outline-view .fmo-period-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.frontmatter-outline-view .fmo-period-row-label {
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-period-row-value {
+  font-variant-numeric: tabular-nums;
+}
+
 .frontmatter-outline-view .fmo-today-entries-title {
-  margin-top: 2px;
+  margin-top: 8px;
   margin-bottom: 6px;
   color: var(--text-muted);
   font-size: 12px;
@@ -200,6 +222,50 @@
   margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.frontmatter-outline-view .fmo-outline-range-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 6px 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.frontmatter-outline-view .fmo-outline-range-btn {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--interactive-normal);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.frontmatter-outline-view .fmo-outline-range-btn:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-outline-range-btn-active {
+  color: var(--text-accent);
+  border-color: color-mix(in srgb, var(--text-accent) 35%, var(--background-modifier-border));
+}
+
+.frontmatter-outline-view .fmo-outline-tracked-only-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.frontmatter-outline-view .fmo-outline-tracked-only-input {
+  margin: 0;
 }
 
 .frontmatter-outline-view .fmo-outline-filter-row {

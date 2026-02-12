@@ -12,6 +12,10 @@ import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { LifeDashboardView, VIEW_TYPE_LIFE_DASHBOARD } from "./ui/life-dashboard-view";
 import { DISPLAY_VERSION } from "./version";
 
+export type OutlineTimeRange = "today" | "week" | "month" | "all";
+type PeriodTooltipRange = OutlineTimeRange | "yesterday";
+type TimeWindow = { startMs: number; endMs: number };
+
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
   timeTotalsById: Map<string, number> = new Map();
@@ -188,37 +192,62 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.timeTotalsById.get(noteId) ?? 0;
   }
 
-  getTodayEntryLabels(path: string): string[] {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) return [];
+  getTrackedSecondsForRange(path: string, range: OutlineTimeRange): number {
+    if (range === "all") {
+      return this.getTrackedSeconds(path);
+    }
 
-    const noteId = this.getTaskIdForFile(file);
-    if (!noteId) return [];
+    const entries = this.getEntriesForPath(path);
+    if (entries.length === 0) return 0;
 
-    const entries = this.timeEntriesById.get(noteId) ?? [];
-    if (entries.length === 0) return [];
+    const window = this.getWindowForRange(range, new Date());
+    return this.sumSecondsInWindow(entries, window);
+  }
 
-    const now = new Date();
-    const todayYear = now.getFullYear();
-    const todayMonth = now.getMonth();
-    const todayDate = now.getDate();
+  getConcernPeriodSummary(path: string): {
+    todayEntries: string[];
+    todaySeconds: number;
+    yesterdaySeconds: number;
+    weekSeconds: number;
+  } {
+    const entries = this.getEntriesForPath(path);
+    if (entries.length === 0) {
+      return {
+        todayEntries: [],
+        todaySeconds: 0,
+        yesterdaySeconds: 0,
+        weekSeconds: 0
+      };
+    }
+
     const pad = (n: number): string => String(n).padStart(2, "0");
+    const now = new Date();
+    const todayWindow = this.getWindowForRange("today", now);
+    const yesterdayWindow = {
+      startMs: todayWindow.startMs - 24 * 60 * 60 * 1000,
+      endMs: todayWindow.startMs
+    };
+    const weekWindow = this.getWindowForRange("week", now);
 
-    return entries
-      .filter((entry) => {
-        const start = new Date(entry.startMs);
-        return (
-          start.getFullYear() === todayYear &&
-          start.getMonth() === todayMonth &&
-          start.getDate() === todayDate
-        );
-      })
+    const todayEntries = entries
+      .filter((entry) => this.isEntryInWindow(entry, todayWindow))
       .sort((a, b) => a.startMs - b.startMs)
       .map((entry) => {
         const start = new Date(entry.startMs);
         const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
         return `${hhmm} ${this.formatShortDuration(entry.durationMinutes * 60)}`;
       });
+    const todaySeconds = this.sumSecondsInWindow(entries, todayWindow);
+    const yesterdaySeconds = this.sumSecondsInWindow(entries, yesterdayWindow);
+    const weekSeconds = this.sumSecondsInWindow(entries, weekWindow);
+
+    return { todayEntries, todaySeconds, yesterdaySeconds, weekSeconds };
+  }
+
+  getTimeRangeDescription(range: PeriodTooltipRange): string {
+    const window = this.getWindowForPeriod(range, new Date());
+    if (!window) return "All tracked entries (no date filter).";
+    return this.formatRangeLabel(new Date(window.startMs), new Date(window.endMs));
   }
 
   formatClockDuration(totalSeconds: number): string {
@@ -318,6 +347,97 @@ export default class LifeDashboardPlugin extends Plugin {
       this.timeEntriesById = new Map();
       console.error("[life-dashboard] Failed to read time totals:", error);
     }
+  }
+
+  private getEntriesForPath(path: string): TimeLogEntry[] {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return [];
+
+    const noteId = this.getTaskIdForFile(file);
+    if (!noteId) return [];
+    return this.timeEntriesById.get(noteId) ?? [];
+  }
+
+  private getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
+    if (range === "today") {
+      const start = this.getDayStart(now);
+      const end = new Date(start.getTime());
+      end.setDate(end.getDate() + 1);
+      return { startMs: start.getTime(), endMs: end.getTime() };
+    }
+
+    if (range === "week") {
+      const start = this.getWeekStart(now);
+      const end = new Date(start.getTime());
+      end.setDate(end.getDate() + 7);
+      return { startMs: start.getTime(), endMs: end.getTime() };
+    }
+
+    if (range === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+      return { startMs: start.getTime(), endMs: end.getTime() };
+    }
+    return { startMs: 0, endMs: 0 };
+  }
+
+  private getWindowForPeriod(range: PeriodTooltipRange, now: Date): TimeWindow | null {
+    if (range === "all") {
+      return null;
+    }
+
+    if (range === "yesterday") {
+      const todayWindow = this.getWindowForRange("today", now);
+      const yesterdayStart = new Date(todayWindow.startMs);
+      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+      return {
+        startMs: yesterdayStart.getTime(),
+        endMs: todayWindow.startMs
+      };
+    }
+
+    return this.getWindowForRange(range, now);
+  }
+
+  private getWeekStart(now: Date): Date {
+    const start = this.getDayStart(now);
+    const day = start.getDay(); // Sunday=0 ... Saturday=6
+    const weekStartsOn = this.settings.weekStartsOn === "sunday" ? 0 : 1;
+    const offset = (day - weekStartsOn + 7) % 7;
+    start.setDate(start.getDate() - offset);
+    return start;
+  }
+
+  private getDayStart(value: Date): Date {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
+  }
+
+  private formatRangeLabel(start: Date, endExclusive: Date): string {
+    const end = new Date(endExclusive.getTime() - 60 * 1000);
+    return `${this.formatDateTime(start)} - ${this.formatDateTime(end)}`;
+  }
+
+  private sumSecondsInWindow(entries: TimeLogEntry[], window: TimeWindow): number {
+    return entries.reduce((seconds, entry) => {
+      if (!this.isEntryInWindow(entry, window)) {
+        return seconds;
+      }
+      return seconds + entry.durationMinutes * 60;
+    }, 0);
+  }
+
+  private isEntryInWindow(entry: TimeLogEntry, window: TimeWindow): boolean {
+    return entry.startMs >= window.startMs && entry.startMs < window.endMs;
+  }
+
+  private formatDateTime(date: Date): string {
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    const yyyy = date.getFullYear();
+    const mm = pad(date.getMonth() + 1);
+    const dd = pad(date.getDate());
+    const hh = pad(date.getHours());
+    const min = pad(date.getMinutes());
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
   }
 
   private getTaskIdFromFrontmatter(frontmatter: FrontMatterCache | undefined): string {

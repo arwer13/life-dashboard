@@ -74,11 +74,15 @@ Behavior:
 - `Start`/`Stop` in panel controls tracking
 - `Change task...` opens filtered task selector
 - timer panel shows today's entries for the current task as `HH:mm Xm` (start-time + duration)
+- timer panel also shows cumulative totals for `Today`, `Yesterday`, and `This week`
 - today's entries refresh after startup and after stopping a tracking session
 - if timer is idle and active note matches task filters, it auto-selects
 - when first tracking a note, plugin ensures frontmatter `id` exists (UUID) and uses that stable ID in log entries
 - per-note arrays are sorted by start time ascending
 - intervals for one note are validated to prevent overlap
+- outline has a range selector (`today`, `this week`, `this month`, `all time`) that scopes cumulative time badges
+- optional outline checkbox `Show only tracked this period` hides concerns with under 1 minute in selected range
+- period labels/buttons include tooltips showing the exact date-time window used
 
 ## Reload debugging
 
@@ -96,6 +100,7 @@ Settings:
 - `Additional filter property` (optional)
 - `Additional filter value` (optional)
 - `Case sensitive`
+- `Week starts on` (`Monday` or `Sunday`, used by `This week` totals and range filtering)
 
 ## Manual plugin install (fallback)
 

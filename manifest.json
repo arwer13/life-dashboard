@@ -1,7 +1,7 @@
 {
   "id": "life-dashboard",
   "name": "Life Dashboard",
-  "version": "0.1.26",
+  "version": "0.1.29",
   "minAppVersion": "1.11.0",
   "description": "Shows an outline of notes filtered by a frontmatter property.",
   "author": "arwer",

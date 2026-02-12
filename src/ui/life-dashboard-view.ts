@@ -11,22 +11,33 @@ import { DISPLAY_VERSION } from "../version";
 import type { TaskTreeNode, TaskItem } from "../models/types";
 import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
+import type { OutlineTimeRange } from "../plugin";
 
 export const VIEW_TYPE_LIFE_DASHBOARD = "life-dashboard-view";
 type TaskTreeData = {
   roots: TaskTreeNode[];
   cumulativeSeconds: Map<string, number>;
+  ownSeconds: Map<string, number>;
   nodesByPath: Map<string, TaskTreeNode>;
 };
 type OutlineFilterToken =
   | { key: "any" | "path" | "file"; value: string; negated: boolean }
   | { key: "prop"; prop: string; value: string | null; negated: boolean };
+const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
+const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
+  { value: "today", label: "today" },
+  { value: "week", label: "this week" },
+  { value: "month", label: "this month" },
+  { value: "all", label: "all time" }
+];
 
 export class LifeDashboardView extends ItemView {
   private readonly plugin: LifeDashboardPlugin;
   private liveTimerEl: HTMLElement | null = null;
   private outlineExpandAll = false;
   private outlineStatusDoneFilterEnabled = false;
+  private outlineTimeRange: OutlineTimeRange = "all";
+  private outlineShowOnlyTrackedThisPeriod = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
     super(leaf);
@@ -93,23 +104,43 @@ export class LifeDashboardView extends ItemView {
 
     const activeTaskPath = this.plugin.getActiveTaskPath();
     if (activeTaskPath) {
-      this.renderTodayEntries(top, activeTaskPath);
+      this.renderConcernPeriodSummary(top, activeTaskPath);
     }
 
     this.renderTrackedContext(panel, tasks, tree);
   }
 
-  private renderTodayEntries(containerEl: HTMLElement, taskPath: string): void {
-    const labels = this.plugin.getTodayEntryLabels(taskPath);
-    if (labels.length === 0) return;
-
+  private renderConcernPeriodSummary(containerEl: HTMLElement, taskPath: string): void {
+    const summary = this.plugin.getConcernPeriodSummary(taskPath);
     const box = containerEl.createEl("div", { cls: "fmo-today-entries" });
-    box.createEl("div", { cls: "fmo-today-entries-title", text: "Today" });
 
+    const totals = box.createEl("div", { cls: "fmo-period-totals" });
+    this.renderPeriodTotalRow(totals, "Today", summary.todaySeconds, "today");
+    this.renderPeriodTotalRow(totals, "Yesterday", summary.yesterdaySeconds, "yesterday");
+    this.renderPeriodTotalRow(totals, "This week", summary.weekSeconds, "week");
+
+    if (summary.todayEntries.length === 0) return;
+
+    box.createEl("div", { cls: "fmo-today-entries-title", text: "Today entries" });
     const list = box.createEl("div", { cls: "fmo-today-entries-list" });
-    for (const label of labels) {
+    for (const label of summary.todayEntries) {
       list.createEl("div", { cls: "fmo-today-entry", text: label });
     }
+  }
+
+  private renderPeriodTotalRow(
+    containerEl: HTMLElement,
+    label: string,
+    seconds: number,
+    range: "today" | "yesterday" | "week"
+  ): void {
+    const row = containerEl.createEl("div", { cls: "fmo-period-row" });
+    row.createEl("span", { cls: "fmo-period-row-label", text: `${label}:` });
+    row.createEl("span", {
+      cls: "fmo-period-row-value",
+      text: this.plugin.formatShortDuration(seconds)
+    });
+    setTooltip(row, this.plugin.getTimeRangeDescription(range));
   }
 
   private renderTrackedContext(panel: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
@@ -181,7 +212,7 @@ export class LifeDashboardView extends ItemView {
       }
 
       const total = tree.cumulativeSeconds.get(node.path) ?? 0;
-      const own = this.plugin.getTrackedSeconds(node.path);
+      const own = tree.ownSeconds.get(node.path) ?? 0;
       row.createEl("span", {
         cls: "fmo-time-badge fmo-context-time-badge",
         text: this.plugin.formatShortDuration(total),
@@ -244,6 +275,27 @@ export class LifeDashboardView extends ItemView {
     const value = this.plugin.settings.propertyValue.trim();
     const persistedFilter = this.plugin.getOutlineFilterQuery();
 
+    const headerTop = header.createEl("div", { cls: "fmo-header-top" });
+    headerTop.createEl("h3", { text: "Concerns Outline" });
+    headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
+
+    const rangeRow = header.createEl("div", { cls: "fmo-outline-range-row" });
+    this.renderOutlineRangeSelector(rangeRow);
+
+    const trackedOnlyRow = header.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const trackedOnlyInput = trackedOnlyRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: {
+        type: "checkbox"
+      }
+    }) as HTMLInputElement;
+    trackedOnlyInput.checked = this.outlineShowOnlyTrackedThisPeriod;
+    trackedOnlyRow.createEl("span", { text: "Show only tracked this period" });
+    setTooltip(
+      trackedOnlyRow,
+      "Hide concerns with less than 1 minute tracked in the selected period."
+    );
+
     const filterRow = header.createEl("div", { cls: "fmo-outline-filter-row" });
     const filterInput = filterRow.createEl("div", { cls: "fmo-outline-filter" });
     const filter = new SearchComponent(filterInput);
@@ -289,10 +341,6 @@ export class LifeDashboardView extends ItemView {
       this.openOutlineFilterHelp();
     });
 
-    const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Concerns Outline" });
-    headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
-
     header.createEl("div", {
       cls: "fmo-subheader",
       text: value.length > 0 ? `Filter: ${prop} = ${value}` : `Filter: has property \"${prop}\"`
@@ -311,7 +359,14 @@ export class LifeDashboardView extends ItemView {
       }
 
       const queryWithButtonFilters = this.withButtonFilters(query);
-      const filtered = this.filterTasksForOutline(tasks, queryWithButtonFilters);
+      const textFiltered = this.filterTasksForOutline(tasks, queryWithButtonFilters);
+      const ownSecondsByPath = this.getOwnSecondsByPath(textFiltered, this.outlineTimeRange);
+      const filtered = this.outlineShowOnlyTrackedThisPeriod
+        ? textFiltered.filter(
+            (item) => (ownSecondsByPath.get(item.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
+          )
+        : textFiltered;
+
       if (!filtered.length) {
         outlineBody.createEl("p", {
           cls: "fmo-empty",
@@ -320,10 +375,17 @@ export class LifeDashboardView extends ItemView {
         return;
       }
 
-      const tree = this.buildTaskTree(filtered);
+      const tree = this.buildTaskTree(filtered, (path) => ownSecondsByPath.get(path) ?? 0);
       const rootList = outlineBody.createEl("ul", { cls: "fmo-tree" });
       for (const root of tree.roots) {
-        this.renderTreeNode(rootList, root, tree.cumulativeSeconds, new Set(), this.outlineExpandAll);
+        this.renderTreeNode(
+          rootList,
+          root,
+          tree.cumulativeSeconds,
+          tree.ownSeconds,
+          new Set(),
+          this.outlineExpandAll
+        );
       }
     };
 
@@ -348,12 +410,54 @@ export class LifeDashboardView extends ItemView {
       renderFilteredOutline(filter.getValue());
     });
 
+    trackedOnlyInput.addEventListener("change", () => {
+      this.outlineShowOnlyTrackedThisPeriod = trackedOnlyInput.checked;
+      renderFilteredOutline(filter.getValue());
+    });
+
     filter.onChange((query) => {
       this.plugin.setOutlineFilterQuery(query);
       renderFilteredOutline(query);
     });
 
     renderFilteredOutline(persistedFilter);
+  }
+
+  private renderOutlineRangeSelector(containerEl: HTMLElement): void {
+    for (const option of OUTLINE_RANGE_OPTIONS) {
+      const button = containerEl.createEl("button", {
+        cls:
+          this.outlineTimeRange === option.value
+            ? "fmo-outline-range-btn fmo-outline-range-btn-active"
+            : "fmo-outline-range-btn",
+        text: option.label,
+        attr: {
+          type: "button",
+          "aria-pressed": String(this.outlineTimeRange === option.value)
+        }
+      });
+      setTooltip(button, this.plugin.getTimeRangeDescription(option.value));
+
+      button.addEventListener("click", () => {
+        if (this.outlineTimeRange === option.value) return;
+        this.outlineTimeRange = option.value;
+        void this.render();
+      });
+    }
+  }
+
+  private getOwnSecondsByPath(
+    tasks: TaskItem[],
+    range: OutlineTimeRange
+  ): Map<string, number> {
+    const ownSecondsByPath = new Map<string, number>();
+    for (const item of tasks) {
+      ownSecondsByPath.set(
+        item.file.path,
+        this.plugin.getTrackedSecondsForRange(item.file.path, range)
+      );
+    }
+    return ownSecondsByPath;
   }
 
   private withButtonFilters(query: string): string {
@@ -515,7 +619,8 @@ export class LifeDashboardView extends ItemView {
     }
   }
 
-  private buildTaskTree(tasks: TaskItem[]): TaskTreeData {
+  private buildTaskTree(tasks: TaskItem[], ownSecondsForPath?: (path: string) => number): TaskTreeData {
+    const resolveOwnSeconds = ownSecondsForPath ?? ((path: string) => this.plugin.getTrackedSeconds(path));
     const nodesByPath = new Map<string, TaskTreeNode>();
 
     for (const item of tasks) {
@@ -544,15 +649,18 @@ export class LifeDashboardView extends ItemView {
     const roots = Array.from(nodesByPath.values()).filter((node) => !node.parentPath);
     sortNodes(roots);
 
+    const ownSeconds = new Map<string, number>();
     const cumulativeSeconds = new Map<string, number>();
     const computeCumulative = (node: TaskTreeNode, ancestry: Set<string>): number => {
       if (cumulativeSeconds.has(node.path)) return cumulativeSeconds.get(node.path) ?? 0;
-      if (ancestry.has(node.path)) return this.plugin.getTrackedSeconds(node.path);
+      const own = ownSeconds.get(node.path) ?? resolveOwnSeconds(node.path);
+      ownSeconds.set(node.path, own);
+      if (ancestry.has(node.path)) return own;
 
       const nextAncestry = new Set(ancestry);
       nextAncestry.add(node.path);
 
-      let total = this.plugin.getTrackedSeconds(node.path);
+      let total = own;
       for (const child of node.children) {
         total += computeCumulative(child, nextAncestry);
       }
@@ -565,7 +673,7 @@ export class LifeDashboardView extends ItemView {
       computeCumulative(root, new Set());
     }
 
-    return { roots, cumulativeSeconds, nodesByPath };
+    return { roots, cumulativeSeconds, ownSeconds, nodesByPath };
   }
 
   private resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
@@ -617,6 +725,7 @@ export class LifeDashboardView extends ItemView {
     containerEl: HTMLElement,
     node: TaskTreeNode,
     cumulativeSeconds: Map<string, number>,
+    ownSeconds: Map<string, number>,
     ancestry: Set<string>,
     expandAll: boolean
   ): void {
@@ -629,7 +738,7 @@ export class LifeDashboardView extends ItemView {
     const row = li.createEl("div", { cls: "fmo-tree-row" });
 
     const total = cumulativeSeconds.get(node.path) ?? 0;
-    const own = this.plugin.getTrackedSeconds(node.path);
+    const own = ownSeconds.get(node.path) ?? 0;
 
     let childrenList: HTMLElement | null = null;
     if (node.children.length > 0) {
@@ -681,7 +790,7 @@ export class LifeDashboardView extends ItemView {
 
     if (childrenList) {
       for (const child of node.children) {
-        this.renderTreeNode(childrenList, child, cumulativeSeconds, nextAncestry, expandAll);
+        this.renderTreeNode(childrenList, child, cumulativeSeconds, ownSeconds, nextAncestry, expandAll);
       }
     }
   }

@@ -20,6 +20,15 @@ type ToggleSettingConfig = {
   afterSave?: () => Promise<void>;
 };
 
+type DropdownSettingConfig = {
+  name: string;
+  description: string;
+  options: Array<{ value: string; label: string }>;
+  getValue: () => string;
+  setValue: (value: string) => void;
+  afterSave?: () => Promise<void>;
+};
+
 export class LifeDashboardSettingTab extends PluginSettingTab {
   private readonly plugin: LifeDashboardPlugin;
 
@@ -122,6 +131,22 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
       },
       afterSave: refreshFilters
     });
+
+    this.addDropdownSetting(containerEl, {
+      name: "Week starts on",
+      description: "Used for This week totals in timer summaries and outline range filtering.",
+      options: [
+        { value: "monday", label: "Monday" },
+        { value: "sunday", label: "Sunday" }
+      ],
+      getValue: () => this.plugin.settings.weekStartsOn,
+      setValue: (value) => {
+        this.plugin.settings.weekStartsOn = value === "sunday" ? "sunday" : "monday";
+      },
+      afterSave: async () => {
+        this.plugin.refreshView();
+      }
+    });
   }
 
   private addTextSetting(containerEl: HTMLElement, config: TextSettingConfig): void {
@@ -204,6 +229,22 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
           await this.persistAndAfterSave(config.afterSave);
         })
       );
+  }
+
+  private addDropdownSetting(containerEl: HTMLElement, config: DropdownSettingConfig): void {
+    new Setting(containerEl)
+      .setName(config.name)
+      .setDesc(config.description)
+      .addDropdown((dropdown) => {
+        for (const option of config.options) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(config.getValue()).onChange(async (value) => {
+          config.setValue(value);
+          await this.persistAndAfterSave(config.afterSave);
+        });
+      });
   }
 
   private async persistAndAfterSave(afterSave?: () => Promise<void>): Promise<void> {
