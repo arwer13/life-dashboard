@@ -73,9 +73,14 @@ Behavior:
 
 - `Start`/`Stop` in panel controls tracking
 - `Change task...` opens filtered task selector
-- timer panel shows today's entries for the current task as `HH:mm Xm` (start-time + duration)
-- timer panel also shows cumulative totals for `Today`, `Yesterday`, and `This week`
-- today's entries refresh after startup and after stopping a tracking session
+- while tracking, round timer shows tracking start time as `HH:mm` (small text above elapsed timer)
+- while tracking, round timer shows a compact `+5m` button next to start time
+- `+5m` shifts timer start earlier by up to 5 minutes without overlapping existing saved entries (all concerns)
+- if no safe extension is available, `+5m` is disabled
+- timer side summary shows cumulative `This week` and `Yesterday`
+- timer side list heading shows `Today (<duration>):`, followed by today's entries as `HH:mm Xm`
+- timer alerts (from notification rules) use system notification + native desktop beep
+- summary and today's entries refresh after startup and after stopping a tracking session
 - if timer is idle and active note matches task filters, it auto-selects
 - when first tracking a note, plugin ensures frontmatter `id` exists (UUID) and uses that stable ID in log entries
 - per-note arrays are sorted by start time ascending
@@ -110,6 +115,7 @@ Timer notification rule format:
   - `30m "Hey, the time is up!"`
   - `35m "You don't wanna miss the opportunity!"`
 - supported duration units: `s`, `m`, `h`
+- when a threshold is reached, plugin sends a system notification and plays a native desktop beep
 
 ## Manual plugin install (fallback)
 

@@ -20,6 +20,19 @@ type TimerNotificationRule = {
   label: string;
   message: string;
 };
+type PowerMonitorEvent = "suspend" | "lock-screen";
+const AUTO_STOP_POWER_EVENTS: PowerMonitorEvent[] = ["suspend", "lock-screen"];
+type MainProcessPowerMonitor = {
+  on: (event: PowerMonitorEvent, listener: () => void) => void;
+  off?: (event: PowerMonitorEvent, listener: () => void) => void;
+  removeListener?: (event: PowerMonitorEvent, listener: () => void) => void;
+};
+type ElectronMainLike = {
+  powerMonitor?: MainProcessPowerMonitor;
+};
+type ElectronWithRemoteLike = {
+  remote?: ElectronMainLike;
+};
 
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
@@ -38,10 +51,13 @@ export default class LifeDashboardPlugin extends Plugin {
   private parsedNotificationRulesCacheRaw = "";
   private parsedNotificationRulesCache: TimerNotificationRule[] = [];
   private notificationPermissionRequested = false;
+  private powerAutoStopInFlight: Promise<void> | null = null;
+  private removePowerMonitorListeners: Array<() => void> = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.initializeServices();
+    this.registerMainProcessPowerMonitorAutoStop();
     console.info(
       `[life-dashboard] loaded v${DISPLAY_VERSION} at ${new Date().toISOString()}`
     );
@@ -121,6 +137,8 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    this.clearPowerMonitorListeners();
+
     if (this.outlineFilterSaveTimer !== null) {
       window.clearTimeout(this.outlineFilterSaveTimer);
       this.outlineFilterSaveTimer = null;
@@ -350,6 +368,83 @@ export default class LifeDashboardPlugin extends Plugin {
     });
 
     this.viewController.syncLastPersistedVisibility();
+  }
+
+  private registerMainProcessPowerMonitorAutoStop(): void {
+    const powerMonitor = this.getMainProcessPowerMonitor();
+    if (!powerMonitor || typeof powerMonitor.on !== "function") {
+      console.warn("[life-dashboard] Main-process powerMonitor is unavailable.");
+      return;
+    }
+
+    const subscribe = (event: PowerMonitorEvent): void => {
+      const handler = (): void => {
+        this.requestPowerAutoStop(event);
+      };
+      powerMonitor.on(event, handler);
+      this.removePowerMonitorListeners.push(() => {
+        if (typeof powerMonitor.off === "function") {
+          powerMonitor.off(event, handler);
+          return;
+        }
+        if (typeof powerMonitor.removeListener === "function") {
+          powerMonitor.removeListener(event, handler);
+        }
+      });
+    };
+
+    for (const event of AUTO_STOP_POWER_EVENTS) {
+      subscribe(event);
+    }
+    console.info(
+      "[life-dashboard] Registered main-process powerMonitor auto-stop listeners (suspend, lock-screen)."
+    );
+  }
+
+  private getMainProcessPowerMonitor(): MainProcessPowerMonitor | null {
+    const req = (window as unknown as { require?: (id: string) => unknown }).require;
+    if (!req) return null;
+
+    try {
+      const electronMain = req("electron/main") as ElectronMainLike | undefined;
+      if (electronMain?.powerMonitor) {
+        return electronMain.powerMonitor;
+      }
+    } catch {
+      // ignore and try remote bridge
+    }
+
+    try {
+      const electron = req("electron") as ElectronWithRemoteLike | undefined;
+      if (electron?.remote?.powerMonitor) {
+        return electron.remote.powerMonitor;
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  }
+
+  private requestPowerAutoStop(source: PowerMonitorEvent): void {
+    if (!this.settings.activeTrackingStart) return;
+    if (this.powerAutoStopInFlight) return;
+
+    console.info(`[life-dashboard] Auto-stopping timer due to power event: ${source}`);
+    this.powerAutoStopInFlight = this.stopTracking()
+      .catch((error) => {
+        console.error("[life-dashboard] Failed to auto-stop timer from power event:", source, error);
+      })
+      .finally(() => {
+        this.powerAutoStopInFlight = null;
+      });
+  }
+
+  private clearPowerMonitorListeners(): void {
+    for (const remove of this.removePowerMonitorListeners) {
+      remove();
+    }
+    this.removePowerMonitorListeners = [];
   }
 
   private async reloadTotalsAndRefresh(): Promise<void> {
