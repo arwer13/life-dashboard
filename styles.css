@@ -31,6 +31,18 @@
   gap: 12px;
 }
 
+.frontmatter-outline-view .fmo-timer-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-timer-start-time {
+  font-size: 16px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .frontmatter-outline-view .fmo-today-entries {
   min-width: 128px;
   max-width: 220px;
@@ -93,12 +105,20 @@
 }
 
 .frontmatter-outline-view .fmo-main-adjust {
-  min-width: 100px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 2px 8px;
   font-size: 12px;
+  line-height: 1.1;
   background: var(--interactive-normal);
+}
+
+.frontmatter-outline-view .fmo-main-adjust:hover:not(:disabled) {
+  background: var(--interactive-hover);
+}
+
+.frontmatter-outline-view .fmo-main-adjust:disabled {
+  opacity: 0.6;
 }
 
 .frontmatter-outline-view .fmo-context-block {

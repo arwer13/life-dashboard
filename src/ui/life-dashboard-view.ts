@@ -89,12 +89,14 @@ export class LifeDashboardView extends ItemView {
     const top = panel.createEl("div", { cls: "fmo-tracker-top" });
 
     const timerRing = top.createEl("div", { cls: "fmo-ring" });
+    const isTracking = Boolean(this.plugin.settings.activeTrackingStart);
+    if (isTracking) this.renderTimerMetaRow(timerRing);
+
     this.liveTimerEl = timerRing.createEl("div", {
       cls: "fmo-timer-value",
       text: this.plugin.formatClockDuration(this.plugin.getCurrentElapsedSeconds())
     });
 
-    const isTracking = Boolean(this.plugin.settings.activeTrackingStart);
     const toggleBtn = timerRing.createEl("button", {
       cls: "fmo-main-toggle",
       text: isTracking ? "Stop" : "Start"
@@ -103,38 +105,50 @@ export class LifeDashboardView extends ItemView {
       void (isTracking ? this.plugin.stopTracking() : this.plugin.startTracking());
     });
 
-    if (isTracking) {
-      const plusBtn = timerRing.createEl("button", {
-        cls: "fmo-main-adjust",
-        text: `+${TRACKING_ADJUST_MINUTES}m`,
-        attr: {
-          type: "button",
-          "aria-label": `Add ${TRACKING_ADJUST_MINUTES} minutes`
-        }
-      });
-
-      const canExtend = this.plugin.getExtendTrackingBySecondsAvailable() > 0;
-      plusBtn.disabled = !canExtend;
-      if (!canExtend) {
-        setTooltip(
-          plusBtn,
-          "Cannot add more time without intersecting the latest saved time entry."
-        );
-      } else {
-        setTooltip(plusBtn, `Move timer start ${TRACKING_ADJUST_MINUTES} minutes earlier.`);
-      }
-
-      plusBtn.addEventListener("click", () => {
-        void this.plugin.extendActiveTrackingByMinutes(TRACKING_ADJUST_MINUTES);
-      });
-    }
-
     const activeTaskPath = this.plugin.getActiveTaskPath();
     if (activeTaskPath) {
       this.renderConcernPeriodSummary(top, activeTaskPath);
     }
 
     this.renderTrackedContext(panel, tasks, tree);
+  }
+
+  private renderTimerMetaRow(timerRing: HTMLElement): void {
+    const metaRow = timerRing.createEl("div", { cls: "fmo-timer-meta" });
+    metaRow.createEl("span", {
+      cls: "fmo-timer-start-time",
+      text: this.getActiveTrackingStartTimeLabel()
+    });
+
+    const plusBtn = metaRow.createEl("button", {
+      cls: "fmo-main-adjust",
+      text: `+${TRACKING_ADJUST_MINUTES}m`,
+      attr: {
+        type: "button",
+        "aria-label": `Add ${TRACKING_ADJUST_MINUTES} minutes`
+      }
+    });
+
+    const canExtend = this.plugin.getExtendTrackingBySecondsAvailable() > 0;
+    plusBtn.disabled = !canExtend;
+    setTooltip(
+      plusBtn,
+      canExtend
+        ? `Move timer start ${TRACKING_ADJUST_MINUTES} minutes earlier.`
+        : "Cannot add more time without intersecting the latest saved time entry."
+    );
+
+    plusBtn.addEventListener("click", () => {
+      void this.plugin.extendActiveTrackingByMinutes(TRACKING_ADJUST_MINUTES);
+    });
+  }
+
+  private getActiveTrackingStartTimeLabel(): string {
+    const start = Number(this.plugin.settings.activeTrackingStart);
+    if (!Number.isFinite(start) || start <= 0) return "--:--";
+    const date = new Date(start);
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
   private renderConcernPeriodSummary(containerEl: HTMLElement, taskPath: string): void {
