@@ -12,6 +12,16 @@ type TextSettingConfig = {
   transform?: (value: string) => string;
 };
 
+type TextAreaSettingConfig = {
+  name: string;
+  description: string;
+  placeholder: string;
+  getValue: () => string;
+  setValue: (value: string) => void;
+  afterSave?: () => Promise<void>;
+  transform?: (value: string) => string;
+};
+
 type ToggleSettingConfig = {
   name: string;
   description: string;
@@ -122,6 +132,21 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
       this.addTextSetting(containerEl, config);
     }
 
+    this.addTextAreaSetting(containerEl, {
+      name: "Timer notifications",
+      description:
+        "One rule per line. Format: 30m \"Message\" (also supports s/h). Example: 30m \"Hey, the time is up!\"",
+      placeholder:
+        "30m \"Hey, the time is up!\"\n35m \"You don't wanna miss the opportunity!\"",
+      getValue: () => this.plugin.settings.timerNotificationRules,
+      setValue: (value) => {
+        this.plugin.settings.timerNotificationRules = value;
+      },
+      afterSave: async () => {
+        this.plugin.refreshView();
+      }
+    });
+
     this.addToggleSetting(containerEl, {
       name: "Case sensitive",
       description: "If enabled, value matching is case sensitive for all filters.",
@@ -229,6 +254,70 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
           await this.persistAndAfterSave(config.afterSave);
         })
       );
+  }
+
+  private addTextAreaSetting(containerEl: HTMLElement, config: TextAreaSettingConfig): void {
+    let saveTimer: number | null = null;
+    let dirty = false;
+    let persistRunning = false;
+
+    const persistIfNeeded = async (): Promise<void> => {
+      if (!dirty || persistRunning) return;
+
+      persistRunning = true;
+      dirty = false;
+      try {
+        await this.persistAndAfterSave(config.afterSave);
+      } catch (error) {
+        console.error("[life-dashboard] Failed to persist textarea setting:", error);
+      } finally {
+        persistRunning = false;
+        if (dirty) {
+          void persistIfNeeded();
+        }
+      }
+    };
+
+    const schedulePersist = (): void => {
+      dirty = true;
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        void persistIfNeeded();
+      }, 350);
+    };
+
+    const flushPersist = (): void => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      if (!dirty) return;
+      void persistIfNeeded();
+    };
+
+    new Setting(containerEl)
+      .setName(config.name)
+      .setDesc(config.description)
+      .addTextArea((area) => {
+        area
+          .setPlaceholder(config.placeholder)
+          .setValue(config.getValue())
+          .onChange((value) => {
+            const transform = config.transform ?? ((next: string) => next);
+            config.setValue(transform(value));
+            schedulePersist();
+          });
+
+        area.inputEl.rows = 3;
+        area.inputEl.addEventListener("blur", () => {
+          flushPersist();
+        });
+
+        return area;
+      });
   }
 
   private addDropdownSetting(containerEl: HTMLElement, config: DropdownSettingConfig): void {

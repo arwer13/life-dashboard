@@ -101,6 +101,15 @@ Settings:
 - `Additional filter value` (optional)
 - `Case sensitive`
 - `Week starts on` (`Monday` or `Sunday`, used by `This week` totals and range filtering)
+- `Timer notifications` (multiline rules, one per line)
+
+Timer notification rule format:
+
+- `<duration> "message"`
+- examples:
+  - `30m "Hey, the time is up!"`
+  - `35m "You don't wanna miss the opportunity!"`
+- supported duration units: `s`, `m`, `h`
 
 ## Manual plugin install (fallback)
 

@@ -15,6 +15,11 @@ import { DISPLAY_VERSION } from "./version";
 export type OutlineTimeRange = "today" | "week" | "month" | "all";
 type PeriodTooltipRange = OutlineTimeRange | "yesterday";
 type TimeWindow = { startMs: number; endMs: number };
+type TimerNotificationRule = {
+  thresholdSeconds: number;
+  label: string;
+  message: string;
+};
 
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
@@ -27,6 +32,12 @@ export default class LifeDashboardPlugin extends Plugin {
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
+  private activeNotificationSessionKey = "";
+  private lastElapsedSecondsForNotify: number | null = null;
+  private notifiedThresholdSeconds = new Set<number>();
+  private parsedNotificationRulesCacheRaw = "";
+  private parsedNotificationRulesCache: TimerNotificationRule[] = [];
+  private notificationPermissionRequested = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -289,6 +300,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private pushLiveTimerUpdate(): void {
     this.viewController.pushLiveTimerUpdate();
+    this.handleTimerNotifications();
   }
 
   private async persistVisibilityState(force = false): Promise<void> {
@@ -438,6 +450,150 @@ export default class LifeDashboardPlugin extends Plugin {
     const hh = pad(date.getHours());
     const min = pad(date.getMinutes());
     return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  }
+
+  private handleTimerNotifications(): void {
+    const start = Number(this.settings.activeTrackingStart);
+    if (!Number.isFinite(start) || start <= 0) {
+      this.resetNotificationState();
+      return;
+    }
+
+    const sessionKey = `${start}:${this.settings.activeTrackingTaskId || ""}`;
+    const elapsed = this.getCurrentElapsedSeconds();
+
+    if (sessionKey !== this.activeNotificationSessionKey) {
+      this.activeNotificationSessionKey = sessionKey;
+      this.lastElapsedSecondsForNotify = elapsed;
+      this.notifiedThresholdSeconds.clear();
+      return;
+    }
+
+    const previous = this.lastElapsedSecondsForNotify ?? elapsed;
+    if (elapsed < previous) {
+      this.lastElapsedSecondsForNotify = elapsed;
+      this.notifiedThresholdSeconds.clear();
+      return;
+    }
+
+    const rules = this.getTimerNotificationRules();
+    for (const rule of rules) {
+      if (this.notifiedThresholdSeconds.has(rule.thresholdSeconds)) continue;
+      if (previous < rule.thresholdSeconds && elapsed >= rule.thresholdSeconds) {
+        this.notifiedThresholdSeconds.add(rule.thresholdSeconds);
+        void this.showTimerNotification(rule.message || `Timer hit ${rule.label}`);
+        this.playNotificationBeep();
+      }
+    }
+
+    this.lastElapsedSecondsForNotify = elapsed;
+  }
+
+  private resetNotificationState(): void {
+    this.activeNotificationSessionKey = "";
+    this.lastElapsedSecondsForNotify = null;
+    this.notifiedThresholdSeconds.clear();
+  }
+
+  private getTimerNotificationRules(): TimerNotificationRule[] {
+    const raw = this.settings.timerNotificationRules || "";
+    if (raw === this.parsedNotificationRulesCacheRaw) {
+      return this.parsedNotificationRulesCache;
+    }
+
+    const parsed = this.parseTimerNotificationRules(raw);
+    this.parsedNotificationRulesCacheRaw = raw;
+    this.parsedNotificationRulesCache = parsed;
+    return parsed;
+  }
+
+  private parseTimerNotificationRules(raw: string): TimerNotificationRule[] {
+    const byThreshold = new Map<number, TimerNotificationRule>();
+    const lines = raw.split(/\r?\n/);
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      const match = /^(\d+\s*[smhSMH])(?:\s+(?:"([^"]+)"|(.*)))?$/.exec(trimmed);
+      if (!match) {
+        console.warn("[life-dashboard] Invalid timer notification rule:", trimmed);
+        continue;
+      }
+
+      const thresholdSeconds = this.parseDurationToSeconds(match[1]);
+      if (thresholdSeconds <= 0) continue;
+
+      const rawMessage = (match[2] ?? match[3] ?? "").trim();
+      const label = match[1].replace(/\s+/g, "").toLowerCase();
+      byThreshold.set(thresholdSeconds, {
+        thresholdSeconds,
+        label,
+        message: rawMessage || `Timer reached ${label}`
+      });
+    }
+
+    return Array.from(byThreshold.values()).sort((a, b) => a.thresholdSeconds - b.thresholdSeconds);
+  }
+
+  private parseDurationToSeconds(raw: string): number {
+    const match = /^(\d+)\s*([smhSMH])$/.exec(raw.trim());
+    if (!match) return 0;
+
+    const value = Number(match[1]);
+    if (!Number.isFinite(value) || value <= 0) return 0;
+
+    const unit = match[2].toLowerCase();
+    if (unit === "h") return value * 3600;
+    if (unit === "m") return value * 60;
+    return value;
+  }
+
+  private async showTimerNotification(message: string): Promise<void> {
+    const title = "Life Dashboard Timer";
+
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      console.warn("[life-dashboard] System notifications are unavailable in this environment.");
+      return;
+    }
+
+    if (window.Notification.permission === "granted") {
+      new window.Notification(title, { body: message });
+      return;
+    }
+
+    if (window.Notification.permission === "denied") {
+      console.warn("[life-dashboard] System notifications are denied by the user.");
+      return;
+    }
+
+    if (this.notificationPermissionRequested) return;
+    this.notificationPermissionRequested = true;
+    try {
+      const permission = await window.Notification.requestPermission();
+      if (permission === "granted") {
+        new window.Notification(title, { body: message });
+      } else {
+        console.warn("[life-dashboard] System notification permission was not granted.");
+      }
+    } catch (error) {
+      console.warn("[life-dashboard] Failed to request notification permission:", error);
+    }
+  }
+
+  private playNotificationBeep(): void {
+    try {
+      const electron = (
+        window as unknown as { require?: (id: string) => { shell?: { beep?: () => void } } }
+      ).require?.("electron");
+      if (electron?.shell?.beep) {
+        electron.shell.beep();
+      } else {
+        console.warn("[life-dashboard] Native desktop beep is unavailable in this environment.");
+      }
+    } catch {
+      console.warn("[life-dashboard] Failed to play native desktop beep.");
+    }
   }
 
   private getTaskIdFromFrontmatter(frontmatter: FrontMatterCache | undefined): string {
