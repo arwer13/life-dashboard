@@ -18,9 +18,7 @@ export class TimeLogStore {
   }
 
   async appendTimeEntry(noteId: string, startMs: number, endMs: number): Promise<void> {
-    const durationMinutes = Math.max(1, Math.round((endMs - startMs) / 60000));
-    const start = this.formatTimestamp(new Date(startMs));
-    const token = this.formatIntervalToken(start, durationMinutes);
+    const token = this.formatIntervalTokenFromMs(startMs, endMs);
 
     const data = await this.readTimeLogMap();
     const current = data[noteId] ?? [];
@@ -222,9 +220,7 @@ export class TimeLogStore {
     }
 
     return merged.map((interval) => {
-      const start = this.formatTimestamp(new Date(interval.startMs));
-      const durationMinutes = Math.max(1, Math.round((interval.endMs - interval.startMs) / 60000));
-      return this.formatIntervalToken(start, durationMinutes);
+      return this.formatIntervalTokenFromMs(interval.startMs, interval.endMs);
     });
   }
 
@@ -260,5 +256,15 @@ export class TimeLogStore {
     const hh = pad(date.getHours());
     const min = pad(date.getMinutes());
     return `${yyyy}.${mm}.${dd}-${hh}:${min}`;
+  }
+
+  private formatIntervalTokenFromMs(startMs: number, endMs: number): string {
+    const start = this.formatTimestamp(new Date(startMs));
+    const durationMinutes = this.durationMinutesFromMs(startMs, endMs);
+    return this.formatIntervalToken(start, durationMinutes);
+  }
+
+  private durationMinutesFromMs(startMs: number, endMs: number): number {
+    return Math.max(1, Math.floor((endMs - startMs) / 60000));
   }
 }
