@@ -15,6 +15,7 @@ export interface LifeDashboardSettings {
   minimumTrackableMinutes: number;
   weekStartsOn: "monday" | "sunday";
   timerNotificationRules: string;
+  canvasDraftState: string;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
@@ -36,5 +37,6 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   activeTrackingTaskId: "",
   minimumTrackableMinutes: 2,
   weekStartsOn: "monday",
-  timerNotificationRules: ""
+  timerNotificationRules: "",
+  canvasDraftState: ""
 };

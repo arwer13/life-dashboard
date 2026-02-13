@@ -72,7 +72,8 @@ Current schema:
 Behavior:
 
 - `Start`/`Stop` in panel controls tracking
-- `Open Life Dashboard` opens two separate right-side tabs: `Life Timer` and `Concerns Outline`
+- `Open Life Dashboard` opens dashboard views: `Life Timer`, `Concerns Outline`, and `Concerns Canvas (draft)`
+- `Concerns Canvas` saves tree geometry, filters, and collapse states between tab reopenings
 - `Change task...` opens filtered task selector
 - while tracking, round timer shows tracking start time as `HH:mm` (small text above elapsed timer)
 - while tracking, round timer shows a compact `+5m` button next to start time

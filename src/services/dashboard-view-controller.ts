@@ -1,7 +1,9 @@
 import type { App, WorkspaceLeaf } from "obsidian";
 import {
+  LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
   LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
 } from "../ui/life-dashboard-view";
@@ -32,6 +34,15 @@ export class DashboardViewController {
     if (!outlineLeaf) return;
 
     this.app.workspace.revealLeaf(outlineLeaf);
+    const canvasLeaf = await this.ensureViewLeaf(
+      VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+      false,
+      false,
+      "tab"
+    );
+    if (!canvasLeaf) return;
+
+    this.app.workspace.revealLeaf(canvasLeaf);
     await this.persistVisibilityState(true);
     this.refreshView();
   }
@@ -39,6 +50,7 @@ export class DashboardViewController {
   refreshView(): void {
     this.refreshTimerView();
     this.refreshOutlineView();
+    this.refreshCanvasView();
   }
 
   pushLiveTimerUpdate(): void {
@@ -80,20 +92,34 @@ export class DashboardViewController {
     }
   }
 
+  private refreshCanvasView(): void {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_CANVAS);
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (view instanceof LifeDashboardConcernCanvasView) {
+        void view.render();
+      }
+    }
+  }
+
   private isDashboardVisible(): boolean {
     return (
       this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER).length > 0 ||
-      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE).length > 0
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE).length > 0 ||
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_CANVAS).length > 0
     );
   }
 
   private async ensureViewLeaf(
     viewType: string,
     split: boolean,
-    active: boolean
+    active: boolean,
+    placement: "right" | "tab" = "right"
   ): Promise<WorkspaceLeaf | null> {
     const { workspace } = this.app;
-    const leaf = workspace.getLeavesOfType(viewType)[0] ?? workspace.getRightLeaf(split);
+    const leaf =
+      workspace.getLeavesOfType(viewType)[0] ??
+      (placement === "tab" ? workspace.getLeaf("tab") : workspace.getRightLeaf(split));
     if (!leaf) return null;
 
     if (leaf.getViewState().type !== viewType) {

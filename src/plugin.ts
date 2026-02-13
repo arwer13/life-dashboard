@@ -10,8 +10,10 @@ import { TimeLogStore } from "./services/time-log-store";
 import { TrackingService } from "./services/tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import {
+  LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
   LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
 } from "./ui/life-dashboard-view";
@@ -50,6 +52,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
+  private canvasDraftSaveTimer: number | null = null;
   private activeNotificationSessionKey = "";
   private lastElapsedSecondsForNotify: number | null = null;
   private notifiedThresholdSeconds = new Set<number>();
@@ -69,6 +72,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMER, (leaf) => new LifeDashboardTimerView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, (leaf) => new LifeDashboardOutlineView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CANVAS, (leaf) => new LifeDashboardConcernCanvasView(leaf, this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
@@ -148,8 +152,12 @@ export default class LifeDashboardPlugin extends Plugin {
     if (this.outlineFilterSaveTimer !== null) {
       window.clearTimeout(this.outlineFilterSaveTimer);
       this.outlineFilterSaveTimer = null;
-      await this.saveSettings();
     }
+    if (this.canvasDraftSaveTimer !== null) {
+      window.clearTimeout(this.canvasDraftSaveTimer);
+      this.canvasDraftSaveTimer = null;
+    }
+    await this.saveSettings();
 
     await this.trackingService.flushActiveTrackingOnUnload();
     await this.persistVisibilityState(true);
@@ -225,6 +233,16 @@ export default class LifeDashboardPlugin extends Plugin {
     if (this.settings.outlineFilterQuery === query) return;
     this.settings.outlineFilterQuery = query;
     this.scheduleOutlineFilterSave();
+  }
+
+  getCanvasDraftState(): string {
+    return this.settings.canvasDraftState || "";
+  }
+
+  setCanvasDraftState(state: string): void {
+    if (this.settings.canvasDraftState === state) return;
+    this.settings.canvasDraftState = state;
+    this.scheduleCanvasDraftSave();
   }
 
   async activateView(): Promise<void> {
@@ -483,6 +501,17 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.outlineFilterSaveTimer = window.setTimeout(() => {
       this.outlineFilterSaveTimer = null;
+      void this.saveSettings();
+    }, 300);
+  }
+
+  private scheduleCanvasDraftSave(): void {
+    if (this.canvasDraftSaveTimer !== null) {
+      window.clearTimeout(this.canvasDraftSaveTimer);
+    }
+
+    this.canvasDraftSaveTimer = window.setTimeout(() => {
+      this.canvasDraftSaveTimer = null;
       void this.saveSettings();
     }, 300);
   }

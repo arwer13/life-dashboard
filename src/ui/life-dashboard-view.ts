@@ -15,6 +15,7 @@ import type { OutlineTimeRange } from "../plugin";
 
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_CANVAS = "life-dashboard-canvas-view";
 
 type TaskTreeData = {
   roots: TaskTreeNode[];
@@ -38,6 +39,52 @@ type TreeRenderState = {
 
 type RecencySection = { label: string; matchedPaths: Set<string> };
 
+type CanvasTreeDraft = {
+  id: string;
+  title: string;
+  rootPath: string;
+  query: string;
+  sortMode: OutlineSortMode;
+  range: OutlineTimeRange;
+  trackedOnly: boolean;
+  showParents: boolean;
+  collapsed: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  collapsedNodePaths: Set<string>;
+};
+
+type CanvasTreeRenderState = {
+  cumulativeSeconds: Map<string, number>;
+  ownSeconds: Map<string, number>;
+  matchedPaths: Set<string>;
+};
+
+type PersistedCanvasTreeDraft = {
+  id: string;
+  title: string;
+  rootPath: string;
+  query: string;
+  sortMode: OutlineSortMode;
+  range: OutlineTimeRange;
+  trackedOnly: boolean;
+  showParents: boolean;
+  collapsed: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  collapsedNodePaths: string[];
+};
+
+type PersistedCanvasDraftState = {
+  version: 1;
+  nextTreeOrdinal: number;
+  trees: PersistedCanvasTreeDraft[];
+};
+
 type OutlineFilterToken =
   | { key: "any" | "path" | "file"; value: string; negated: boolean }
   | { key: "prop"; prop: string; value: string | null; negated: boolean };
@@ -46,6 +93,13 @@ type OutlineSortMode = "recent" | "priority";
 
 const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
 const TRACKING_ADJUST_MINUTES = 5;
+const CANVAS_STAGE_WIDTH = 3600;
+const CANVAS_STAGE_HEIGHT = 2400;
+const CANVAS_CARD_DEFAULT_WIDTH = 380;
+const CANVAS_CARD_DEFAULT_HEIGHT = 560;
+const CANVAS_CARD_MIN_WIDTH = 320;
+const CANVAS_CARD_MIN_HEIGHT = 280;
+const CANVAS_DRAFT_VERSION = 1;
 
 const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
   { value: "today", label: "today" },
@@ -271,6 +325,117 @@ abstract class LifeDashboardBaseView extends ItemView {
 
     visit(value);
     return Array.from(new Set(candidates));
+  }
+
+  protected filterTasksByQuery(tasks: TaskItem[], query: string): TaskItem[] {
+    const tokens = this.parseFilterTokens(query);
+    if (tokens.length === 0) return tasks;
+    return tasks.filter((task) => this.taskMatchesFilter(task, tokens));
+  }
+
+  protected parseFilterTokens(query: string): OutlineFilterToken[] {
+    const out: OutlineFilterToken[] = [];
+    const pattern = /"([^"]*)"|(\S+)/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = pattern.exec(query)) !== null) {
+      const raw = (match[1] ?? match[2] ?? "").trim();
+      if (!raw) continue;
+
+      let token = raw;
+      let negated = false;
+      if (token.startsWith("-") && token.length > 1) {
+        negated = true;
+        token = token.slice(1);
+      }
+
+      const propertyQualifier = /^(?:prop|fm):([^=:\s]+)(?:=(.+))?$/i.exec(token);
+      if (propertyQualifier) {
+        const prop = propertyQualifier[1]?.trim();
+        const rawValue = propertyQualifier[2]?.trim();
+        if (!prop) continue;
+
+        out.push({
+          key: "prop",
+          prop,
+          value: rawValue ? rawValue.replace(/^['"]|['"]$/g, "") : null,
+          negated
+        });
+        continue;
+      }
+
+      const qualifier = /^(path|file):(.*)$/i.exec(token);
+      const key = (qualifier?.[1]?.toLowerCase() as "path" | "file" | undefined) ?? "any";
+      const value = (qualifier ? qualifier[2] : token).trim();
+      if (!value) continue;
+
+      out.push({ key, value, negated });
+    }
+
+    return out;
+  }
+
+  protected taskMatchesFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolean {
+    const pathText = task.file.path.toLowerCase();
+    const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
+    const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
+
+    for (const token of tokens) {
+      if (token.key === "prop") {
+        const matches = this.matchesFrontmatterFilter(task.frontmatter, token.prop, token.value);
+        if (token.negated ? matches : !matches) {
+          return false;
+        }
+        continue;
+      }
+
+      const matcher = prepareSimpleSearch(token.value.toLowerCase());
+      const target = token.key === "path" ? pathText : token.key === "file" ? fileText : anyText;
+      const matches = matcher(target) !== null;
+      if (token.negated ? matches : !matches) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  protected matchesFrontmatterFilter(
+    frontmatter: TaskItem["frontmatter"],
+    key: string,
+    expectedValue: string | null
+  ): boolean {
+    if (!frontmatter || !(key in frontmatter)) {
+      return false;
+    }
+
+    if (expectedValue == null) {
+      return true;
+    }
+
+    const expected = expectedValue.toLowerCase();
+    const values = this.flattenFrontmatterValues(frontmatter[key]);
+    return values.some((value) => value.toLowerCase() === expected);
+  }
+
+  protected flattenFrontmatterValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
+    }
+
+    if (value == null) {
+      return [""];
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return [String(value).trim()];
+    }
+
+    try {
+      return [JSON.stringify(value)];
+    } catch {
+      return [String(value)];
+    }
   }
 }
 
@@ -1019,116 +1184,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private filterTasksForOutline(tasks: TaskItem[], query: string): TaskItem[] {
-    const tokens = this.parseOutlineFilterTokens(query);
-    if (tokens.length === 0) return tasks;
-
-    return tasks.filter((item) => this.taskMatchesOutlineFilter(item, tokens));
-  }
-
-  private parseOutlineFilterTokens(query: string): OutlineFilterToken[] {
-    const out: OutlineFilterToken[] = [];
-    const pattern = /"([^"]*)"|(\S+)/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = pattern.exec(query)) !== null) {
-      const raw = (match[1] ?? match[2] ?? "").trim();
-      if (!raw) continue;
-
-      let token = raw;
-      let negated = false;
-      if (token.startsWith("-") && token.length > 1) {
-        negated = true;
-        token = token.slice(1);
-      }
-
-      const propertyQualifier = /^(?:prop|fm):([^=:\s]+)(?:=(.+))?$/i.exec(token);
-      if (propertyQualifier) {
-        const prop = propertyQualifier[1]?.trim();
-        const rawValue = propertyQualifier[2]?.trim();
-        if (!prop) continue;
-
-        out.push({
-          key: "prop",
-          prop,
-          value: rawValue ? rawValue.replace(/^['"]|['"]$/g, "") : null,
-          negated
-        });
-        continue;
-      }
-
-      const qualifier = /^(path|file):(.*)$/i.exec(token);
-      const key = (qualifier?.[1]?.toLowerCase() as "path" | "file" | undefined) ?? "any";
-      const value = (qualifier ? qualifier[2] : token).trim();
-      if (!value) continue;
-
-      out.push({ key, value, negated });
-    }
-
-    return out;
-  }
-
-  private taskMatchesOutlineFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolean {
-    const pathText = task.file.path.toLowerCase();
-    const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
-    const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
-
-    for (const token of tokens) {
-      if (token.key === "prop") {
-        const matches = this.matchesFrontmatterFilter(task.frontmatter, token.prop, token.value);
-        if (token.negated ? matches : !matches) {
-          return false;
-        }
-        continue;
-      }
-
-      const matcher = prepareSimpleSearch(token.value.toLowerCase());
-      const target = token.key === "path" ? pathText : token.key === "file" ? fileText : anyText;
-      const matches = matcher(target) !== null;
-
-      if (token.negated ? matches : !matches) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private matchesFrontmatterFilter(
-    frontmatter: TaskItem["frontmatter"],
-    key: string,
-    expectedValue: string | null
-  ): boolean {
-    if (!frontmatter || !(key in frontmatter)) {
-      return false;
-    }
-
-    if (expectedValue == null) {
-      return true;
-    }
-
-    const expected = expectedValue.toLowerCase();
-    const values = this.flattenFrontmatterValues(frontmatter[key]);
-    return values.some((value) => value.toLowerCase() === expected);
-  }
-
-  private flattenFrontmatterValues(value: unknown): string[] {
-    if (Array.isArray(value)) {
-      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
-    }
-
-    if (value == null) {
-      return [""];
-    }
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return [String(value).trim()];
-    }
-
-    try {
-      return [JSON.stringify(value)];
-    } catch {
-      return [String(value)];
-    }
+    return this.filterTasksByQuery(tasks, query);
   }
 
   private renderTreeNode(
@@ -1204,5 +1260,922 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
         this.renderTreeNode(childrenList, child, state, nextAncestry);
       }
     }
+  }
+}
+
+export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
+  private canvasTrees: CanvasTreeDraft[] = [];
+  private nextCanvasTreeOrdinal = 1;
+  private canvasTreesLoaded = false;
+
+  getViewType(): string {
+    return VIEW_TYPE_LIFE_DASHBOARD_CANVAS;
+  }
+
+  getDisplayText(): string {
+    return "Concerns Canvas";
+  }
+
+  getIcon(): string {
+    return "layout-grid";
+  }
+
+  async onOpen(): Promise<void> {
+    await this.render();
+  }
+
+  async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("frontmatter-outline-view");
+    contentEl.addClass("fmo-canvas-view");
+
+    const tasks = this.plugin.getTaskTreeItems();
+    this.ensureCanvasTrees(tasks);
+
+    const header = contentEl.createEl("div", { cls: "fmo-header" });
+    const headerTop = header.createEl("div", { cls: "fmo-header-top" });
+    headerTop.createEl("h3", { text: "Concerns Canvas (draft)" });
+    headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
+
+    const toolbar = header.createEl("div", { cls: "fmo-canvas-toolbar" });
+    const addBtn = toolbar.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Add tree",
+      attr: { type: "button" }
+    });
+    setTooltip(addBtn, "Create another concern tree card that you can drag anywhere.");
+    addBtn.addEventListener("click", () => {
+      const slot = this.canvasTrees.length;
+      this.canvasTrees.push(
+        this.createCanvasTreeDraft({
+          x: 56 + (slot % 4) * 420,
+          y: 70 + Math.floor(slot / 4) * 290
+        })
+      );
+      this.persistCanvasTrees();
+      void this.render();
+    });
+
+    const resetBtn = toolbar.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Reset layout",
+      attr: { type: "button" }
+    });
+    setTooltip(resetBtn, "Repack all trees into a readable grid layout.");
+    resetBtn.addEventListener("click", () => {
+      this.canvasTrees.forEach((tree, index) => {
+        tree.x = 56 + (index % 4) * 420;
+        tree.y = 70 + Math.floor(index / 4) * 290;
+      });
+      this.persistCanvasTrees();
+      void this.render();
+    });
+
+    toolbar.createEl("span", {
+      cls: "fmo-subheader fmo-canvas-toolbar-meta",
+      text: `${this.canvasTrees.length} tree${this.canvasTrees.length === 1 ? "" : "s"}`
+    });
+
+    const note = header.createEl("div", {
+      cls: "fmo-subheader",
+      text: "Drag cards, pick any root, then tune filter/sort per tree."
+    });
+    setTooltip(
+      note,
+      "Canvas layout and per-tree controls are saved between reopenings."
+    );
+
+    const viewport = contentEl.createEl("div", { cls: "fmo-canvas-viewport" });
+    const stage = viewport.createEl("div", { cls: "fmo-canvas-stage" });
+    stage.style.width = `${CANVAS_STAGE_WIDTH}px`;
+    stage.style.height = `${CANVAS_STAGE_HEIGHT}px`;
+
+    for (const tree of this.canvasTrees) {
+      this.renderCanvasTreeCard(stage, tree, tasks);
+    }
+  }
+
+  private ensureCanvasTrees(tasks: TaskItem[]): void {
+    if (!this.canvasTreesLoaded) {
+      this.loadPersistedCanvasTrees();
+      this.canvasTreesLoaded = true;
+    }
+
+    const validPaths = new Set(tasks.map((task) => task.file.path));
+    let changed = false;
+    this.canvasTrees = this.canvasTrees.map((tree) => {
+      const normalizedRootPath =
+        tree.rootPath.length > 0 && validPaths.has(tree.rootPath) ? tree.rootPath : "";
+      if (normalizedRootPath !== tree.rootPath) {
+        changed = true;
+        tree.rootPath = normalizedRootPath;
+      }
+      return tree;
+    });
+
+    if (this.canvasTrees.length === 0) {
+      this.canvasTrees = this.createInitialCanvasTrees(tasks);
+      changed = true;
+    }
+
+    if (changed) {
+      this.persistCanvasTrees();
+    }
+  }
+
+  private loadPersistedCanvasTrees(): void {
+    const raw = this.plugin.getCanvasDraftState().trim();
+    if (!raw) return;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+
+    if (!this.isPersistedCanvasDraftState(parsed)) {
+      return;
+    }
+
+    const trees = parsed.trees.map((tree) => this.hydratePersistedCanvasTree(tree));
+    if (trees.length === 0) return;
+
+    this.canvasTrees = trees;
+    const inferredNext = this.inferNextCanvasTreeOrdinal(this.canvasTrees);
+    const savedNext = Math.max(1, Math.floor(parsed.nextTreeOrdinal));
+    this.nextCanvasTreeOrdinal = Math.max(savedNext, inferredNext, this.nextCanvasTreeOrdinal);
+  }
+
+  private persistCanvasTrees(): void {
+    const state: PersistedCanvasDraftState = {
+      version: CANVAS_DRAFT_VERSION,
+      nextTreeOrdinal: this.nextCanvasTreeOrdinal,
+      trees: this.canvasTrees.map((tree) => this.serializeCanvasTreeDraft(tree))
+    };
+    this.plugin.setCanvasDraftState(JSON.stringify(state));
+  }
+
+  private isPersistedCanvasDraftState(value: unknown): value is PersistedCanvasDraftState {
+    if (!this.isRecord(value)) return false;
+    if (value.version !== CANVAS_DRAFT_VERSION) return false;
+    if (typeof value.nextTreeOrdinal !== "number" || !Number.isFinite(value.nextTreeOrdinal)) {
+      return false;
+    }
+    if (!Array.isArray(value.trees)) return false;
+    return value.trees.every((tree) => this.isPersistedCanvasTreeDraft(tree));
+  }
+
+  private isPersistedCanvasTreeDraft(value: unknown): value is PersistedCanvasTreeDraft {
+    if (!this.isRecord(value)) return false;
+    if (typeof value.id !== "string") return false;
+    if (typeof value.title !== "string") return false;
+    if (typeof value.rootPath !== "string") return false;
+    if (typeof value.query !== "string") return false;
+    if (value.sortMode !== "recent" && value.sortMode !== "priority") return false;
+    if (!OUTLINE_RANGE_OPTIONS.some((option) => option.value === value.range)) return false;
+    if (typeof value.trackedOnly !== "boolean") return false;
+    if (typeof value.showParents !== "boolean") return false;
+    if (typeof value.collapsed !== "boolean") return false;
+    if (typeof value.x !== "number" || !Number.isFinite(value.x)) return false;
+    if (typeof value.y !== "number" || !Number.isFinite(value.y)) return false;
+    if (typeof value.width !== "number" || !Number.isFinite(value.width)) return false;
+    if (typeof value.height !== "number" || !Number.isFinite(value.height)) return false;
+    if (!Array.isArray(value.collapsedNodePaths)) return false;
+    return value.collapsedNodePaths.every((path) => typeof path === "string");
+  }
+
+  private hydratePersistedCanvasTree(tree: PersistedCanvasTreeDraft): CanvasTreeDraft {
+    const draft = this.createCanvasTreeDraft();
+    const id = tree.id.trim();
+    draft.id = id.length > 0 ? id : draft.id;
+    draft.title = tree.title.trim() || draft.title;
+    draft.rootPath = tree.rootPath.trim();
+    draft.query = tree.query;
+    draft.sortMode = tree.sortMode;
+    draft.range = tree.range;
+    draft.trackedOnly = tree.trackedOnly;
+    draft.showParents = tree.showParents;
+    draft.collapsed = tree.collapsed;
+    draft.x = this.clamp(Math.floor(tree.x), 16, CANVAS_STAGE_WIDTH - CANVAS_CARD_MIN_WIDTH - 16);
+    draft.y = this.clamp(Math.floor(tree.y), 16, CANVAS_STAGE_HEIGHT - CANVAS_CARD_MIN_HEIGHT - 16);
+    draft.width = this.clamp(
+      Math.floor(tree.width),
+      CANVAS_CARD_MIN_WIDTH,
+      CANVAS_STAGE_WIDTH - draft.x - 16
+    );
+    draft.height = this.clamp(
+      Math.floor(tree.height),
+      CANVAS_CARD_MIN_HEIGHT,
+      CANVAS_STAGE_HEIGHT - draft.y - 16
+    );
+    draft.collapsedNodePaths = new Set(
+      tree.collapsedNodePaths
+        .map((path) => path.trim())
+        .filter((path) => path.length > 0)
+    );
+    return draft;
+  }
+
+  private serializeCanvasTreeDraft(tree: CanvasTreeDraft): PersistedCanvasTreeDraft {
+    return {
+      id: tree.id,
+      title: tree.title,
+      rootPath: tree.rootPath,
+      query: tree.query,
+      sortMode: tree.sortMode,
+      range: tree.range,
+      trackedOnly: tree.trackedOnly,
+      showParents: tree.showParents,
+      collapsed: tree.collapsed,
+      x: Math.round(tree.x),
+      y: Math.round(tree.y),
+      width: Math.round(tree.width),
+      height: Math.round(tree.height),
+      collapsedNodePaths: [...tree.collapsedNodePaths]
+    };
+  }
+
+  private inferNextCanvasTreeOrdinal(trees: CanvasTreeDraft[]): number {
+    let next = 1;
+    for (const tree of trees) {
+      const match = /^tree-(\d+)$/.exec(tree.id);
+      if (!match?.[1]) continue;
+      const ordinal = Number.parseInt(match[1], 10);
+      if (Number.isFinite(ordinal) && ordinal + 1 > next) {
+        next = ordinal + 1;
+      }
+    }
+    return next;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  private createInitialCanvasTrees(tasks: TaskItem[]): CanvasTreeDraft[] {
+    const preferredRoot = this.getPreferredRootPath(tasks);
+    const trees: CanvasTreeDraft[] = [
+      this.createCanvasTreeDraft({
+        title: "Focus now",
+        rootPath: preferredRoot,
+        trackedOnly: true,
+        range: "todayYesterday",
+        x: 72,
+        y: 72
+      }),
+      this.createCanvasTreeDraft({
+        title: "Priority map",
+        sortMode: "priority",
+        range: "all",
+        trackedOnly: false,
+        x: 520,
+        y: 210
+      })
+    ];
+    return trees;
+  }
+
+  private getPreferredRootPath(tasks: TaskItem[]): string {
+    const selectedPath = this.plugin.settings.selectedTaskPath.trim();
+    if (selectedPath.length > 0 && tasks.some((task) => task.file.path === selectedPath)) {
+      return selectedPath;
+    }
+
+    let bestPath = "";
+    let bestSeconds = -1;
+    for (const task of tasks) {
+      const seconds = this.plugin.getTrackedSeconds(task.file.path);
+      if (seconds > bestSeconds) {
+        bestSeconds = seconds;
+        bestPath = task.file.path;
+      }
+    }
+    return bestPath;
+  }
+
+  private createCanvasTreeDraft(overrides: Partial<CanvasTreeDraft> = {}): CanvasTreeDraft {
+    const id = `tree-${this.nextCanvasTreeOrdinal}`;
+    this.nextCanvasTreeOrdinal += 1;
+    const draft: CanvasTreeDraft = {
+      id,
+      title: "Concern tree",
+      rootPath: "",
+      query: "",
+      sortMode: "recent",
+      range: "todayYesterday",
+      trackedOnly: true,
+      showParents: true,
+      collapsed: false,
+      x: 64,
+      y: 64,
+      width: CANVAS_CARD_DEFAULT_WIDTH,
+      height: CANVAS_CARD_DEFAULT_HEIGHT,
+      collapsedNodePaths: new Set<string>()
+    };
+
+    const merged: CanvasTreeDraft = { ...draft, ...overrides };
+    merged.collapsedNodePaths = overrides.collapsedNodePaths
+      ? new Set(overrides.collapsedNodePaths)
+      : new Set(draft.collapsedNodePaths);
+
+    return merged;
+  }
+
+  private renderCanvasTreeCard(stageEl: HTMLElement, tree: CanvasTreeDraft, tasks: TaskItem[]): void {
+    const card = stageEl.createEl("section", { cls: "fmo-canvas-card" });
+    card.classList.toggle("fmo-canvas-card-collapsed", tree.collapsed);
+    card.style.left = `${tree.x}px`;
+    card.style.top = `${tree.y}px`;
+    card.style.width = `${tree.width}px`;
+    if (!tree.collapsed) {
+      card.style.height = `${tree.height}px`;
+    }
+
+    const header = card.createEl("div", { cls: "fmo-canvas-card-header" });
+    const dragHandle = header.createEl("button", {
+      cls: "fmo-canvas-drag-handle",
+      text: "⠿",
+      attr: {
+        type: "button",
+        "aria-label": `Move ${tree.title}`
+      }
+    }) as HTMLButtonElement;
+    setTooltip(dragHandle, "Drag tree card");
+
+    const titleInput = header.createEl("input", {
+      cls: "fmo-canvas-title",
+      attr: {
+        type: "text",
+        "aria-label": "Tree title"
+      }
+    }) as HTMLInputElement;
+    titleInput.value = tree.title;
+    titleInput.addEventListener("change", () => {
+      tree.title = titleInput.value.trim() || "Concern tree";
+      titleInput.value = tree.title;
+      setTooltip(dragHandle, `Drag ${tree.title}`);
+      this.persistCanvasTrees();
+    });
+
+    const headerActions = header.createEl("div", { cls: "fmo-canvas-card-actions" });
+    const collapseBtn = headerActions.createEl("button", {
+      cls: "fmo-canvas-card-btn",
+      text: tree.collapsed ? "▸" : "▾",
+      attr: {
+        type: "button",
+        "aria-label": tree.collapsed ? "Expand tree card" : "Collapse tree card"
+      }
+    });
+    collapseBtn.addEventListener("click", () => {
+      tree.collapsed = !tree.collapsed;
+      this.persistCanvasTrees();
+      void this.render();
+    });
+
+    const removeBtn = headerActions.createEl("button", {
+      cls: "fmo-canvas-card-btn",
+      text: "×",
+      attr: {
+        type: "button",
+        "aria-label": "Remove tree card"
+      }
+    });
+    removeBtn.disabled = this.canvasTrees.length <= 1;
+    removeBtn.addEventListener("click", () => {
+      if (this.canvasTrees.length <= 1) return;
+      this.canvasTrees = this.canvasTrees.filter((entry) => entry.id !== tree.id);
+      this.persistCanvasTrees();
+      void this.render();
+    });
+
+    this.attachCanvasCardDragging(dragHandle, card, tree);
+    if (!tree.collapsed) {
+      this.attachCanvasCardResizing(card, tree);
+    }
+
+    if (tree.collapsed) return;
+
+    const controls = card.createEl("div", { cls: "fmo-canvas-controls" });
+    const tasksByName = [...tasks].sort((a, b) =>
+      a.file.basename.localeCompare(b.file.basename, undefined, { sensitivity: "base" })
+    );
+
+    const rootRow = controls.createEl("label", { cls: "fmo-canvas-root-row" });
+    rootRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Root" });
+    const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
+    rootSelect.createEl("option", { value: "", text: "All concerns" });
+    for (const task of tasksByName) {
+      rootSelect.createEl("option", {
+        value: task.file.path,
+        text: task.file.basename
+      });
+    }
+    rootSelect.value = tree.rootPath;
+
+    const optionsGrid = controls.createEl("div", { cls: "fmo-canvas-options-grid" });
+    const rangeRow = optionsGrid.createEl("label", { cls: "fmo-canvas-option" });
+    rangeRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Range" });
+    const rangeSelect = rangeRow.createEl("select", {
+      cls: "fmo-outline-sort-select"
+    }) as HTMLSelectElement;
+    for (const option of OUTLINE_RANGE_OPTIONS) {
+      rangeSelect.createEl("option", { value: option.value, text: option.label });
+    }
+    rangeSelect.value = tree.range;
+
+    const sortRow = optionsGrid.createEl("label", { cls: "fmo-canvas-option" });
+    sortRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Sort" });
+    const sortSelect = sortRow.createEl("select", {
+      cls: "fmo-outline-sort-select"
+    }) as HTMLSelectElement;
+    for (const option of OUTLINE_SORT_OPTIONS) {
+      sortSelect.createEl("option", { value: option.value, text: option.label });
+    }
+    sortSelect.value = tree.sortMode;
+
+    const flagsRow = controls.createEl("div", { cls: "fmo-canvas-flags" });
+    const trackedOnlyRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const trackedOnlyInput = trackedOnlyRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    trackedOnlyInput.checked = tree.trackedOnly;
+    trackedOnlyRow.createEl("span", { text: "Tracked only" });
+
+    const showParentsRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const showParentsInput = showParentsRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    showParentsInput.checked = tree.showParents;
+    showParentsRow.createEl("span", { text: "Parents" });
+
+    const filterRow = controls.createEl("div", { cls: "fmo-canvas-filter" });
+    const filterSearch = new SearchComponent(filterRow);
+    filterSearch.setPlaceholder("Filter (path:, file:, prop:key=value)");
+    filterSearch.setValue(tree.query);
+
+    const preview = card.createEl("div", { cls: "fmo-canvas-preview" });
+    const renderPreview = (): void => {
+      preview.empty();
+      this.renderCanvasTreePreview(preview, tree, tasks, renderPreview);
+    };
+
+    rootSelect.addEventListener("change", () => {
+      tree.rootPath = rootSelect.value;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+    rangeSelect.addEventListener("change", () => {
+      tree.range = rangeSelect.value as OutlineTimeRange;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+    sortSelect.addEventListener("change", () => {
+      tree.sortMode = sortSelect.value as OutlineSortMode;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+    trackedOnlyInput.addEventListener("change", () => {
+      tree.trackedOnly = trackedOnlyInput.checked;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+    showParentsInput.addEventListener("change", () => {
+      tree.showParents = showParentsInput.checked;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+    filterSearch.onChange((query) => {
+      tree.query = query;
+      this.persistCanvasTrees();
+      renderPreview();
+    });
+
+    renderPreview();
+  }
+
+  private renderCanvasTreePreview(
+    containerEl: HTMLElement,
+    tree: CanvasTreeDraft,
+    tasks: TaskItem[],
+    rerender: () => void
+  ): void {
+    if (tasks.length === 0) {
+      containerEl.createEl("div", {
+        cls: "fmo-empty",
+        text: "No concerns match your plugin filter settings."
+      });
+      return;
+    }
+
+    const ownSecondsByPath = this.getCanvasOwnSecondsByPath(tasks, tree.range);
+    const parentByPath = this.buildCanvasParentPathMap(tasks);
+    const scopePaths = this.collectCanvasScopePaths(tasks, parentByPath, tree.rootPath);
+
+    const scopedTasks = tasks.filter((task) => scopePaths.has(task.file.path));
+    const queryMatched = this.filterTasksForCanvas(scopedTasks, tree.query);
+    const matched = tree.trackedOnly
+      ? queryMatched.filter(
+          (task) => (ownSecondsByPath.get(task.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
+        )
+      : queryMatched;
+
+    if (matched.length === 0) {
+      containerEl.createEl("div", {
+        cls: "fmo-empty",
+        text: "No concerns match this tree configuration."
+      });
+      return;
+    }
+
+    const matchedPaths = new Set(matched.map((task) => task.file.path));
+    const visiblePaths = tree.showParents
+      ? this.collectCanvasPathsWithParents(matchedPaths, parentByPath, scopePaths)
+      : matchedPaths;
+    const visibleTasks = tasks.filter((task) => visiblePaths.has(task.file.path));
+    const latestTrackedStartForPath = this.createCanvasLatestTrackedStartResolver(tree.range);
+    const taskTree = this.buildTaskTree(visibleTasks, {
+      ownSecondsForPath: (path) => ownSecondsByPath.get(path) ?? 0,
+      sortMode: tree.sortMode,
+      latestTrackedStartForPath
+    });
+
+    const roots = this.selectCanvasRoots(taskTree, tree.rootPath);
+    if (roots.length === 0) {
+      containerEl.createEl("div", {
+        cls: "fmo-empty",
+        text: "Selected root has no visible descendants with current filters."
+      });
+      return;
+    }
+
+    const branchPaths = this.collectCanvasBranchPaths(roots);
+    if (branchPaths.size > 0) {
+      let pruned = false;
+      for (const path of [...tree.collapsedNodePaths]) {
+        if (!branchPaths.has(path)) {
+          tree.collapsedNodePaths.delete(path);
+          pruned = true;
+        }
+      }
+      if (pruned) {
+        this.persistCanvasTrees();
+      }
+    }
+
+    const top = containerEl.createEl("div", { cls: "fmo-canvas-preview-top" });
+    const actions = top.createEl("div", { cls: "fmo-canvas-preview-actions" });
+    const expandAllBtn = actions.createEl("button", {
+      cls: "fmo-canvas-preview-btn",
+      text: "Expand all",
+      attr: { type: "button" }
+    });
+    expandAllBtn.disabled = tree.collapsedNodePaths.size === 0;
+    expandAllBtn.addEventListener("click", () => {
+      tree.collapsedNodePaths.clear();
+      this.persistCanvasTrees();
+      rerender();
+    });
+
+    const collapseAllBtn = actions.createEl("button", {
+      cls: "fmo-canvas-preview-btn",
+      text: "Collapse all",
+      attr: { type: "button" }
+    });
+    collapseAllBtn.disabled = branchPaths.size === 0;
+    collapseAllBtn.addEventListener("click", () => {
+      tree.collapsedNodePaths = new Set(branchPaths);
+      this.persistCanvasTrees();
+      rerender();
+    });
+
+    const meta = top.createEl("div", { cls: "fmo-canvas-preview-meta" });
+    meta.createEl("span", {
+      text: `${matchedPaths.size} matched / ${visiblePaths.size} visible`
+    });
+    meta.createEl("span", {
+      text: `range: ${OUTLINE_RANGE_OPTIONS.find((option) => option.value === tree.range)?.label ?? tree.range}`
+    });
+
+    const list = containerEl.createEl("ul", { cls: "fmo-tree fmo-canvas-tree" });
+    const renderState: CanvasTreeRenderState = {
+      cumulativeSeconds: taskTree.cumulativeSeconds,
+      ownSeconds: taskTree.ownSeconds,
+      matchedPaths
+    };
+    const limitState = { count: 0, truncated: false };
+    for (const root of roots) {
+      this.renderCanvasTreeNode(list, root, tree, renderState, new Set(), 0, limitState, rerender);
+    }
+
+    if (limitState.truncated) {
+      containerEl.createEl("div", {
+        cls: "fmo-canvas-truncated",
+        text: "Preview truncated at 160 rows."
+      });
+    }
+  }
+
+  private attachCanvasCardDragging(
+    handleEl: HTMLButtonElement,
+    cardEl: HTMLElement,
+    tree: CanvasTreeDraft
+  ): void {
+    handleEl.addEventListener("pointerdown", (evt: PointerEvent) => {
+      if (evt.button !== 0) return;
+      evt.preventDefault();
+
+      const startX = evt.clientX;
+      const startY = evt.clientY;
+      const startLeft = tree.x;
+      const startTop = tree.y;
+
+      const onMove = (moveEvt: PointerEvent): void => {
+        const nextX = startLeft + (moveEvt.clientX - startX);
+        const nextY = startTop + (moveEvt.clientY - startY);
+        const maxX = Math.max(16, CANVAS_STAGE_WIDTH - tree.width - 16);
+        const currentHeight = tree.collapsed
+          ? Math.round(cardEl.getBoundingClientRect().height)
+          : tree.height;
+        const maxY = Math.max(16, CANVAS_STAGE_HEIGHT - currentHeight - 16);
+
+        tree.x = this.clamp(nextX, 16, maxX);
+        tree.y = this.clamp(nextY, 16, maxY);
+        cardEl.style.left = `${tree.x}px`;
+        cardEl.style.top = `${tree.y}px`;
+      };
+
+      const stop = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        this.persistCanvasTrees();
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", stop, { once: true });
+      window.addEventListener("pointercancel", stop, { once: true });
+    });
+  }
+
+  private attachCanvasCardResizing(cardEl: HTMLElement, tree: CanvasTreeDraft): void {
+    const resizeHandle = cardEl.createEl("button", {
+      cls: "fmo-canvas-resize-handle",
+      text: "◢",
+      attr: {
+        type: "button",
+        "aria-label": `Resize ${tree.title}`
+      }
+    }) as HTMLButtonElement;
+    setTooltip(resizeHandle, "Resize tree card");
+
+    resizeHandle.addEventListener("pointerdown", (evt: PointerEvent) => {
+      if (evt.button !== 0) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+
+      const startX = evt.clientX;
+      const startY = evt.clientY;
+      const startWidth = tree.width;
+      const startHeight = tree.height;
+
+      const onMove = (moveEvt: PointerEvent): void => {
+        const nextWidth = startWidth + (moveEvt.clientX - startX);
+        const nextHeight = startHeight + (moveEvt.clientY - startY);
+        const maxWidth = Math.max(
+          CANVAS_CARD_MIN_WIDTH,
+          CANVAS_STAGE_WIDTH - tree.x - 16
+        );
+        const maxHeight = Math.max(
+          CANVAS_CARD_MIN_HEIGHT,
+          CANVAS_STAGE_HEIGHT - tree.y - 16
+        );
+
+        tree.width = this.clamp(nextWidth, CANVAS_CARD_MIN_WIDTH, maxWidth);
+        tree.height = this.clamp(nextHeight, CANVAS_CARD_MIN_HEIGHT, maxHeight);
+        cardEl.style.width = `${tree.width}px`;
+        cardEl.style.height = `${tree.height}px`;
+      };
+
+      const stop = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        this.persistCanvasTrees();
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", stop, { once: true });
+      window.addEventListener("pointercancel", stop, { once: true });
+    });
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  private getCanvasOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
+    const ownSecondsByPath = new Map<string, number>();
+    for (const task of tasks) {
+      ownSecondsByPath.set(
+        task.file.path,
+        this.plugin.getTrackedSecondsForRange(task.file.path, range)
+      );
+    }
+    return ownSecondsByPath;
+  }
+
+  private createCanvasLatestTrackedStartResolver(range: OutlineTimeRange): (path: string) => number {
+    const cache = new Map<string, number>();
+    return (path: string): number => {
+      const existing = cache.get(path);
+      if (existing != null) return existing;
+
+      const latest = this.plugin.getLatestTrackedStartMsForRange(path, range);
+      cache.set(path, latest);
+      return latest;
+    };
+  }
+
+  private buildCanvasParentPathMap(tasks: TaskItem[]): Map<string, string> {
+    const allPaths = new Set(tasks.map((task) => task.file.path));
+    const parentByPath = new Map<string, string>();
+    for (const task of tasks) {
+      const parentPath = this.resolveParentPath(task.parentRaw, task.file.path);
+      if (!parentPath || !allPaths.has(parentPath) || parentPath === task.file.path) continue;
+      parentByPath.set(task.file.path, parentPath);
+    }
+    return parentByPath;
+  }
+
+  private collectCanvasScopePaths(
+    tasks: TaskItem[],
+    parentByPath: Map<string, string>,
+    rootPath: string
+  ): Set<string> {
+    const allPaths = new Set(tasks.map((task) => task.file.path));
+    if (!rootPath || !allPaths.has(rootPath)) {
+      return allPaths;
+    }
+
+    const childrenByPath = new Map<string, string[]>();
+    for (const [childPath, parentPath] of parentByPath.entries()) {
+      const siblings = childrenByPath.get(parentPath);
+      if (siblings) {
+        siblings.push(childPath);
+      } else {
+        childrenByPath.set(parentPath, [childPath]);
+      }
+    }
+
+    const scoped = new Set<string>();
+    const stack = [rootPath];
+    while (stack.length > 0) {
+      const next = stack.pop();
+      if (!next || scoped.has(next)) continue;
+      scoped.add(next);
+      for (const childPath of childrenByPath.get(next) ?? []) {
+        stack.push(childPath);
+      }
+    }
+
+    return scoped;
+  }
+
+  private collectCanvasPathsWithParents(
+    matchedPaths: Set<string>,
+    parentByPath: Map<string, string>,
+    scopedPaths: Set<string>
+  ): Set<string> {
+    const output = new Set<string>(matchedPaths);
+    for (const path of matchedPaths) {
+      let cursor = parentByPath.get(path);
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor) && scopedPaths.has(cursor)) {
+        seen.add(cursor);
+        output.add(cursor);
+        cursor = parentByPath.get(cursor);
+      }
+    }
+    return output;
+  }
+
+  private selectCanvasRoots(taskTree: TaskTreeData, rootPath: string): TaskTreeNode[] {
+    if (!rootPath) return taskTree.roots;
+    const root = taskTree.nodesByPath.get(rootPath);
+    return root ? [root] : taskTree.roots;
+  }
+
+  private collectCanvasBranchPaths(
+    roots: TaskTreeNode[]
+  ): Set<string> {
+    const branchPaths = new Set<string>();
+    const visit = (node: TaskTreeNode, ancestry: Set<string>): void => {
+      if (ancestry.has(node.path)) return;
+      if (node.children.length > 0) {
+        branchPaths.add(node.path);
+      }
+
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(node.path);
+      for (const child of node.children) {
+        visit(child, nextAncestry);
+      }
+    };
+
+    for (const root of roots) {
+      visit(root, new Set());
+    }
+
+    return branchPaths;
+  }
+
+  private renderCanvasTreeNode(
+    containerEl: HTMLElement,
+    node: TaskTreeNode,
+    tree: CanvasTreeDraft,
+    state: CanvasTreeRenderState,
+    ancestry: Set<string>,
+    depth: number,
+    limit: { count: number; truncated: boolean },
+    rerender: () => void
+  ): void {
+    if (limit.truncated) return;
+    if (ancestry.has(node.path)) return;
+
+    if (limit.count >= 160) {
+      limit.truncated = true;
+      return;
+    }
+    limit.count += 1;
+
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(node.path);
+
+    const isParentOnly = !state.matchedPaths.has(node.path);
+    const li = containerEl.createEl("li", { cls: "fmo-tree-item fmo-canvas-tree-item" });
+    const row = li.createEl("div", {
+      cls: isParentOnly
+        ? "fmo-tree-row fmo-tree-row-parent fmo-canvas-tree-row"
+        : "fmo-tree-row fmo-canvas-tree-row"
+    });
+    row.style.paddingInlineStart = `${Math.min(12, depth) * 11}px`;
+    const hasChildren = node.children.length > 0;
+    if (hasChildren) {
+      const isCollapsed = tree.collapsedNodePaths.has(node.path);
+      const toggle = row.createEl("button", {
+        cls: "fmo-canvas-node-toggle",
+        text: isCollapsed ? "○" : "●",
+        attr: {
+          type: "button",
+          "aria-expanded": String(!isCollapsed),
+          "aria-label": `${isCollapsed ? "Expand" : "Collapse"} ${node.item.file.basename}`
+        }
+      });
+      toggle.addEventListener("click", () => {
+        if (tree.collapsedNodePaths.has(node.path)) {
+          tree.collapsedNodePaths.delete(node.path);
+        } else {
+          tree.collapsedNodePaths.add(node.path);
+        }
+        this.persistCanvasTrees();
+        rerender();
+      });
+    } else {
+      row.createEl("span", {
+        cls: "fmo-canvas-node-marker",
+        text: "•"
+      });
+    }
+
+    const link = row.createEl("a", {
+      cls: isParentOnly ? "fmo-note-link fmo-note-link-parent" : "fmo-note-link",
+      text: node.item.file.basename,
+      href: "#"
+    });
+    link.addEventListener("click", (evt) => {
+      evt.preventDefault();
+      void this.plugin.openFile(node.item.file.path);
+    });
+
+    const total = state.cumulativeSeconds.get(node.path) ?? 0;
+    const own = state.ownSeconds.get(node.path) ?? 0;
+    row.createEl("span", {
+      cls: "fmo-time-badge",
+      text: this.plugin.formatShortDuration(total),
+      attr: {
+        title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+      }
+    });
+
+    if (!hasChildren || tree.collapsedNodePaths.has(node.path)) return;
+
+    const children = li.createEl("ul", { cls: "fmo-tree fmo-canvas-tree-children" });
+    for (const child of node.children) {
+      this.renderCanvasTreeNode(children, child, tree, state, nextAncestry, depth + 1, limit, rerender);
+    }
+  }
+
+  private filterTasksForCanvas(tasks: TaskItem[], query: string): TaskItem[] {
+    return this.filterTasksByQuery(tasks, query);
   }
 }
