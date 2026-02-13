@@ -13,30 +13,40 @@ import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
 
-export const VIEW_TYPE_LIFE_DASHBOARD = "life-dashboard-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
+
 type TaskTreeData = {
   roots: TaskTreeNode[];
   cumulativeSeconds: Map<string, number>;
   ownSeconds: Map<string, number>;
   nodesByPath: Map<string, TaskTreeNode>;
 };
+
 type TaskTreeBuildOptions = {
   ownSecondsForPath?: (path: string) => number;
   sortMode?: OutlineSortMode;
   latestTrackedStartForPath?: (path: string) => number;
 };
+
 type TreeRenderState = {
   cumulativeSeconds: Map<string, number>;
   ownSeconds: Map<string, number>;
   matchedPaths: Set<string>;
   expandAll: boolean;
 };
+
 type RecencySection = { label: string; matchedPaths: Set<string> };
+
 type OutlineFilterToken =
   | { key: "any" | "path" | "file"; value: string; negated: boolean }
   | { key: "prop"; prop: string; value: string | null; negated: boolean };
+
 type OutlineSortMode = "recent" | "priority";
+
 const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
+const TRACKING_ADJUST_MINUTES = 5;
+
 const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
   { value: "today", label: "today" },
   { value: "todayYesterday", label: "today+yesterday" },
@@ -44,37 +54,239 @@ const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> =
   { value: "month", label: "this month" },
   { value: "all", label: "all time" }
 ];
-const TRACKING_ADJUST_MINUTES = 5;
+
 const OUTLINE_SORT_OPTIONS: Array<{ value: OutlineSortMode; label: string }> = [
   { value: "recent", label: "recent tracked" },
   { value: "priority", label: "priority" }
 ];
 
-export class LifeDashboardView extends ItemView {
-  private readonly plugin: LifeDashboardPlugin;
-  private liveTimerEl: HTMLElement | null = null;
-  private outlineExpandAll = true;
-  private outlineStatusDoneFilterEnabled = false;
-  private outlineTimeRange: OutlineTimeRange = "todayYesterday";
-  private outlineShowOnlyTrackedThisPeriod = true;
-  private outlineSortMode: OutlineSortMode = "recent";
-  private outlineShowParents = true;
+abstract class LifeDashboardBaseView extends ItemView {
+  protected readonly plugin: LifeDashboardPlugin;
 
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
     super(leaf);
     this.plugin = plugin;
   }
 
+  protected buildTaskTree(tasks: TaskItem[], options: TaskTreeBuildOptions = {}): TaskTreeData {
+    const resolveOwnSeconds =
+      options.ownSecondsForPath ?? ((path: string) => this.plugin.getTrackedSeconds(path));
+    const sortMode = options.sortMode ?? "recent";
+    const resolveLatestTrackedStart =
+      options.latestTrackedStartForPath ??
+      ((path: string) => this.plugin.getLatestTrackedStartMsForRange(path, "all"));
+    const nodesByPath = new Map<string, TaskTreeNode>();
+
+    for (const item of tasks) {
+      nodesByPath.set(item.file.path, {
+        item,
+        path: item.file.path,
+        children: [],
+        parentPath: null
+      });
+    }
+
+    for (const node of nodesByPath.values()) {
+      const parentPath = this.resolveParentPath(node.item.parentRaw, node.item.file.path);
+      if (!parentPath || parentPath === node.path || !nodesByPath.has(parentPath)) continue;
+      node.parentPath = parentPath;
+      nodesByPath.get(parentPath)?.children.push(node);
+    }
+
+    const roots = Array.from(nodesByPath.values()).filter((node) => !node.parentPath);
+    const subtreeLatestByPath = new Map<string, number>();
+    const visiting = new Set<string>();
+    for (const root of roots) {
+      this.computeSubtreeLatestStartMs(root, resolveLatestTrackedStart, subtreeLatestByPath, visiting);
+    }
+
+    const sortNodes = (nodes: TaskTreeNode[]): void => {
+      nodes.sort((a, b) => this.compareNodes(a, b, sortMode, subtreeLatestByPath));
+      for (const node of nodes) {
+        sortNodes(node.children);
+      }
+    };
+
+    sortNodes(roots);
+
+    const ownSeconds = new Map<string, number>();
+    const cumulativeSeconds = new Map<string, number>();
+    const computeCumulative = (node: TaskTreeNode, ancestry: Set<string>): number => {
+      if (cumulativeSeconds.has(node.path)) return cumulativeSeconds.get(node.path) ?? 0;
+      const own = ownSeconds.get(node.path) ?? resolveOwnSeconds(node.path);
+      ownSeconds.set(node.path, own);
+      if (ancestry.has(node.path)) return own;
+
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(node.path);
+
+      let total = own;
+      for (const child of node.children) {
+        total += computeCumulative(child, nextAncestry);
+      }
+
+      cumulativeSeconds.set(node.path, total);
+      return total;
+    };
+
+    for (const root of roots) {
+      computeCumulative(root, new Set());
+    }
+
+    return { roots, cumulativeSeconds, ownSeconds, nodesByPath };
+  }
+
+  protected resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
+    for (const candidate of this.extractParentCandidates(parentRaw)) {
+      const file = this.app.metadataCache.getFirstLinkpathDest(candidate, sourcePath);
+      if (file) return file.path;
+    }
+    return null;
+  }
+
+  private compareNodes(
+    a: TaskTreeNode,
+    b: TaskTreeNode,
+    sortMode: OutlineSortMode,
+    subtreeLatestByPath: Map<string, number>
+  ): number {
+    if (sortMode === "priority") {
+      const priorityCmp = this.comparePriorityValues(
+        this.readPriorityValue(a.item.frontmatter),
+        this.readPriorityValue(b.item.frontmatter)
+      );
+      if (priorityCmp !== 0) return priorityCmp;
+    }
+
+    const latestA = subtreeLatestByPath.get(a.path) ?? 0;
+    const latestB = subtreeLatestByPath.get(b.path) ?? 0;
+    if (latestA !== latestB) {
+      return latestB - latestA;
+    }
+
+    return a.item.file.path.localeCompare(b.item.file.path);
+  }
+
+  private computeSubtreeLatestStartMs(
+    node: TaskTreeNode,
+    latestTrackedStartForPath: (path: string) => number,
+    memo: Map<string, number>,
+    visiting: Set<string>
+  ): number {
+    const cached = memo.get(node.path);
+    if (cached != null) return cached;
+    if (visiting.has(node.path)) {
+      const own = latestTrackedStartForPath(node.path);
+      memo.set(node.path, own);
+      return own;
+    }
+
+    visiting.add(node.path);
+    let latest = latestTrackedStartForPath(node.path);
+    for (const child of node.children) {
+      const childLatest = this.computeSubtreeLatestStartMs(
+        child,
+        latestTrackedStartForPath,
+        memo,
+        visiting
+      );
+      if (childLatest > latest) {
+        latest = childLatest;
+      }
+    }
+    visiting.delete(node.path);
+    memo.set(node.path, latest);
+    return latest;
+  }
+
+  private readPriorityValue(frontmatter: TaskItem["frontmatter"]): unknown {
+    if (!frontmatter) return null;
+    return frontmatter.priority ?? frontmatter.prio ?? frontmatter.p;
+  }
+
+  private comparePriorityValues(a: unknown, b: unknown): number {
+    const rankA = this.getPriorityRank(a);
+    const rankB = this.getPriorityRank(b);
+    return rankA - rankB;
+  }
+
+  private getPriorityRank(value: unknown): number {
+    if (value == null) return 100;
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, value);
+    }
+
+    const normalized = String(value).trim().toLowerCase();
+    if (!normalized) return 100;
+    if (normalized === "urgent") return 0;
+    if (normalized === "high") return 1;
+    if (normalized === "medium" || normalized === "med") return 2;
+    if (normalized === "low") return 3;
+
+    const pMatch = /^p([0-9]+)$/.exec(normalized);
+    if (pMatch?.[1]) {
+      return Number.parseInt(pMatch[1], 10);
+    }
+
+    const parsed = Number.parseFloat(normalized);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed);
+    }
+
+    return 100;
+  }
+
+  private extractParentCandidates(value: unknown): string[] {
+    const candidates: string[] = [];
+
+    const addCandidate = (raw: string): void => {
+      let ref = raw.trim();
+      if (!ref) return;
+
+      if (ref.startsWith("[[") && ref.endsWith("]]")) {
+        ref = ref.slice(2, -2).trim();
+      }
+      if (ref.includes("|")) {
+        ref = ref.split("|")[0]?.trim() ?? "";
+      }
+      if (ref.includes("#")) {
+        ref = ref.split("#")[0]?.trim() ?? "";
+      }
+
+      ref = ref.replace(/^\/+/, "").trim();
+      if (!ref) return;
+      candidates.push(ref);
+    };
+
+    const visit = (next: unknown): void => {
+      if (Array.isArray(next)) {
+        for (const entry of next) {
+          visit(entry);
+        }
+        return;
+      }
+      if (next == null) return;
+      addCandidate(String(next));
+    };
+
+    visit(value);
+    return Array.from(new Set(candidates));
+  }
+}
+
+export class LifeDashboardTimerView extends LifeDashboardBaseView {
+  private liveTimerEl: HTMLElement | null = null;
+
   getViewType(): string {
-    return VIEW_TYPE_LIFE_DASHBOARD;
+    return VIEW_TYPE_LIFE_DASHBOARD_TIMER;
   }
 
   getDisplayText(): string {
-    return "Life Dashboard";
+    return "Life Timer";
   }
 
   getIcon(): string {
-    return "list-tree";
+    return "timer";
   }
 
   async onOpen(): Promise<void> {
@@ -97,9 +309,7 @@ export class LifeDashboardView extends ItemView {
 
     const tasks = this.plugin.getTaskTreeItems();
     const contextTree = this.buildTaskTree(tasks);
-
     this.renderTrackerPanel(contentEl, tasks, contextTree);
-    this.renderOutline(contentEl, tasks);
 
     this.updateLiveTimer();
   }
@@ -304,34 +514,7 @@ export class LifeDashboardView extends ItemView {
     }
   }
 
-  private getContextPrefix(depth: number): string {
-    if (depth <= 0) return "● ";
-    return `${"  ".repeat(Math.max(0, depth - 1))}└─ `;
-  }
-
-  private renderChangeTaskButton(containerEl: HTMLElement, tasks: TaskItem[]): void {
-    const button = containerEl.createEl("button", {
-      cls: "fmo-context-change-btn",
-      text: "🔁",
-      attr: {
-        type: "button",
-        "aria-label": "Change task",
-        title: "Change task"
-      }
-    });
-    button.addEventListener("click", () => {
-      const taskFiles = tasks.map((item) => item.file);
-      const modal = new TaskSelectModal(this.app, taskFiles, (file) => {
-        void this.plugin.setSelectedTaskPath(file.path);
-      });
-      modal.open();
-    });
-  }
-
-  private buildTrackedContextChain(
-    node: TaskTreeNode,
-    nodesByPath: Map<string, TaskTreeNode>
-  ): TaskTreeNode[] {
+  private buildTrackedContextChain(node: TaskTreeNode, nodesByPath: Map<string, TaskTreeNode>): TaskTreeNode[] {
     const chain: TaskTreeNode[] = [];
     const visited = new Set<string>();
     let current: TaskTreeNode | undefined = node;
@@ -374,6 +557,64 @@ export class LifeDashboardView extends ItemView {
     }
 
     return chain;
+  }
+
+  private getContextPrefix(depth: number): string {
+    if (depth <= 0) return "● ";
+    return `${"  ".repeat(Math.max(0, depth - 1))}└─ `;
+  }
+
+  private renderChangeTaskButton(containerEl: HTMLElement, tasks: TaskItem[]): void {
+    const button = containerEl.createEl("button", {
+      cls: "fmo-context-change-btn",
+      text: "🔁",
+      attr: {
+        type: "button",
+        "aria-label": "Change task",
+        title: "Change task"
+      }
+    });
+    button.addEventListener("click", () => {
+      const taskFiles = tasks.map((item) => item.file);
+      const modal = new TaskSelectModal(this.app, taskFiles, (file) => {
+        void this.plugin.setSelectedTaskPath(file.path);
+      });
+      modal.open();
+    });
+  }
+}
+
+export class LifeDashboardOutlineView extends LifeDashboardBaseView {
+  private outlineExpandAll = true;
+  private outlineStatusDoneFilterEnabled = false;
+  private outlineTimeRange: OutlineTimeRange = "todayYesterday";
+  private outlineShowOnlyTrackedThisPeriod = true;
+  private outlineSortMode: OutlineSortMode = "recent";
+  private outlineShowParents = true;
+
+  getViewType(): string {
+    return VIEW_TYPE_LIFE_DASHBOARD_OUTLINE;
+  }
+
+  getDisplayText(): string {
+    return "Concerns Outline";
+  }
+
+  getIcon(): string {
+    return "list-tree";
+  }
+
+  async onOpen(): Promise<void> {
+    await this.render();
+  }
+
+  async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("frontmatter-outline-view");
+
+    const tasks = this.plugin.getTaskTreeItems();
+    this.renderOutline(contentEl, tasks);
   }
 
   private renderOutline(contentEl: HTMLElement, tasks: TaskItem[]): void {
@@ -457,10 +698,7 @@ export class LifeDashboardView extends ItemView {
         "aria-label": "Toggle status done filter"
       }
     });
-    setTooltip(
-      toggleDoneFilterBtn,
-      this.getDoneFilterTooltip()
-    );
+    setTooltip(toggleDoneFilterBtn, this.getDoneFilterTooltip());
 
     const helpBtn = actions.createEl("button", {
       cls: "fmo-outline-filter-btn fmo-outline-filter-help",
@@ -502,9 +740,7 @@ export class LifeDashboardView extends ItemView {
             (item) => (ownSecondsByPath.get(item.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
           )
         : textFiltered;
-      subheader.setText(
-        this.getCumulativeFilterLabel(prop, value, queryWithButtonFilters)
-      );
+      subheader.setText(this.getCumulativeFilterLabel(prop, value, queryWithButtonFilters));
 
       if (!matched.length) {
         outlineBody.createEl("p", {
@@ -555,10 +791,7 @@ export class LifeDashboardView extends ItemView {
     toggleExpandBtn.addEventListener("click", () => {
       this.outlineExpandAll = !this.outlineExpandAll;
       toggleExpandBtn.setText(this.outlineExpandAll ? "−" : "+");
-      toggleExpandBtn.setAttribute(
-        "aria-label",
-        this.getExpandAllTooltip()
-      );
+      toggleExpandBtn.setAttribute("aria-label", this.getExpandAllTooltip());
       setTooltip(toggleExpandBtn, this.getExpandAllTooltip());
       renderFilteredOutline(filter.getValue());
     });
@@ -566,10 +799,7 @@ export class LifeDashboardView extends ItemView {
     toggleDoneFilterBtn.addEventListener("click", () => {
       this.outlineStatusDoneFilterEnabled = !this.outlineStatusDoneFilterEnabled;
       toggleDoneFilterBtn.toggleClass("fmo-outline-filter-btn-active", this.outlineStatusDoneFilterEnabled);
-      setTooltip(
-        toggleDoneFilterBtn,
-        this.getDoneFilterTooltip()
-      );
+      setTooltip(toggleDoneFilterBtn, this.getDoneFilterTooltip());
       renderFilteredOutline(filter.getValue());
     });
 
@@ -622,10 +852,7 @@ export class LifeDashboardView extends ItemView {
     }
   }
 
-  private getOwnSecondsByPath(
-    tasks: TaskItem[],
-    range: OutlineTimeRange
-  ): Map<string, number> {
+  private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
     const ownSecondsByPath = new Map<string, number>();
     for (const item of tasks) {
       ownSecondsByPath.set(
@@ -648,9 +875,7 @@ export class LifeDashboardView extends ItemView {
     queryWithButtonFilters: string
   ): string {
     const clauses: string[] = [];
-    clauses.push(
-      value.length > 0 ? `prop:${prop}=${value}` : `prop:${prop}`
-    );
+    clauses.push(value.length > 0 ? `prop:${prop}=${value}` : `prop:${prop}`);
 
     const query = queryWithButtonFilters.trim();
     if (query.length > 0) {
@@ -745,7 +970,7 @@ export class LifeDashboardView extends ItemView {
 
   private getWeekStart(now: Date): Date {
     const start = this.getDayStart(now);
-    const day = start.getDay(); // Sunday=0 ... Saturday=6
+    const day = start.getDay();
     const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
     const offset = (day - weekStartsOn + 7) % 7;
     start.setDate(start.getDate() - offset);
@@ -842,10 +1067,7 @@ export class LifeDashboardView extends ItemView {
     return out;
   }
 
-  private taskMatchesOutlineFilter(
-    task: TaskItem,
-    tokens: OutlineFilterToken[]
-  ): boolean {
+  private taskMatchesOutlineFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolean {
     const pathText = task.file.path.toLowerCase();
     const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
     const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
@@ -907,214 +1129,6 @@ export class LifeDashboardView extends ItemView {
     } catch {
       return [String(value)];
     }
-  }
-
-  private buildTaskTree(
-    tasks: TaskItem[],
-    options: TaskTreeBuildOptions = {}
-  ): TaskTreeData {
-    const resolveOwnSeconds =
-      options.ownSecondsForPath ?? ((path: string) => this.plugin.getTrackedSeconds(path));
-    const sortMode = options.sortMode ?? "recent";
-    const resolveLatestTrackedStart =
-      options.latestTrackedStartForPath ??
-      ((path: string) => this.plugin.getLatestTrackedStartMsForRange(path, "all"));
-    const nodesByPath = new Map<string, TaskTreeNode>();
-
-    for (const item of tasks) {
-      nodesByPath.set(item.file.path, {
-        item,
-        path: item.file.path,
-        children: [],
-        parentPath: null
-      });
-    }
-
-    for (const node of nodesByPath.values()) {
-      const parentPath = this.resolveParentPath(node.item.parentRaw, node.item.file.path);
-      if (!parentPath || parentPath === node.path || !nodesByPath.has(parentPath)) continue;
-      node.parentPath = parentPath;
-      nodesByPath.get(parentPath)?.children.push(node);
-    }
-
-    const roots = Array.from(nodesByPath.values()).filter((node) => !node.parentPath);
-    const subtreeLatestByPath = new Map<string, number>();
-    const visiting = new Set<string>();
-    for (const root of roots) {
-      this.computeSubtreeLatestStartMs(root, resolveLatestTrackedStart, subtreeLatestByPath, visiting);
-    }
-
-    const sortNodes = (nodes: TaskTreeNode[]): void => {
-      nodes.sort((a, b) => this.compareNodes(a, b, sortMode, subtreeLatestByPath));
-      for (const node of nodes) {
-        sortNodes(node.children);
-      }
-    };
-
-    sortNodes(roots);
-
-    const ownSeconds = new Map<string, number>();
-    const cumulativeSeconds = new Map<string, number>();
-    const computeCumulative = (node: TaskTreeNode, ancestry: Set<string>): number => {
-      if (cumulativeSeconds.has(node.path)) return cumulativeSeconds.get(node.path) ?? 0;
-      const own = ownSeconds.get(node.path) ?? resolveOwnSeconds(node.path);
-      ownSeconds.set(node.path, own);
-      if (ancestry.has(node.path)) return own;
-
-      const nextAncestry = new Set(ancestry);
-      nextAncestry.add(node.path);
-
-      let total = own;
-      for (const child of node.children) {
-        total += computeCumulative(child, nextAncestry);
-      }
-
-      cumulativeSeconds.set(node.path, total);
-      return total;
-    };
-
-    for (const root of roots) {
-      computeCumulative(root, new Set());
-    }
-
-    return { roots, cumulativeSeconds, ownSeconds, nodesByPath };
-  }
-
-  private compareNodes(
-    a: TaskTreeNode,
-    b: TaskTreeNode,
-    sortMode: OutlineSortMode,
-    subtreeLatestByPath: Map<string, number>
-  ): number {
-    if (sortMode === "priority") {
-      const priorityCmp = this.comparePriorityValues(
-        this.readPriorityValue(a.item.frontmatter),
-        this.readPriorityValue(b.item.frontmatter)
-      );
-      if (priorityCmp !== 0) return priorityCmp;
-    }
-
-    const latestA = subtreeLatestByPath.get(a.path) ?? 0;
-    const latestB = subtreeLatestByPath.get(b.path) ?? 0;
-    if (latestA !== latestB) {
-      return latestB - latestA;
-    }
-
-    return a.item.file.path.localeCompare(b.item.file.path);
-  }
-
-  private computeSubtreeLatestStartMs(
-    node: TaskTreeNode,
-    latestTrackedStartForPath: (path: string) => number,
-    memo: Map<string, number>,
-    visiting: Set<string>
-  ): number {
-    const cached = memo.get(node.path);
-    if (cached != null) return cached;
-    if (visiting.has(node.path)) {
-      const own = latestTrackedStartForPath(node.path);
-      memo.set(node.path, own);
-      return own;
-    }
-
-    visiting.add(node.path);
-    let latest = latestTrackedStartForPath(node.path);
-    for (const child of node.children) {
-      const childLatest = this.computeSubtreeLatestStartMs(
-        child,
-        latestTrackedStartForPath,
-        memo,
-        visiting
-      );
-      if (childLatest > latest) {
-        latest = childLatest;
-      }
-    }
-    visiting.delete(node.path);
-    memo.set(node.path, latest);
-    return latest;
-  }
-
-  private readPriorityValue(frontmatter: TaskItem["frontmatter"]): unknown {
-    if (!frontmatter) return null;
-    return frontmatter.priority ?? frontmatter.prio ?? frontmatter.p;
-  }
-
-  private comparePriorityValues(a: unknown, b: unknown): number {
-    const rankA = this.getPriorityRank(a);
-    const rankB = this.getPriorityRank(b);
-    return rankA - rankB;
-  }
-
-  private getPriorityRank(value: unknown): number {
-    if (value == null) return 100;
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, value);
-    }
-
-    const normalized = String(value).trim().toLowerCase();
-    if (!normalized) return 100;
-    if (normalized === "urgent") return 0;
-    if (normalized === "high") return 1;
-    if (normalized === "medium" || normalized === "med") return 2;
-    if (normalized === "low") return 3;
-
-    const pMatch = /^p([0-9]+)$/.exec(normalized);
-    if (pMatch?.[1]) {
-      return Number.parseInt(pMatch[1], 10);
-    }
-
-    const parsed = Number.parseFloat(normalized);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, parsed);
-    }
-
-    return 100;
-  }
-
-  private resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
-    for (const candidate of this.extractParentCandidates(parentRaw)) {
-      const file = this.app.metadataCache.getFirstLinkpathDest(candidate, sourcePath);
-      if (file) return file.path;
-    }
-    return null;
-  }
-
-  private extractParentCandidates(value: unknown): string[] {
-    const candidates: string[] = [];
-
-    const addCandidate = (raw: string): void => {
-      let ref = raw.trim();
-      if (!ref) return;
-
-      if (ref.startsWith("[[") && ref.endsWith("]]")) {
-        ref = ref.slice(2, -2).trim();
-      }
-      if (ref.includes("|")) {
-        ref = ref.split("|")[0]?.trim() ?? "";
-      }
-      if (ref.includes("#")) {
-        ref = ref.split("#")[0]?.trim() ?? "";
-      }
-
-      ref = ref.replace(/^\/+/, "").trim();
-      if (!ref) return;
-      candidates.push(ref);
-    };
-
-    const visit = (next: unknown): void => {
-      if (Array.isArray(next)) {
-        for (const entry of next) {
-          visit(entry);
-        }
-        return;
-      }
-      if (next == null) return;
-      addCandidate(String(next));
-    };
-
-    visit(value);
-    return Array.from(new Set(candidates));
   }
 
   private renderTreeNode(

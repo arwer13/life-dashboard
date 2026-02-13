@@ -1,5 +1,10 @@
 import type { App, WorkspaceLeaf } from "obsidian";
-import { LifeDashboardView, VIEW_TYPE_LIFE_DASHBOARD } from "../ui/life-dashboard-view";
+import {
+  LifeDashboardOutlineView,
+  LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER
+} from "../ui/life-dashboard-view";
 import type { LifeDashboardSettings } from "../settings";
 
 export class DashboardViewController {
@@ -20,41 +25,27 @@ export class DashboardViewController {
   }
 
   async activateView(): Promise<void> {
-    const { workspace } = this.app;
-    let leaf: WorkspaceLeaf | null = workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD)[0] ?? null;
+    const timerLeaf = await this.ensureViewLeaf(VIEW_TYPE_LIFE_DASHBOARD_TIMER, false, false);
+    if (!timerLeaf) return;
 
-    if (!leaf) {
-      leaf = workspace.getRightLeaf(false);
-    }
+    const outlineLeaf = await this.ensureViewLeaf(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, true, true);
+    if (!outlineLeaf) return;
 
-    if (!leaf) {
-      return;
-    }
-
-    if (leaf.getViewState().type !== VIEW_TYPE_LIFE_DASHBOARD) {
-      await leaf.setViewState({ type: VIEW_TYPE_LIFE_DASHBOARD, active: true });
-    }
-
-    workspace.revealLeaf(leaf);
+    this.app.workspace.revealLeaf(outlineLeaf);
     await this.persistVisibilityState(true);
     this.refreshView();
   }
 
   refreshView(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD);
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (view instanceof LifeDashboardView) {
-        void view.render();
-      }
-    }
+    this.refreshTimerView();
+    this.refreshOutlineView();
   }
 
   pushLiveTimerUpdate(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD);
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER);
     for (const leaf of leaves) {
       const view = leaf.view;
-      if (view instanceof LifeDashboardView) {
+      if (view instanceof LifeDashboardTimerView) {
         view.updateLiveTimer();
       }
     }
@@ -69,7 +60,46 @@ export class DashboardViewController {
     await this.saveSettings();
   }
 
+  private refreshTimerView(): void {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER);
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (view instanceof LifeDashboardTimerView) {
+        void view.render();
+      }
+    }
+  }
+
+  private refreshOutlineView(): void {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE);
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (view instanceof LifeDashboardOutlineView) {
+        void view.render();
+      }
+    }
+  }
+
   private isDashboardVisible(): boolean {
-    return this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD).length > 0;
+    return (
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER).length > 0 ||
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE).length > 0
+    );
+  }
+
+  private async ensureViewLeaf(
+    viewType: string,
+    split: boolean,
+    active: boolean
+  ): Promise<WorkspaceLeaf | null> {
+    const { workspace } = this.app;
+    const leaf = workspace.getLeavesOfType(viewType)[0] ?? workspace.getRightLeaf(split);
+    if (!leaf) return null;
+
+    if (leaf.getViewState().type !== viewType) {
+      await leaf.setViewState({ type: viewType, active });
+    }
+
+    return leaf;
   }
 }

@@ -22,7 +22,7 @@ This project follows the Obsidian sample plugin best practices from `AGENTS.md`:
 - `src/main.ts` plugin entrypoint
 - `src/plugin.ts` plugin lifecycle and domain logic
 - `src/settings.ts` settings/defaults
-- `src/ui/life-dashboard-view.ts` custom view UI
+- `src/ui/life-dashboard-view.ts` custom timer + outline view UIs
 - `src/ui/task-select-modal.ts` task selector modal
 - `src/models/types.ts` shared types
 - `src/version.ts` build-stamped UI version
@@ -72,6 +72,7 @@ Current schema:
 Behavior:
 
 - `Start`/`Stop` in panel controls tracking
+- `Open Life Dashboard` opens two separate right-side tabs: `Life Timer` and `Concerns Outline`
 - `Change task...` opens filtered task selector
 - while tracking, round timer shows tracking start time as `HH:mm` (small text above elapsed timer)
 - while tracking, round timer shows a compact `+5m` button next to start time

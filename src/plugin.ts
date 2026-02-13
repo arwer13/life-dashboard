@@ -9,7 +9,12 @@ import { TaskFilterService } from "./services/task-filter-service";
 import { TimeLogStore } from "./services/time-log-store";
 import { TrackingService } from "./services/tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
-import { LifeDashboardView, VIEW_TYPE_LIFE_DASHBOARD } from "./ui/life-dashboard-view";
+import {
+  LifeDashboardOutlineView,
+  LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER
+} from "./ui/life-dashboard-view";
 import { DISPLAY_VERSION } from "./version";
 
 export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";
@@ -62,7 +67,8 @@ export default class LifeDashboardPlugin extends Plugin {
       `[life-dashboard] loaded v${DISPLAY_VERSION} at ${new Date().toISOString()}`
     );
 
-    this.registerView(VIEW_TYPE_LIFE_DASHBOARD, (leaf) => new LifeDashboardView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMER, (leaf) => new LifeDashboardTimerView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, (leaf) => new LifeDashboardOutlineView(leaf, this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
