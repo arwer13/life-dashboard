@@ -12,7 +12,7 @@ import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { LifeDashboardView, VIEW_TYPE_LIFE_DASHBOARD } from "./ui/life-dashboard-view";
 import { DISPLAY_VERSION } from "./version";
 
-export type OutlineTimeRange = "today" | "week" | "month" | "all";
+export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";
 type PeriodTooltipRange = OutlineTimeRange | "yesterday";
 type TimeWindow = { startMs: number; endMs: number };
 type TimerNotificationRule = {
@@ -257,6 +257,24 @@ export default class LifeDashboardPlugin extends Plugin {
 
     const window = this.getWindowForRange(range, new Date());
     return this.sumSecondsInWindow(entries, window);
+  }
+
+  getLatestTrackedStartMsForRange(path: string, range: OutlineTimeRange): number {
+    const entries = this.getEntriesForPath(path);
+    if (entries.length === 0) return 0;
+
+    if (range === "all") {
+      return entries.reduce((latest, entry) => Math.max(latest, entry.startMs), 0);
+    }
+
+    const window = this.getWindowForRange(range, new Date());
+    let latest = 0;
+    for (const entry of entries) {
+      if (this.isEntryInWindow(entry, window) && entry.startMs > latest) {
+        latest = entry.startMs;
+      }
+    }
+    return latest;
   }
 
   getConcernPeriodSummary(path: string): {
@@ -508,6 +526,15 @@ export default class LifeDashboardPlugin extends Plugin {
     if (range === "today") {
       const start = this.getDayStart(now);
       const end = new Date(start.getTime());
+      end.setDate(end.getDate() + 1);
+      return { startMs: start.getTime(), endMs: end.getTime() };
+    }
+
+    if (range === "todayYesterday") {
+      const todayStart = this.getDayStart(now);
+      const start = new Date(todayStart.getTime());
+      start.setDate(start.getDate() - 1);
+      const end = new Date(todayStart.getTime());
       end.setDate(end.getDate() + 1);
       return { startMs: start.getTime(), endMs: end.getTime() };
     }
