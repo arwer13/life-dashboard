@@ -292,6 +292,16 @@ export default class LifeDashboardPlugin extends Plugin {
     this.scheduleCanvasDraftSave();
   }
 
+  getCalendarTreePanelState(): string {
+    return this.settings.calendarTreePanelState || "";
+  }
+
+  setCalendarTreePanelState(state: string): void {
+    if (this.settings.calendarTreePanelState === state) return;
+    this.settings.calendarTreePanelState = state;
+    void this.saveSettings();
+  }
+
   async activateView(): Promise<void> {
     await this.viewController.activateView();
   }
