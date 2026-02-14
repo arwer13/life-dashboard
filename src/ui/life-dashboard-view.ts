@@ -2189,21 +2189,37 @@ type CalendarEntry = {
   entry: TimeLogEntry;
 };
 
+type HourRange = { minHour: number; maxHour: number };
+
 const CALENDAR_COLORS = [
   "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
   "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
   "#9c755f", "#bab0ac"
 ];
 
+const DAY_TIMELINE_PX_PER_HOUR = 60;
+const WEEK_GRID_PX_PER_HOUR = 40;
+const BLOCK_MIN_HEIGHT_PX = 3;
+
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
-  private period: CalendarPeriod = "today";
+  private get period(): CalendarPeriod {
+    return this.plugin.settings.calendarPeriod === "week" ? "week" : "today";
+  }
+
+  private set period(value: CalendarPeriod) {
+    if (this.plugin.settings.calendarPeriod === value) return;
+    this.plugin.settings.calendarPeriod = value;
+    void this.plugin.saveSettings();
+  }
 
   getViewType(): string {
     return VIEW_TYPE_LIFE_DASHBOARD_CALENDAR;
   }
 
   getDisplayText(): string {
-    return "Time Calendar";
+    return "Concerns Calendar";
   }
 
   getIcon(): string {
@@ -2221,24 +2237,19 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Time Calendar" });
+    headerTop.createEl("h3", { text: "Concerns Calendar" });
 
     const rangeRow = header.createEl("div", { cls: "fmo-outline-range-row" });
-    const periodOptions: Array<{ value: CalendarPeriod; label: string }> = [
-      { value: "today", label: "Today" },
-      { value: "week", label: "This Week" }
-    ];
-    for (const option of periodOptions) {
+    for (const option of [
+      { value: "today" as CalendarPeriod, label: "Today" },
+      { value: "week" as CalendarPeriod, label: "This Week" }
+    ]) {
       const button = rangeRow.createEl("button", {
-        cls:
-          this.period === option.value
-            ? "fmo-outline-range-btn fmo-outline-range-btn-active"
-            : "fmo-outline-range-btn",
+        cls: this.period === option.value
+          ? "fmo-outline-range-btn fmo-outline-range-btn-active"
+          : "fmo-outline-range-btn",
         text: option.label,
-        attr: {
-          type: "button",
-          "aria-pressed": String(this.period === option.value)
-        }
+        attr: { type: "button", "aria-pressed": String(this.period === option.value) }
       });
       button.addEventListener("click", () => {
         if (this.period === option.value) return;
@@ -2248,68 +2259,111 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
 
     const entries = this.gatherCalendarEntries();
-
     if (entries.length === 0) {
-      contentEl.createEl("p", {
-        cls: "fmo-empty",
-        text: "No tracked time in this period."
-      });
+      contentEl.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
       return;
     }
 
     const colorMap = this.buildColorMap(entries);
-
     if (this.period === "today") {
       this.renderDayTimeline(contentEl, entries, colorMap);
     } else {
       this.renderWeekGrid(contentEl, entries, colorMap);
     }
-
     this.renderSummaryTable(contentEl, entries, colorMap);
   }
 
   private gatherCalendarEntries(): CalendarEntry[] {
-    const tasks = this.plugin.getTaskTreeItems();
     const now = new Date();
-    const range = this.period === "today" ? "today" : "week";
-    const window = this.plugin.getWindowForRange(range, now);
+    const window = this.plugin.getWindowForRange(this.period === "today" ? "today" : "week", now);
     const result: CalendarEntry[] = [];
 
-    for (const task of tasks) {
-      const entries = this.plugin.getEntriesForPath(task.file.path);
-      for (const entry of entries) {
+    for (const task of this.plugin.getTaskTreeItems()) {
+      for (const entry of this.plugin.getEntriesForPath(task.file.path)) {
         if (entry.startMs >= window.startMs && entry.startMs < window.endMs) {
-          result.push({
-            path: task.file.path,
-            basename: task.file.basename,
-            entry
-          });
+          result.push({ path: task.file.path, basename: task.file.basename, entry });
         }
       }
     }
 
-    result.sort((a, b) => a.entry.startMs - b.entry.startMs);
-    return result;
+    return result.sort((a, b) => a.entry.startMs - b.entry.startMs);
   }
 
   private buildColorMap(entries: CalendarEntry[]): Map<string, string> {
     const pathBasenames = new Map<string, string>();
-    for (const e of entries) {
-      pathBasenames.set(e.path, e.basename);
-    }
+    for (const e of entries) pathBasenames.set(e.path, e.basename);
 
-    const uniquePaths = [...pathBasenames.entries()].sort((a, b) =>
+    const sorted = [...pathBasenames.entries()].sort((a, b) =>
       a[1].localeCompare(b[1], undefined, { sensitivity: "base" })
     );
 
     const colorMap = new Map<string, string>();
-    for (let i = 0; i < uniquePaths.length; i++) {
-      const entry = uniquePaths[i];
-      if (entry) {
-        colorMap.set(entry[0], CALENDAR_COLORS[i % CALENDAR_COLORS.length] ?? CALENDAR_COLORS[0]);
-      }
+    for (let i = 0; i < sorted.length; i++) {
+      colorMap.set(sorted[i][0], CALENDAR_COLORS[i % CALENDAR_COLORS.length]);
     }
     return colorMap;
+  }
+
+  private computeHourRange(entries: CalendarEntry[]): HourRange {
+    let minHour = 23;
+    let maxHour = 0;
+    for (const e of entries) {
+      const startH = new Date(e.entry.startMs).getHours();
+      const endMs = e.entry.startMs + e.entry.durationMinutes * 60 * 1000;
+      const endDate = new Date(endMs);
+      const endH = endDate.getHours() + (endDate.getMinutes() > 0 ? 1 : 0);
+      if (startH < minHour) minHour = startH;
+      if (endH > maxHour) maxHour = endH;
+    }
+    minHour = Math.max(0, minHour - 1);
+    maxHour = Math.min(24, maxHour + 1);
+    if (maxHour <= minHour) maxHour = minHour + 1;
+    return { minHour, maxHour };
+  }
+
+  private renderHourLabelsAndGridlines(
+    container: HTMLElement,
+    { minHour, maxHour }: HourRange,
+    pxPerHour: number,
+    labelCls: string
+  ): void {
+    for (let h = minHour; h <= maxHour; h++) {
+      const y = (h - minHour) * pxPerHour;
+      const label = container.createEl("div", { cls: labelCls });
+      label.style.top = `${y}px`;
+      label.setText(`${pad2(h)}:00`);
+
+      const line = container.createEl("div", { cls: "fmo-calendar-gridline" });
+      line.style.top = `${y}px`;
+    }
+  }
+
+  private renderEntryBlock(
+    container: HTMLElement,
+    e: CalendarEntry,
+    colorMap: Map<string, string>,
+    minHour: number,
+    pxPerHour: number,
+    dayStartMs: number
+  ): void {
+    const startFrac = (e.entry.startMs - dayStartMs) / (60 * 60 * 1000);
+    const durationHours = e.entry.durationMinutes / 60;
+    const top = (startFrac - minHour) * pxPerHour;
+    const height = Math.max(BLOCK_MIN_HEIGHT_PX, durationHours * pxPerHour);
+
+    const startDate = new Date(e.entry.startMs);
+    const timeLabel = `${pad2(startDate.getHours())}:${pad2(startDate.getMinutes())}`;
+    const durationLabel = this.plugin.formatShortDuration(e.entry.durationMinutes * 60);
+    const tooltip = `${e.basename} ${timeLabel} (${durationLabel})`;
+
+    const block = container.createEl("div", { cls: "fmo-calendar-block" });
+    block.style.top = `${top}px`;
+    block.style.height = `${height}px`;
+    block.style.backgroundColor = colorMap.get(e.path) ?? CALENDAR_COLORS[0];
+    block.title = tooltip;
+    if (height >= 12) block.setText(height >= 20 ? tooltip : e.basename);
+
+    block.addEventListener("click", () => { void this.plugin.openFile(e.path); });
   }
 
   private renderDayTimeline(
@@ -2317,89 +2371,17 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     entries: CalendarEntry[],
     colorMap: Map<string, string>
   ): void {
-    let minHour = 23;
-    let maxHour = 0;
-    for (const e of entries) {
-      const startDate = new Date(e.entry.startMs);
-      const endMs = e.entry.startMs + e.entry.durationMinutes * 60 * 1000;
-      const endDate = new Date(endMs);
-      const startHour = startDate.getHours();
-      const endHour = endDate.getHours() + (endDate.getMinutes() > 0 || endDate.getSeconds() > 0 ? 1 : 0);
-      if (startHour < minHour) minHour = startHour;
-      if (endHour > maxHour) maxHour = endHour;
-    }
-
-    minHour = Math.max(0, minHour - 1);
-    maxHour = Math.min(24, maxHour + 1);
-    if (maxHour <= minHour) maxHour = minHour + 1;
-
-    const pxPerHour = 60;
-    const totalHours = maxHour - minHour;
-    const timelineHeight = totalHours * pxPerHour;
+    const hourRange = this.computeHourRange(entries);
+    const gridHeight = (hourRange.maxHour - hourRange.minHour) * DAY_TIMELINE_PX_PER_HOUR;
+    const dayStartMs = this.plugin.getDayStart(new Date()).getTime();
 
     const timeline = containerEl.createEl("div", { cls: "fmo-calendar-timeline" });
-    timeline.style.position = "relative";
-    timeline.style.height = `${timelineHeight}px`;
-    timeline.style.marginTop = "8px";
-    timeline.style.marginBottom = "12px";
-    timeline.style.marginLeft = "48px";
-    timeline.style.borderLeft = "1px solid var(--background-modifier-border)";
+    timeline.style.height = `${gridHeight}px`;
 
-    for (let h = minHour; h <= maxHour; h++) {
-      const y = (h - minHour) * pxPerHour;
-      const label = timeline.createEl("div", { cls: "fmo-calendar-hour-label" });
-      label.style.position = "absolute";
-      label.style.left = "-48px";
-      label.style.top = `${y}px`;
-      label.style.width = "42px";
-      label.style.textAlign = "right";
-      label.style.fontSize = "11px";
-      label.style.color = "var(--text-muted)";
-      label.style.transform = "translateY(-50%)";
-      label.setText(`${String(h).padStart(2, "0")}:00`);
-
-      const gridline = timeline.createEl("div", { cls: "fmo-calendar-gridline" });
-      gridline.style.position = "absolute";
-      gridline.style.left = "0";
-      gridline.style.right = "0";
-      gridline.style.top = `${y}px`;
-      gridline.style.height = "1px";
-      gridline.style.backgroundColor = "var(--background-modifier-border)";
-      gridline.style.opacity = "0.5";
-    }
+    this.renderHourLabelsAndGridlines(timeline, hourRange, DAY_TIMELINE_PX_PER_HOUR, "fmo-calendar-hour-label");
 
     for (const e of entries) {
-      const startDate = new Date(e.entry.startMs);
-      const startFrac = startDate.getHours() + startDate.getMinutes() / 60;
-      const durationHours = e.entry.durationMinutes / 60;
-
-      const top = (startFrac - minHour) * pxPerHour;
-      const height = Math.max(4, durationHours * pxPerHour);
-
-      const pad = (n: number): string => String(n).padStart(2, "0");
-      const timeLabel = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
-      const durationLabel = this.plugin.formatShortDuration(e.entry.durationMinutes * 60);
-
-      const block = timeline.createEl("div", { cls: "fmo-calendar-block" });
-      block.style.position = "absolute";
-      block.style.left = "8px";
-      block.style.right = "8px";
-      block.style.top = `${top}px`;
-      block.style.height = `${height}px`;
-      block.style.backgroundColor = colorMap.get(e.path) ?? CALENDAR_COLORS[0];
-      block.style.borderRadius = "4px";
-      block.style.padding = "2px 6px";
-      block.style.fontSize = "11px";
-      block.style.color = "#fff";
-      block.style.overflow = "hidden";
-      block.style.cursor = "pointer";
-      block.style.opacity = "0.85";
-      block.title = `${e.basename} ${timeLabel} (${durationLabel})`;
-      block.setText(`${e.basename} ${timeLabel} (${durationLabel})`);
-
-      block.addEventListener("click", () => {
-        void this.plugin.openFile(e.path);
-      });
+      this.renderEntryBlock(timeline, e, colorMap, hourRange.minHour, DAY_TIMELINE_PX_PER_HOUR, dayStartMs);
     }
   }
 
@@ -2410,93 +2392,64 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   ): void {
     const now = new Date();
     const weekStart = this.plugin.getWeekStart(now);
-    const weekStartsOnSunday = this.plugin.settings.weekStartsOn === "sunday";
-    const dayLabels = weekStartsOnSunday
+    const dayNames = this.plugin.settings.weekStartsOn === "sunday"
       ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
       : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-    const dayBuckets: Array<Map<string, number>> = [];
-    for (let i = 0; i < 7; i++) {
-      dayBuckets.push(new Map<string, number>());
-    }
-
-    const dayTotals: number[] = new Array(7).fill(0) as number[];
-
+    const dayEntries: CalendarEntry[][] = Array.from({ length: 7 }, () => []);
     for (const e of entries) {
-      const entryDate = new Date(e.entry.startMs);
-      const dayStart = this.plugin.getDayStart(entryDate);
-      const diffMs = dayStart.getTime() - weekStart.getTime();
-      const dayIndex = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-      if (dayIndex < 0 || dayIndex >= 7) continue;
-
-      const bucket = dayBuckets[dayIndex];
-      if (!bucket) continue;
-      const seconds = e.entry.durationMinutes * 60;
-      bucket.set(e.path, (bucket.get(e.path) ?? 0) + seconds);
-      dayTotals[dayIndex] = (dayTotals[dayIndex] ?? 0) + seconds;
+      const dayIndex = Math.floor(
+        (this.plugin.getDayStart(new Date(e.entry.startMs)).getTime() - weekStart.getTime()) /
+        (24 * 60 * 60 * 1000)
+      );
+      if (dayIndex >= 0 && dayIndex < 7) dayEntries[dayIndex].push(e);
     }
 
-    const maxDaySeconds = Math.max(...dayTotals, 1);
-    const maxColumnHeight = 200;
+    const hourRange = this.computeHourRange(entries);
+    const gridHeight = (hourRange.maxHour - hourRange.minHour) * WEEK_GRID_PX_PER_HOUR;
+    const todayMs = this.plugin.getDayStart(now).getTime();
 
-    const grid = containerEl.createEl("div", { cls: "fmo-calendar-week-grid" });
-    grid.style.display = "flex";
-    grid.style.gap = "6px";
-    grid.style.marginTop = "8px";
-    grid.style.marginBottom = "12px";
-    grid.style.alignItems = "flex-end";
-    grid.style.minHeight = `${maxColumnHeight + 60}px`;
+    const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-week-wrapper" });
+
+    // Hour axis
+    const hourAxis = wrapper.createEl("div", { cls: "fmo-calendar-week-hour-axis" });
+    hourAxis.style.height = `${gridHeight}px`;
+    this.renderHourLabelsAndGridlines(hourAxis, hourRange, WEEK_GRID_PX_PER_HOUR, "fmo-calendar-hour-label");
+
+    // Day columns
+    const grid = wrapper.createEl("div", { cls: "fmo-calendar-week-grid" });
 
     for (let d = 0; d < 7; d++) {
+      const dayMs = weekStart.getTime() + d * 24 * 60 * 60 * 1000;
+      const isToday = dayMs === todayMs;
+
       const col = grid.createEl("div", { cls: "fmo-calendar-week-col" });
-      col.style.flex = "1";
-      col.style.display = "flex";
-      col.style.flexDirection = "column";
-      col.style.alignItems = "center";
-      col.style.minWidth = "0";
 
-      col.createEl("div", {
-        cls: "fmo-calendar-day-label",
-        text: dayLabels[d] ?? ""
-      }).style.fontSize = "11px";
+      const dayLabel = col.createEl("div", {
+        cls: isToday ? "fmo-calendar-day-label fmo-calendar-day-today" : "fmo-calendar-day-label",
+        text: `${dayNames[d] ?? ""} ${pad2(new Date(dayMs).getDate())}`
+      });
 
-      const bar = col.createEl("div", { cls: "fmo-calendar-day-bar" });
-      bar.style.width = "100%";
-      bar.style.display = "flex";
-      bar.style.flexDirection = "column-reverse";
-      bar.style.marginTop = "4px";
+      const dayCol = col.createEl("div", { cls: "fmo-calendar-day-bar" });
+      dayCol.style.height = `${gridHeight}px`;
 
-      const bucket = dayBuckets[d];
-      const total = dayTotals[d] ?? 0;
-      const columnHeight = total > 0 ? (total / maxDaySeconds) * maxColumnHeight : 0;
-
-      if (bucket && total > 0) {
-        const sortedPaths = [...bucket.entries()].sort((a, b) => b[1] - a[1]);
-        for (const [path, seconds] of sortedPaths) {
-          const segHeight = (seconds / total) * columnHeight;
-          const seg = bar.createEl("div", { cls: "fmo-calendar-week-seg" });
-          seg.style.height = `${Math.max(2, segHeight)}px`;
-          seg.style.backgroundColor = colorMap.get(path) ?? CALENDAR_COLORS[0];
-          seg.style.borderRadius = "2px";
-          seg.style.cursor = "pointer";
-          seg.style.marginBottom = "1px";
-
-          const basename = entries.find((e) => e.path === path)?.basename ?? path;
-          seg.title = `${basename}: ${this.plugin.formatShortDuration(seconds)}`;
-
-          seg.addEventListener("click", () => {
-            void this.plugin.openFile(path);
-          });
-        }
+      // Gridlines
+      for (let h = hourRange.minHour; h <= hourRange.maxHour; h++) {
+        const line = dayCol.createEl("div", { cls: "fmo-calendar-gridline" });
+        line.style.top = `${(h - hourRange.minHour) * WEEK_GRID_PX_PER_HOUR}px`;
       }
 
-      const totalLabel = col.createEl("div", {
+      // Entry blocks
+      for (const e of dayEntries[d]) {
+        this.renderEntryBlock(dayCol, e, colorMap, hourRange.minHour, WEEK_GRID_PX_PER_HOUR, dayMs);
+      }
+
+      // Day total
+      const total = dayEntries[d].reduce((s, e) => s + e.entry.durationMinutes * 60, 0);
+      col.createEl("div", {
         cls: "fmo-calendar-day-total",
         text: total > 0 ? this.plugin.formatShortDuration(total) : ""
       });
-      totalLabel.style.fontSize = "10px";
-      totalLabel.style.color = "var(--text-muted)";
-      totalLabel.style.marginTop = "4px";
     }
   }
 
@@ -2517,23 +2470,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
 
     const sorted = [...secondsByPath.entries()].sort((a, b) => b[1] - a[1]);
-
     const table = containerEl.createEl("div", { cls: "fmo-calendar-summary" });
-    table.style.marginTop = "12px";
 
     for (const [path, seconds] of sorted) {
       const row = table.createEl("div", { cls: "fmo-calendar-summary-row" });
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.gap = "8px";
-      row.style.padding = "3px 0";
-
       const dot = row.createEl("span", { cls: "fmo-calendar-color-dot" });
-      dot.style.display = "inline-block";
-      dot.style.width = "10px";
-      dot.style.height = "10px";
-      dot.style.borderRadius = "50%";
-      dot.style.flexShrink = "0";
       dot.style.backgroundColor = colorMap.get(path) ?? CALENDAR_COLORS[0];
 
       const link = row.createEl("a", {
@@ -2541,37 +2482,17 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         text: basenameByPath.get(path) ?? path,
         href: "#"
       });
-      link.style.flex = "1";
-      link.style.minWidth = "0";
-      link.style.overflow = "hidden";
-      link.style.textOverflow = "ellipsis";
-      link.style.whiteSpace = "nowrap";
-
       link.addEventListener("click", (evt) => {
         evt.preventDefault();
         void this.plugin.openFile(path);
       });
 
-      row.createEl("span", {
-        cls: "fmo-time-badge",
-        text: this.plugin.formatShortDuration(seconds)
-      });
+      row.createEl("span", { cls: "fmo-time-badge", text: this.plugin.formatShortDuration(seconds) });
     }
 
     const totalRow = table.createEl("div", { cls: "fmo-calendar-summary-row fmo-calendar-summary-total" });
-    totalRow.style.display = "flex";
-    totalRow.style.alignItems = "center";
-    totalRow.style.gap = "8px";
-    totalRow.style.padding = "6px 0 3px 0";
-    totalRow.style.borderTop = "1px solid var(--background-modifier-border)";
-    totalRow.style.marginTop = "4px";
-    totalRow.style.fontWeight = "600";
-
-    totalRow.createEl("span").style.width = "10px";
-    totalRow.createEl("span", { text: "Total" }).style.flex = "1";
-    totalRow.createEl("span", {
-      cls: "fmo-time-badge",
-      text: this.plugin.formatShortDuration(grandTotal)
-    });
+    totalRow.createEl("span", { cls: "fmo-calendar-color-dot" });
+    totalRow.createEl("span", { cls: "fmo-calendar-summary-label", text: "Total" });
+    totalRow.createEl("span", { cls: "fmo-time-badge", text: this.plugin.formatShortDuration(grandTotal) });
   }
 }

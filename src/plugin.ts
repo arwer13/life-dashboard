@@ -63,6 +63,8 @@ export default class LifeDashboardPlugin extends Plugin {
   private notificationPermissionRequested = false;
   private powerAutoStopInFlight: Promise<void> | null = null;
   private removePowerMonitorListeners: Array<() => void> = [];
+  private timeLogFsWatcher: import("fs").FSWatcher | null = null;
+  private timeLogReloadDebounce: number | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -115,7 +117,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-calendar",
-      name: "Open Time Calendar",
+      name: "Open Concerns Calendar",
       callback: () => {
         void this.viewController.activateCalendarView();
       }
@@ -151,6 +153,15 @@ export default class LifeDashboardPlugin extends Plugin {
       })
     );
     this.registerEvent(this.app.vault.on("create", () => this.refreshView()));
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file.path === this.settings.timeLogPath) {
+          void this.reloadTotalsAndRefresh();
+        }
+      })
+    );
+
+    this.watchTimeLogFile();
 
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
@@ -183,6 +194,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   async onunload(): Promise<void> {
     this.clearPowerMonitorListeners();
+    this.closeTimeLogFsWatcher();
 
     if (this.outlineFilterSaveTimer !== null) {
       window.clearTimeout(this.outlineFilterSaveTimer);
@@ -522,6 +534,58 @@ export default class LifeDashboardPlugin extends Plugin {
       remove();
     }
     this.removePowerMonitorListeners = [];
+  }
+
+  private watchTimeLogFile(): void {
+    const adapter = this.app.vault.adapter;
+    if (!("getBasePath" in adapter) || typeof adapter.getBasePath !== "function") return;
+
+    const basePath = adapter.getBasePath() as string;
+    const fs = this.requireNode<typeof import("fs")>("fs");
+    const path = this.requireNode<typeof import("path")>("path");
+    if (!fs || !path) return;
+
+    try {
+      this.timeLogFsWatcher = fs.watch(
+        path.join(basePath, this.settings.timeLogPath),
+        { persistent: false },
+        () => this.debounceTimeLogReload()
+      );
+    } catch {
+      console.warn("[life-dashboard] Could not watch time log file for external changes.");
+    }
+  }
+
+  private debounceTimeLogReload(): void {
+    if (this.timeLogReloadDebounce !== null) {
+      window.clearTimeout(this.timeLogReloadDebounce);
+    }
+    this.timeLogReloadDebounce = window.setTimeout(() => {
+      this.timeLogReloadDebounce = null;
+      void this.reloadTotalsAndRefresh().then(() => {
+        new Notice("Time tracking data reloaded.");
+      });
+    }, 500);
+  }
+
+  private closeTimeLogFsWatcher(): void {
+    if (this.timeLogReloadDebounce !== null) {
+      window.clearTimeout(this.timeLogReloadDebounce);
+      this.timeLogReloadDebounce = null;
+    }
+    if (this.timeLogFsWatcher) {
+      this.timeLogFsWatcher.close();
+      this.timeLogFsWatcher = null;
+    }
+  }
+
+  private requireNode<T>(id: string): T | null {
+    try {
+      const req = (window as unknown as { require?: (id: string) => unknown }).require;
+      return (req?.(id) as T) ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async reloadTotalsAndRefresh(): Promise<void> {
