@@ -21,7 +21,7 @@ import { DISPLAY_VERSION } from "./version";
 
 export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";
 type PeriodTooltipRange = OutlineTimeRange | "yesterday";
-type TimeWindow = { startMs: number; endMs: number };
+export type TimeWindow = { startMs: number; endMs: number };
 type TimerNotificationRule = {
   thresholdSeconds: number;
   label: string;
@@ -559,7 +559,7 @@ export default class LifeDashboardPlugin extends Plugin {
     }
   }
 
-  private getEntriesForPath(path: string): TimeLogEntry[] {
+  getEntriesForPath(path: string): TimeLogEntry[] {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return [];
 
@@ -581,7 +581,7 @@ export default class LifeDashboardPlugin extends Plugin {
     return latestEndMs;
   }
 
-  private getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
+  getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
     if (range === "today") {
       const start = this.getDayStart(now);
       const end = new Date(start.getTime());
@@ -631,7 +631,7 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.getWindowForRange(range, now);
   }
 
-  private getWeekStart(now: Date): Date {
+  getWeekStart(now: Date): Date {
     const start = this.getDayStart(now);
     const day = start.getDay(); // Sunday=0 ... Saturday=6
     const weekStartsOn = this.settings.weekStartsOn === "sunday" ? 0 : 1;
@@ -640,7 +640,7 @@ export default class LifeDashboardPlugin extends Plugin {
     return start;
   }
 
-  private getDayStart(value: Date): Date {
+  getDayStart(value: Date): Date {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
   }
 
