@@ -86,13 +86,13 @@ type PersistedCanvasDraftState = {
   trees: PersistedCanvasTreeDraft[];
 };
 
-type OutlineFilterToken =
+export type OutlineFilterToken =
   | { key: "any" | "path" | "file"; value: string; negated: boolean }
   | { key: "prop"; prop: string; value: string | null; negated: boolean };
 
-type OutlineSortMode = "recent" | "priority";
+export type OutlineSortMode = "recent" | "priority";
 
-const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
+export const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
 const TRACKING_ADJUST_MINUTES = 5;
 const CANVAS_STAGE_WIDTH = 3600;
 const CANVAS_STAGE_HEIGHT = 2400;
@@ -102,7 +102,7 @@ const CANVAS_CARD_MIN_WIDTH = 320;
 const CANVAS_CARD_MIN_HEIGHT = 280;
 const CANVAS_DRAFT_VERSION = 1;
 
-const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
+export const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
   { value: "today", label: "today" },
   { value: "todayYesterday", label: "today+yesterday" },
   { value: "week", label: "this week" },
@@ -110,7 +110,7 @@ const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> =
   { value: "all", label: "all time" }
 ];
 
-const OUTLINE_SORT_OPTIONS: Array<{ value: OutlineSortMode; label: string }> = [
+export const OUTLINE_SORT_OPTIONS: Array<{ value: OutlineSortMode; label: string }> = [
   { value: "recent", label: "recent tracked" },
   { value: "priority", label: "priority" }
 ];
