@@ -757,6 +757,187 @@
   font-style: italic;
 }
 
+/* ── Shared Tree Panel ────────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-tree-panel-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--background-primary) 88%, var(--background-secondary) 12%);
+}
+
+.frontmatter-outline-view .fmo-tree-panel-root-row {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-option {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-control-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-filter .search-input-container {
+  width: 100%;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview {
+  padding: 8px;
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-btn {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--interactive-normal);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-btn:hover:not(:disabled) {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-btn:disabled {
+  opacity: 0.5;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-tree {
+  padding-left: 0;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-tree-item {
+  margin: 3px 0;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-tree-row {
+  gap: 6px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-node-marker {
+  color: var(--text-muted);
+  width: 14px;
+  min-width: 14px;
+  text-align: center;
+  font-size: 10px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-node-toggle {
+  width: 14px;
+  min-width: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+  line-height: 1;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-node-toggle:hover {
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-tree-panel-tree-children {
+  margin-left: 6px;
+  border-left: none;
+}
+
+.frontmatter-outline-view .fmo-tree-panel-truncated {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* ── Canvas: Card Body ────────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-canvas-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Calendar: Layout ─────────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-calendar-layout {
+  display: flex;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.frontmatter-outline-view .fmo-calendar-sidebar {
+  width: 280px;
+  min-width: 220px;
+  max-width: 340px;
+  border-right: 1px solid var(--background-modifier-border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.frontmatter-outline-view .fmo-calendar-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 8px;
+}
+
 /* ── Calendar: Shared ───────────────────────────────────────── */
 
 .frontmatter-outline-view .fmo-calendar-gridline {
