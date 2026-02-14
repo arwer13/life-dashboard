@@ -756,3 +756,140 @@
   font-size: 11px;
   font-style: italic;
 }
+
+/* ── Calendar: Day Timeline ─────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-calendar-timeline {
+  position: relative;
+  margin-top: 8px;
+  margin-bottom: 12px;
+  margin-left: 48px;
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+.frontmatter-outline-view .fmo-calendar-hour-label {
+  position: absolute;
+  left: -48px;
+  width: 42px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.frontmatter-outline-view .fmo-calendar-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: var(--background-modifier-border);
+  opacity: 0.5;
+}
+
+.frontmatter-outline-view .fmo-calendar-block {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.12s ease;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.frontmatter-outline-view .fmo-calendar-block:hover {
+  opacity: 1;
+}
+
+/* ── Calendar: Week Grid ────────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-calendar-week-grid {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.frontmatter-outline-view .fmo-calendar-day-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  user-select: none;
+}
+
+.frontmatter-outline-view .fmo-calendar-day-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  margin-top: 4px;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-seg {
+  border-radius: 2px;
+  cursor: pointer;
+  margin-bottom: 1px;
+  transition: opacity 0.12s ease;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-seg:hover {
+  opacity: 0.8;
+}
+
+.frontmatter-outline-view .fmo-calendar-day-total {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Calendar: Summary Table ────────────────────────────────── */
+
+.frontmatter-outline-view .fmo-calendar-summary {
+  margin-top: 12px;
+}
+
+.frontmatter-outline-view .fmo-calendar-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.frontmatter-outline-view .fmo-calendar-summary-row .fmo-note-link {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frontmatter-outline-view .fmo-calendar-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.frontmatter-outline-view .fmo-calendar-summary-total {
+  padding: 6px 0 3px 0;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 4px;
+  font-weight: 600;
+}
