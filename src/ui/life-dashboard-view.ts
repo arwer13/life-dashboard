@@ -12,6 +12,7 @@ import type { TaskTreeNode, TaskItem, TimeLogEntry } from "../models/types";
 import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
+import { ConcernTreePanel } from "./concern-tree-panel";
 
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
@@ -55,12 +56,6 @@ type CanvasTreeDraft = {
   width: number;
   height: number;
   collapsedNodePaths: Set<string>;
-};
-
-type CanvasTreeRenderState = {
-  cumulativeSeconds: Map<string, number>;
-  ownSeconds: Map<string, number>;
-  matchedPaths: Set<string>;
 };
 
 type PersistedCanvasTreeDraft = {
@@ -1658,226 +1653,31 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
     if (tree.collapsed) return;
 
-    const controls = card.createEl("div", { cls: "fmo-canvas-controls" });
-    const tasksByName = [...tasks].sort((a, b) =>
-      a.file.basename.localeCompare(b.file.basename, undefined, { sensitivity: "base" })
-    );
+    const panelContainer = card.createEl("div", { cls: "fmo-canvas-card-body" });
 
-    const rootRow = controls.createEl("label", { cls: "fmo-canvas-root-row" });
-    rootRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Root" });
-    const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
-    rootSelect.createEl("option", { value: "", text: "All concerns" });
-    for (const task of tasksByName) {
-      rootSelect.createEl("option", {
-        value: task.file.path,
-        text: task.file.basename
-      });
-    }
-    rootSelect.value = tree.rootPath;
-
-    const optionsGrid = controls.createEl("div", { cls: "fmo-canvas-options-grid" });
-    const rangeRow = optionsGrid.createEl("label", { cls: "fmo-canvas-option" });
-    rangeRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Range" });
-    const rangeSelect = rangeRow.createEl("select", {
-      cls: "fmo-outline-sort-select"
-    }) as HTMLSelectElement;
-    for (const option of OUTLINE_RANGE_OPTIONS) {
-      rangeSelect.createEl("option", { value: option.value, text: option.label });
-    }
-    rangeSelect.value = tree.range;
-
-    const sortRow = optionsGrid.createEl("label", { cls: "fmo-canvas-option" });
-    sortRow.createEl("span", { cls: "fmo-canvas-control-label", text: "Sort" });
-    const sortSelect = sortRow.createEl("select", {
-      cls: "fmo-outline-sort-select"
-    }) as HTMLSelectElement;
-    for (const option of OUTLINE_SORT_OPTIONS) {
-      sortSelect.createEl("option", { value: option.value, text: option.label });
-    }
-    sortSelect.value = tree.sortMode;
-
-    const flagsRow = controls.createEl("div", { cls: "fmo-canvas-flags" });
-    const trackedOnlyRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
-    const trackedOnlyInput = trackedOnlyRow.createEl("input", {
-      cls: "fmo-outline-tracked-only-input",
-      attr: { type: "checkbox" }
-    }) as HTMLInputElement;
-    trackedOnlyInput.checked = tree.trackedOnly;
-    trackedOnlyRow.createEl("span", { text: "Tracked only" });
-
-    const showParentsRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
-    const showParentsInput = showParentsRow.createEl("input", {
-      cls: "fmo-outline-tracked-only-input",
-      attr: { type: "checkbox" }
-    }) as HTMLInputElement;
-    showParentsInput.checked = tree.showParents;
-    showParentsRow.createEl("span", { text: "Parents" });
-
-    const filterRow = controls.createEl("div", { cls: "fmo-canvas-filter" });
-    const filterSearch = new SearchComponent(filterRow);
-    filterSearch.setPlaceholder("Filter (path:, file:, prop:key=value)");
-    filterSearch.setValue(tree.query);
-
-    const preview = card.createEl("div", { cls: "fmo-canvas-preview" });
-    const renderPreview = (): void => {
-      preview.empty();
-      this.renderCanvasTreePreview(preview, tree, tasks, renderPreview);
-    };
-
-    rootSelect.addEventListener("change", () => {
-      tree.rootPath = rootSelect.value;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-    rangeSelect.addEventListener("change", () => {
-      tree.range = rangeSelect.value as OutlineTimeRange;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-    sortSelect.addEventListener("change", () => {
-      tree.sortMode = sortSelect.value as OutlineSortMode;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-    trackedOnlyInput.addEventListener("change", () => {
-      tree.trackedOnly = trackedOnlyInput.checked;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-    showParentsInput.addEventListener("change", () => {
-      tree.showParents = showParentsInput.checked;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-    filterSearch.onChange((query) => {
-      tree.query = query;
-      this.persistCanvasTrees();
-      renderPreview();
-    });
-
-    renderPreview();
-  }
-
-  private renderCanvasTreePreview(
-    containerEl: HTMLElement,
-    tree: CanvasTreeDraft,
-    tasks: TaskItem[],
-    rerender: () => void
-  ): void {
-    if (tasks.length === 0) {
-      containerEl.createEl("div", {
-        cls: "fmo-empty",
-        text: "No concerns match your plugin filter settings."
-      });
-      return;
-    }
-
-    const ownSecondsByPath = this.getCanvasOwnSecondsByPath(tasks, tree.range);
-    const parentByPath = this.buildCanvasParentPathMap(tasks);
-    const scopePaths = this.collectCanvasScopePaths(tasks, parentByPath, tree.rootPath);
-
-    const scopedTasks = tasks.filter((task) => scopePaths.has(task.file.path));
-    const queryMatched = this.filterTasksForCanvas(scopedTasks, tree.query);
-    const matched = tree.trackedOnly
-      ? queryMatched.filter(
-          (task) => (ownSecondsByPath.get(task.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
-        )
-      : queryMatched;
-
-    if (matched.length === 0) {
-      containerEl.createEl("div", {
-        cls: "fmo-empty",
-        text: "No concerns match this tree configuration."
-      });
-      return;
-    }
-
-    const matchedPaths = new Set(matched.map((task) => task.file.path));
-    const visiblePaths = tree.showParents
-      ? this.collectCanvasPathsWithParents(matchedPaths, parentByPath, scopePaths)
-      : matchedPaths;
-    const visibleTasks = tasks.filter((task) => visiblePaths.has(task.file.path));
-    const latestTrackedStartForPath = this.createCanvasLatestTrackedStartResolver(tree.range);
-    const taskTree = this.buildTaskTree(visibleTasks, {
-      ownSecondsForPath: (path) => ownSecondsByPath.get(path) ?? 0,
-      sortMode: tree.sortMode,
-      latestTrackedStartForPath
-    });
-
-    const roots = this.selectCanvasRoots(taskTree, tree.rootPath);
-    if (roots.length === 0) {
-      containerEl.createEl("div", {
-        cls: "fmo-empty",
-        text: "Selected root has no visible descendants with current filters."
-      });
-      return;
-    }
-
-    const branchPaths = this.collectCanvasBranchPaths(roots);
-    if (branchPaths.size > 0) {
-      let pruned = false;
-      for (const path of [...tree.collapsedNodePaths]) {
-        if (!branchPaths.has(path)) {
-          tree.collapsedNodePaths.delete(path);
-          pruned = true;
-        }
-      }
-      if (pruned) {
+    new ConcernTreePanel({
+      plugin: this.plugin,
+      container: panelContainer,
+      state: {
+        rootPath: tree.rootPath,
+        query: tree.query,
+        sortMode: tree.sortMode,
+        range: tree.range,
+        trackedOnly: tree.trackedOnly,
+        showParents: tree.showParents,
+        collapsedNodePaths: tree.collapsedNodePaths,
+      },
+      onChange: (_visiblePaths, newState) => {
+        tree.rootPath = newState.rootPath;
+        tree.query = newState.query;
+        tree.sortMode = newState.sortMode;
+        tree.range = newState.range;
+        tree.trackedOnly = newState.trackedOnly;
+        tree.showParents = newState.showParents;
+        tree.collapsedNodePaths = newState.collapsedNodePaths;
         this.persistCanvasTrees();
-      }
-    }
-
-    const top = containerEl.createEl("div", { cls: "fmo-canvas-preview-top" });
-    const actions = top.createEl("div", { cls: "fmo-canvas-preview-actions" });
-    const expandAllBtn = actions.createEl("button", {
-      cls: "fmo-canvas-preview-btn",
-      text: "Expand all",
-      attr: { type: "button" }
+      },
     });
-    expandAllBtn.disabled = tree.collapsedNodePaths.size === 0;
-    expandAllBtn.addEventListener("click", () => {
-      tree.collapsedNodePaths.clear();
-      this.persistCanvasTrees();
-      rerender();
-    });
-
-    const collapseAllBtn = actions.createEl("button", {
-      cls: "fmo-canvas-preview-btn",
-      text: "Collapse all",
-      attr: { type: "button" }
-    });
-    collapseAllBtn.disabled = branchPaths.size === 0;
-    collapseAllBtn.addEventListener("click", () => {
-      tree.collapsedNodePaths = new Set(branchPaths);
-      this.persistCanvasTrees();
-      rerender();
-    });
-
-    const meta = top.createEl("div", { cls: "fmo-canvas-preview-meta" });
-    meta.createEl("span", {
-      text: `${matchedPaths.size} matched / ${visiblePaths.size} visible`
-    });
-    meta.createEl("span", {
-      text: `range: ${OUTLINE_RANGE_OPTIONS.find((option) => option.value === tree.range)?.label ?? tree.range}`
-    });
-
-    const list = containerEl.createEl("ul", { cls: "fmo-tree fmo-canvas-tree" });
-    const renderState: CanvasTreeRenderState = {
-      cumulativeSeconds: taskTree.cumulativeSeconds,
-      ownSeconds: taskTree.ownSeconds,
-      matchedPaths
-    };
-    const limitState = { count: 0, truncated: false };
-    for (const root of roots) {
-      this.renderCanvasTreeNode(list, root, tree, renderState, new Set(), 0, limitState, rerender);
-    }
-
-    if (limitState.truncated) {
-      containerEl.createEl("div", {
-        cls: "fmo-canvas-truncated",
-        text: "Preview truncated at 160 rows."
-      });
-    }
   }
 
   private attachCanvasCardDragging(
@@ -1972,212 +1772,6 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
   private clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
-  }
-
-  private getCanvasOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
-    const ownSecondsByPath = new Map<string, number>();
-    for (const task of tasks) {
-      ownSecondsByPath.set(
-        task.file.path,
-        this.plugin.getTrackedSecondsForRange(task.file.path, range)
-      );
-    }
-    return ownSecondsByPath;
-  }
-
-  private createCanvasLatestTrackedStartResolver(range: OutlineTimeRange): (path: string) => number {
-    const cache = new Map<string, number>();
-    return (path: string): number => {
-      const existing = cache.get(path);
-      if (existing != null) return existing;
-
-      const latest = this.plugin.getLatestTrackedStartMsForRange(path, range);
-      cache.set(path, latest);
-      return latest;
-    };
-  }
-
-  private buildCanvasParentPathMap(tasks: TaskItem[]): Map<string, string> {
-    const allPaths = new Set(tasks.map((task) => task.file.path));
-    const parentByPath = new Map<string, string>();
-    for (const task of tasks) {
-      const parentPath = this.resolveParentPath(task.parentRaw, task.file.path);
-      if (!parentPath || !allPaths.has(parentPath) || parentPath === task.file.path) continue;
-      parentByPath.set(task.file.path, parentPath);
-    }
-    return parentByPath;
-  }
-
-  private collectCanvasScopePaths(
-    tasks: TaskItem[],
-    parentByPath: Map<string, string>,
-    rootPath: string
-  ): Set<string> {
-    const allPaths = new Set(tasks.map((task) => task.file.path));
-    if (!rootPath || !allPaths.has(rootPath)) {
-      return allPaths;
-    }
-
-    const childrenByPath = new Map<string, string[]>();
-    for (const [childPath, parentPath] of parentByPath.entries()) {
-      const siblings = childrenByPath.get(parentPath);
-      if (siblings) {
-        siblings.push(childPath);
-      } else {
-        childrenByPath.set(parentPath, [childPath]);
-      }
-    }
-
-    const scoped = new Set<string>();
-    const stack = [rootPath];
-    while (stack.length > 0) {
-      const next = stack.pop();
-      if (!next || scoped.has(next)) continue;
-      scoped.add(next);
-      for (const childPath of childrenByPath.get(next) ?? []) {
-        stack.push(childPath);
-      }
-    }
-
-    return scoped;
-  }
-
-  private collectCanvasPathsWithParents(
-    matchedPaths: Set<string>,
-    parentByPath: Map<string, string>,
-    scopedPaths: Set<string>
-  ): Set<string> {
-    const output = new Set<string>(matchedPaths);
-    for (const path of matchedPaths) {
-      let cursor = parentByPath.get(path);
-      const seen = new Set<string>();
-      while (cursor && !seen.has(cursor) && scopedPaths.has(cursor)) {
-        seen.add(cursor);
-        output.add(cursor);
-        cursor = parentByPath.get(cursor);
-      }
-    }
-    return output;
-  }
-
-  private selectCanvasRoots(taskTree: TaskTreeData, rootPath: string): TaskTreeNode[] {
-    if (!rootPath) return taskTree.roots;
-    const root = taskTree.nodesByPath.get(rootPath);
-    return root ? [root] : taskTree.roots;
-  }
-
-  private collectCanvasBranchPaths(
-    roots: TaskTreeNode[]
-  ): Set<string> {
-    const branchPaths = new Set<string>();
-    const visit = (node: TaskTreeNode, ancestry: Set<string>): void => {
-      if (ancestry.has(node.path)) return;
-      if (node.children.length > 0) {
-        branchPaths.add(node.path);
-      }
-
-      const nextAncestry = new Set(ancestry);
-      nextAncestry.add(node.path);
-      for (const child of node.children) {
-        visit(child, nextAncestry);
-      }
-    };
-
-    for (const root of roots) {
-      visit(root, new Set());
-    }
-
-    return branchPaths;
-  }
-
-  private renderCanvasTreeNode(
-    containerEl: HTMLElement,
-    node: TaskTreeNode,
-    tree: CanvasTreeDraft,
-    state: CanvasTreeRenderState,
-    ancestry: Set<string>,
-    depth: number,
-    limit: { count: number; truncated: boolean },
-    rerender: () => void
-  ): void {
-    if (limit.truncated) return;
-    if (ancestry.has(node.path)) return;
-
-    if (limit.count >= 160) {
-      limit.truncated = true;
-      return;
-    }
-    limit.count += 1;
-
-    const nextAncestry = new Set(ancestry);
-    nextAncestry.add(node.path);
-
-    const isParentOnly = !state.matchedPaths.has(node.path);
-    const li = containerEl.createEl("li", { cls: "fmo-tree-item fmo-canvas-tree-item" });
-    const row = li.createEl("div", {
-      cls: isParentOnly
-        ? "fmo-tree-row fmo-tree-row-parent fmo-canvas-tree-row"
-        : "fmo-tree-row fmo-canvas-tree-row"
-    });
-    row.style.paddingInlineStart = `${Math.min(12, depth) * 11}px`;
-    const hasChildren = node.children.length > 0;
-    if (hasChildren) {
-      const isCollapsed = tree.collapsedNodePaths.has(node.path);
-      const toggle = row.createEl("button", {
-        cls: "fmo-canvas-node-toggle",
-        text: isCollapsed ? "○" : "●",
-        attr: {
-          type: "button",
-          "aria-expanded": String(!isCollapsed),
-          "aria-label": `${isCollapsed ? "Expand" : "Collapse"} ${node.item.file.basename}`
-        }
-      });
-      toggle.addEventListener("click", () => {
-        if (tree.collapsedNodePaths.has(node.path)) {
-          tree.collapsedNodePaths.delete(node.path);
-        } else {
-          tree.collapsedNodePaths.add(node.path);
-        }
-        this.persistCanvasTrees();
-        rerender();
-      });
-    } else {
-      row.createEl("span", {
-        cls: "fmo-canvas-node-marker",
-        text: "•"
-      });
-    }
-
-    const link = row.createEl("a", {
-      cls: isParentOnly ? "fmo-note-link fmo-note-link-parent" : "fmo-note-link",
-      text: node.item.file.basename,
-      href: "#"
-    });
-    link.addEventListener("click", (evt) => {
-      evt.preventDefault();
-      void this.plugin.openFile(node.item.file.path);
-    });
-
-    const total = state.cumulativeSeconds.get(node.path) ?? 0;
-    const own = state.ownSeconds.get(node.path) ?? 0;
-    row.createEl("span", {
-      cls: "fmo-time-badge",
-      text: this.plugin.formatShortDuration(total),
-      attr: {
-        title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
-      }
-    });
-
-    if (!hasChildren || tree.collapsedNodePaths.has(node.path)) return;
-
-    const children = li.createEl("ul", { cls: "fmo-tree fmo-canvas-tree-children" });
-    for (const child of node.children) {
-      this.renderCanvasTreeNode(children, child, tree, state, nextAncestry, depth + 1, limit, rerender);
-    }
-  }
-
-  private filterTasksForCanvas(tasks: TaskItem[], query: string): TaskItem[] {
-    return this.filterTasksByQuery(tasks, query);
   }
 }
 
