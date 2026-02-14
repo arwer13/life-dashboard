@@ -61,6 +61,8 @@ export class ConcernTreePanel {
   private hideControls: NonNullable<ConcernTreePanelConfig["hideControls"]>;
   private onChange: ConcernTreePanelConfig["onChange"];
   private visiblePaths: Set<string> = new Set();
+  private parentByPath: Map<string, string> = new Map();
+  private displayPathMap: Map<string, string> = new Map();
   private previewEl: HTMLElement | null = null;
   private rerenderPreview: (() => void) | null = null;
 
@@ -95,6 +97,10 @@ export class ConcernTreePanel {
 
   getVisiblePaths(): Set<string> {
     return new Set(this.visiblePaths);
+  }
+
+  getDisplayPathMap(): Map<string, string> {
+    return new Map(this.displayPathMap);
   }
 
   getState(): ConcernTreePanelState {
@@ -232,11 +238,13 @@ export class ConcernTreePanel {
         text: "No concerns match your plugin filter settings."
       });
       this.visiblePaths = new Set();
+      this.displayPathMap = new Map();
       return;
     }
 
     const ownSecondsByPath = this.getOwnSecondsByPath(tasks, this.state.range);
-    const parentByPath = this.buildParentPathMap(tasks);
+    this.parentByPath = this.buildParentPathMap(tasks);
+    const parentByPath = this.parentByPath;
     const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
     const scopedTasks = tasks.filter((task) => scopePaths.has(task.file.path));
@@ -253,6 +261,7 @@ export class ConcernTreePanel {
         text: "No concerns match this tree configuration."
       });
       this.visiblePaths = new Set();
+      this.displayPathMap = new Map();
       return;
     }
 
@@ -275,6 +284,7 @@ export class ConcernTreePanel {
         text: "Selected root has no visible descendants with current filters."
       });
       this.visiblePaths = new Set();
+      this.displayPathMap = new Map();
       return;
     }
 
@@ -288,6 +298,8 @@ export class ConcernTreePanel {
     }
 
     this.visiblePaths = visiblePaths;
+
+    this.displayPathMap = this.buildDisplayPathMap(visiblePaths, roots);
 
     const top = containerEl.createEl("div", { cls: "fmo-tree-panel-preview-top" });
     const actions = top.createEl("div", { cls: "fmo-tree-panel-preview-actions" });
@@ -540,6 +552,49 @@ export class ConcernTreePanel {
     }
 
     return branchPaths;
+  }
+
+  private computeDisplayedPaths(roots: TaskTreeNode[]): Set<string> {
+    const displayed = new Set<string>();
+    const visit = (node: TaskTreeNode, ancestry: Set<string>): void => {
+      if (ancestry.has(node.path)) return;
+      displayed.add(node.path);
+      if (this.state.collapsedNodePaths.has(node.path)) return;
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(node.path);
+      for (const child of node.children) {
+        visit(child, nextAncestry);
+      }
+    };
+    for (const root of roots) {
+      visit(root, new Set());
+    }
+    return displayed;
+  }
+
+  private buildDisplayPathMap(
+    visiblePaths: Set<string>,
+    roots: TaskTreeNode[]
+  ): Map<string, string> {
+    const displayedPaths = this.computeDisplayedPaths(roots);
+    const map = new Map<string, string>();
+    for (const path of visiblePaths) {
+      if (displayedPaths.has(path)) {
+        map.set(path, path);
+        continue;
+      }
+      let cursor = this.parentByPath.get(path);
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor)) {
+        if (displayedPaths.has(cursor)) {
+          map.set(path, cursor);
+          break;
+        }
+        seen.add(cursor);
+        cursor = this.parentByPath.get(cursor);
+      }
+    }
+    return map;
   }
 
   // ── Tree building (ported from base class) ────────────────────────────

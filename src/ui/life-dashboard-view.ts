@@ -1878,6 +1878,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     this.loadTreePanelState();
     // Sync range from calendar period
     this.calendarTreeState.range = this.period === "today" ? "today" : "week";
+    this.calendarTreeState.trackedOnly = true;
 
     // Header with title and period toggle
     const header = contentEl.createEl("div", { cls: "fmo-header" });
@@ -1912,9 +1913,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const renderCalendarMain = (visiblePaths: Set<string> | null): void => {
       main.empty();
       const allEntries = this.gatherCalendarEntries();
-      const entries = visiblePaths
+      let entries = visiblePaths
         ? allEntries.filter((e) => visiblePaths.has(e.path))
         : allEntries;
+
+      entries = this.remapCollapsedEntries(entries);
 
       if (entries.length === 0) {
         main.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
@@ -1964,6 +1967,25 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
 
     return result.sort((a, b) => a.entry.startMs - b.entry.startMs);
+  }
+
+  private remapCollapsedEntries(entries: CalendarEntry[]): CalendarEntry[] {
+    if (!this.calendarTreePanel) return entries;
+    const displayPathMap = this.calendarTreePanel.getDisplayPathMap();
+    if (displayPathMap.size === 0) return entries;
+
+    const basenameByPath = new Map<string, string>();
+    for (const task of this.plugin.getTaskTreeItems()) {
+      basenameByPath.set(task.file.path, task.file.basename);
+    }
+
+    return entries.map((e) => {
+      const displayPath = displayPathMap.get(e.path);
+      if (displayPath && displayPath !== e.path) {
+        return { ...e, path: displayPath, basename: basenameByPath.get(displayPath) ?? e.basename };
+      }
+      return e;
+    });
   }
 
   private buildColorMap(entries: CalendarEntry[]): Map<string, string> {
@@ -2038,7 +2060,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     block.style.height = `${height}px`;
     block.style.backgroundColor = colorMap.get(e.path) ?? CALENDAR_COLORS[0];
     block.title = tooltip;
-    if (height >= 12) block.setText(height >= 20 ? tooltip : e.basename);
+    if (height >= 12) block.setText(height >= 20 ? `${timeLabel} ${e.basename} (${durationLabel})` : `${timeLabel} ${e.basename}`);
 
     block.addEventListener("click", () => { void this.plugin.openFile(e.path); });
   }
