@@ -1,7 +1,5 @@
 import type { App, WorkspaceLeaf } from "obsidian";
 import {
-  LifeDashboardConcernCanvasView,
-  LifeDashboardOutlineView,
   LifeDashboardTimerView,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
@@ -47,10 +45,28 @@ export class DashboardViewController {
     this.refreshView();
   }
 
+  async activateCanvasView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_CANVAS, "tab");
+  }
+
+  async activateTimerView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_TIMER);
+  }
+
+  async activateOutlineView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE);
+  }
+
+  private static readonly ALL_VIEW_TYPES = [
+    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+    VIEW_TYPE_LIFE_DASHBOARD_CANVAS
+  ] as const;
+
   refreshView(): void {
-    this.refreshTimerView();
-    this.refreshOutlineView();
-    this.refreshCanvasView();
+    for (const viewType of DashboardViewController.ALL_VIEW_TYPES) {
+      this.refreshViewByType(viewType);
+    }
   }
 
   pushLiveTimerUpdate(): void {
@@ -72,42 +88,29 @@ export class DashboardViewController {
     await this.saveSettings();
   }
 
-  private refreshTimerView(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER);
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (view instanceof LifeDashboardTimerView) {
-        void view.render();
-      }
-    }
-  }
-
-  private refreshOutlineView(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE);
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (view instanceof LifeDashboardOutlineView) {
-        void view.render();
-      }
-    }
-  }
-
-  private refreshCanvasView(): void {
-    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_CANVAS);
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (view instanceof LifeDashboardConcernCanvasView) {
-        void view.render();
+  private refreshViewByType(viewType: string): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
+      if ("render" in leaf.view && typeof (leaf.view as Record<string, unknown>).render === "function") {
+        void (leaf.view as { render(): Promise<void> }).render();
       }
     }
   }
 
   private isDashboardVisible(): boolean {
-    return (
-      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_TIMER).length > 0 ||
-      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE).length > 0 ||
-      this.app.workspace.getLeavesOfType(VIEW_TYPE_LIFE_DASHBOARD_CANVAS).length > 0
+    return DashboardViewController.ALL_VIEW_TYPES.some(
+      (t) => this.app.workspace.getLeavesOfType(t).length > 0
     );
+  }
+
+  private async openAndRevealView(
+    viewType: string,
+    placement: "right" | "tab" = "right"
+  ): Promise<void> {
+    const leaf = await this.ensureViewLeaf(viewType, false, true, placement);
+    if (!leaf) return;
+    this.app.workspace.revealLeaf(leaf);
+    await this.persistVisibilityState(true);
+    this.refreshViewByType(viewType);
   }
 
   private async ensureViewLeaf(

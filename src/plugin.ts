@@ -87,6 +87,30 @@ export default class LifeDashboardPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-concerns-canvas",
+      name: "Open Concerns Canvas",
+      callback: () => {
+        void this.viewController.activateCanvasView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-timer",
+      name: "Open Timer",
+      callback: () => {
+        void this.viewController.activateTimerView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-concerns-outline",
+      name: "Open Concerns Outline",
+      callback: () => {
+        void this.viewController.activateOutlineView();
+      }
+    });
+
+    this.addCommand({
       id: "start-time-tracking",
       name: "Start task timer",
       callback: () => {
