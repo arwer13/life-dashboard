@@ -1,6 +1,7 @@
 import type { App, WorkspaceLeaf } from "obsidian";
 import {
   LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
@@ -41,6 +42,15 @@ export class DashboardViewController {
     if (!canvasLeaf) return;
 
     this.app.workspace.revealLeaf(canvasLeaf);
+    const calendarLeaf = await this.ensureViewLeaf(
+      VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+      false,
+      false,
+      "tab"
+    );
+    if (calendarLeaf) {
+      this.app.workspace.revealLeaf(calendarLeaf);
+    }
     await this.persistVisibilityState(true);
     this.refreshView();
   }
@@ -57,10 +67,15 @@ export class DashboardViewController {
     await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE);
   }
 
+  async activateCalendarView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, "tab");
+  }
+
   private static readonly ALL_VIEW_TYPES = [
     VIEW_TYPE_LIFE_DASHBOARD_TIMER,
     VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
-    VIEW_TYPE_LIFE_DASHBOARD_CANVAS
+    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR
   ] as const;
 
   refreshView(): void {

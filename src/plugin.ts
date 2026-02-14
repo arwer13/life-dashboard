@@ -10,9 +10,11 @@ import { TimeLogStore } from "./services/time-log-store";
 import { TrackingService } from "./services/tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import {
+  LifeDashboardCalendarView,
   LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
   LifeDashboardTimerView,
+  VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
@@ -73,6 +75,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMER, (leaf) => new LifeDashboardTimerView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, (leaf) => new LifeDashboardOutlineView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CANVAS, (leaf) => new LifeDashboardConcernCanvasView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, (leaf) => new LifeDashboardCalendarView(leaf, this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
@@ -107,6 +110,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Open Concerns Outline",
       callback: () => {
         void this.viewController.activateOutlineView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-calendar",
+      name: "Open Time Calendar",
+      callback: () => {
+        void this.viewController.activateCalendarView();
       }
     });
 

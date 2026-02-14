@@ -16,6 +16,7 @@ import type { OutlineTimeRange } from "../plugin";
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_CANVAS = "life-dashboard-canvas-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_CALENDAR = "life-dashboard-calendar-view";
 
 type TaskTreeData = {
   roots: TaskTreeNode[];
@@ -2177,5 +2178,34 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
   private filterTasksForCanvas(tasks: TaskItem[], query: string): TaskItem[] {
     return this.filterTasksByQuery(tasks, query);
+  }
+}
+
+type CalendarPeriod = "today" | "week";
+
+export class LifeDashboardCalendarView extends LifeDashboardBaseView {
+  private period: CalendarPeriod = "today";
+
+  getViewType(): string {
+    return VIEW_TYPE_LIFE_DASHBOARD_CALENDAR;
+  }
+
+  getDisplayText(): string {
+    return "Time Calendar";
+  }
+
+  getIcon(): string {
+    return "calendar-days";
+  }
+
+  async onOpen(): Promise<void> {
+    await this.render();
+  }
+
+  async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("frontmatter-outline-view");
+    contentEl.createEl("div", { text: "Calendar view placeholder" });
   }
 }
