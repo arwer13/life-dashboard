@@ -12,7 +12,7 @@ import type { TaskTreeNode, TaskItem, TimeLogEntry } from "../models/types";
 import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
-import { ConcernTreePanel } from "./concern-tree-panel";
+import { ConcernTreePanel, type ConcernTreePanelState } from "./concern-tree-panel";
 
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
@@ -1798,6 +1798,18 @@ const BLOCK_MIN_HEIGHT_PX = 3;
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
+  private calendarTreePanel: ConcernTreePanel | null = null;
+  private calendarTreeState: ConcernTreePanelState = {
+    rootPath: "",
+    query: "",
+    sortMode: "recent" as OutlineSortMode,
+    range: "today" as OutlineTimeRange,
+    trackedOnly: false,
+    showParents: true,
+    collapsedNodePaths: new Set(),
+  };
+  private calendarTreeStateLoaded = false;
+
   private get period(): CalendarPeriod {
     return this.plugin.settings.calendarPeriod === "week" ? "week" : "today";
   }
@@ -1824,11 +1836,50 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     await this.render();
   }
 
+  private loadTreePanelState(): void {
+    if (this.calendarTreeStateLoaded) return;
+    this.calendarTreeStateLoaded = true;
+
+    const raw = this.plugin.getCalendarTreePanelState().trim();
+    if (!raw) return;
+
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { return; }
+    if (!parsed || typeof parsed !== "object") return;
+
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.rootPath === "string") this.calendarTreeState.rootPath = obj.rootPath;
+    if (typeof obj.query === "string") this.calendarTreeState.query = obj.query;
+    if (obj.sortMode === "recent" || obj.sortMode === "priority") this.calendarTreeState.sortMode = obj.sortMode;
+    if (typeof obj.showParents === "boolean") this.calendarTreeState.showParents = obj.showParents;
+    if (Array.isArray(obj.collapsedNodePaths)) {
+      this.calendarTreeState.collapsedNodePaths = new Set(
+        (obj.collapsedNodePaths as unknown[]).filter((p): p is string => typeof p === "string")
+      );
+    }
+  }
+
+  private persistTreePanelState(): void {
+    const state = {
+      rootPath: this.calendarTreeState.rootPath,
+      query: this.calendarTreeState.query,
+      sortMode: this.calendarTreeState.sortMode,
+      showParents: this.calendarTreeState.showParents,
+      collapsedNodePaths: [...this.calendarTreeState.collapsedNodePaths],
+    };
+    this.plugin.setCalendarTreePanelState(JSON.stringify(state));
+  }
+
   async render(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("frontmatter-outline-view");
 
+    this.loadTreePanelState();
+    // Sync range from calendar period
+    this.calendarTreeState.range = this.period === "today" ? "today" : "week";
+
+    // Header with title and period toggle
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
     headerTop.createEl("h3", { text: "Concerns Calendar" });
@@ -1852,19 +1903,51 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       });
     }
 
-    const entries = this.gatherCalendarEntries();
-    if (entries.length === 0) {
-      contentEl.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
-      return;
-    }
+    // Two-column layout
+    const layout = contentEl.createEl("div", { cls: "fmo-calendar-layout" });
+    const sidebar = layout.createEl("div", { cls: "fmo-calendar-sidebar" });
+    const main = layout.createEl("div", { cls: "fmo-calendar-main" });
 
-    const colorMap = this.buildColorMap(entries);
-    if (this.period === "today") {
-      this.renderDayTimeline(contentEl, entries, colorMap);
-    } else {
-      this.renderWeekGrid(contentEl, entries, colorMap);
-    }
-    this.renderSummaryTable(contentEl, entries, colorMap);
+    // Function to render the calendar main area with filtered entries
+    const renderCalendarMain = (visiblePaths: Set<string> | null): void => {
+      main.empty();
+      const allEntries = this.gatherCalendarEntries();
+      const entries = visiblePaths
+        ? allEntries.filter((e) => visiblePaths.has(e.path))
+        : allEntries;
+
+      if (entries.length === 0) {
+        main.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
+        return;
+      }
+
+      const colorMap = this.buildColorMap(entries);
+      if (this.period === "today") {
+        this.renderDayTimeline(main, entries, colorMap);
+      } else {
+        this.renderWeekGrid(main, entries, colorMap);
+      }
+      this.renderSummaryTable(main, entries, colorMap);
+    };
+
+    // Create tree panel in sidebar
+    this.calendarTreePanel = new ConcernTreePanel({
+      plugin: this.plugin,
+      container: sidebar,
+      state: { ...this.calendarTreeState },
+      hideControls: { range: true, trackedOnly: true },
+      onChange: (visiblePaths, newState) => {
+        this.calendarTreeState = {
+          ...newState,
+          collapsedNodePaths: new Set(newState.collapsedNodePaths),
+        };
+        this.persistTreePanelState();
+        renderCalendarMain(visiblePaths);
+      },
+    });
+
+    // Initial render of calendar with tree panel's visible paths
+    renderCalendarMain(this.calendarTreePanel.getVisiblePaths());
   }
 
   private gatherCalendarEntries(): CalendarEntry[] {
