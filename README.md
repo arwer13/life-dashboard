@@ -1,64 +1,158 @@
 # Life Dashboard (Obsidian plugin)
 
-Life Dashboard is an Obsidian community plugin for:
+Life Dashboard is an Obsidian plugin for tracking time on hierarchical task notes and visualising tracked data across four coordinated views.
 
-- tracking time on task notes (default filter: `type=concen`)
-- selecting/auto-selecting active task notes
-- persisting tracked sessions to a vault-local JSON file
-- showing a collapsible parent/child task tree (`parent` frontmatter)
-- showing recursive cumulative tracked time in the outline
+Core capabilities:
 
-## Tech stack (sample-plugin style)
+- Track time on notes filtered by frontmatter properties (default: `type=concen`)
+- Organise concerns into parent/child trees via the `parent` frontmatter property
+- Persist tracked sessions to a vault-local JSON file
+- Visualise tracked time in a timer, outline tree, draggable canvas, and calendar
 
-This project follows the Obsidian sample plugin best practices from `AGENTS.md`:
+## Views
 
-- TypeScript source in `src/`
-- esbuild bundling to root `main.js`
-- minimal entrypoint (`src/main.ts`) and feature modules split across files
-- version mapping via `manifest.json` + `versions.json`
+### Life Timer
 
-## Project structure
+Large circular elapsed-time display with Start/Stop control.
 
-- `src/main.ts` plugin entrypoint
-- `src/plugin.ts` plugin lifecycle and domain logic
-- `src/settings.ts` settings/defaults
-- `src/ui/life-dashboard-view.ts` custom timer + outline view UIs
-- `src/ui/task-select-modal.ts` task selector modal
-- `src/models/types.ts` shared types
-- `src/version.ts` build-stamped UI version
-- `esbuild.config.mjs` bundler config
-- `scripts/sync-plugin.mjs` build/version/sync workflow
+- Shows tracking start time (`HH:mm`) and a `+5m` button to shift start earlier (capped to avoid overlaps)
+- Active task context chain with cumulative and own-time badges
+- Today's entries list (`HH:mm Xm`), plus `This week` and `Yesterday` totals
+- `Change task…` opens a fuzzy-search modal over filtered tasks
+- Auto-selects active note when idle if it matches task filters
+- Timer notification rules trigger system notifications and native beep
 
-## Setup
+### Concerns Outline
 
-1. Install dependencies:
-   - `npm install`
-2. Create local env file:
-   - `cp .env.example .env`
-3. Set your vault path in `.env`:
-   - `VAULT_PATH='/absolute/path/to/your/vault'`
+Collapsible tree of all filtered concerns with time badges.
 
-## Scripts
+- Range selector: today, today+yesterday, this week, this month, all time
+- Sort modes: recent tracked activity or frontmatter priority
+- `Show only tracked this period` checkbox (hides < 1 min entries)
+- `Show parents` checkbox (includes ancestor nodes of matched concerns)
+- Done filter for `status:done` notes
+- Expand/collapse all
+- Recency grouping: Today, Yesterday, This Week, Earlier
+- Advanced filter syntax (see [Outline filter syntax](#outline-filter-syntax))
 
-- `npm run dev`
-  - runs esbuild watch and syncs plugin artifacts into your vault plugin folder
-- `npm run build`
-  - one-shot production build of `main.js` only (no version bump, no vault sync)
-- `npm run deploy`
-  - bumps patch version (`x.y.z -> x.y.(z+1)`)
-  - updates `src/version.ts`, `manifest.json`, `package.json`, `versions.json`
-  - builds `main.js`
-  - touches `.hotreload`
-  - syncs artifacts into your vault plugin folder
-  - exits immediately (does not stay in watch/background mode)
-- `npm run check`
-  - TypeScript type-check (`tsc --noEmit`)
+### Concerns Canvas
 
-## Time tracking format
+Infinite-scroll canvas (3600 × 2400 px) with draggable, resizable tree cards.
 
-Default file is `Data/time/time-tracked.json` (vault-relative, configurable in settings).
+- Each card embeds an independent ConcernTreePanel with its own root, range, sort, tracked-only, parents, and filter controls
+- Add Card / Reset Layout buttons
+- All card positions, sizes, and tree states persist between sessions via plugin settings
 
-Current schema:
+### Concerns Calendar
+
+Two-column layout: sidebar tree panel + main calendar grid.
+
+- Period toggle: Today (day timeline) or This Week (7-day grid)
+- Day timeline: hour-aligned coloured blocks; each block shows start time and concern name (e.g. `14:30 MyTask (25m)`)
+- Week grid: stacked coloured segments per day column
+- Summary table below the grid, sorted by total tracked time with colour dots
+- Sidebar tree panel filters which concerns appear on the grid and only shows concerns with tracked time in the selected period
+- Collapsed-parent rollup: when a tree node is collapsed, its children's calendar entries appear under the parent's colour and label; expanding restores them
+
+## Architecture
+
+### Project structure
+
+```
+src/
+  main.ts                           plugin entrypoint (re-exports default)
+  plugin.ts                         LifeDashboardPlugin — lifecycle, event wiring, time-window math
+  settings.ts                       LifeDashboardSettings interface and defaults
+  version.ts                        build-stamped DISPLAY_VERSION constant
+  models/
+    types.ts                        TaskItem, TaskTreeNode, TimeLogEntry, TimeLogByNoteId, etc.
+  services/
+    task-filter-service.ts          scans vault for notes matching frontmatter filter
+    time-log-store.ts               reads/writes/validates JSON time log, computes snapshots
+    tracking-service.ts             start/stop lifecycle, session persistence, UUID provisioning
+    dashboard-view-controller.ts    multi-view orchestration (open, reveal, refresh, live-update)
+  ui/
+    life-dashboard-view.ts          4 view classes: Timer, Outline, Canvas, Calendar
+    concern-tree-panel.ts           reusable tree widget (controls + collapsible preview)
+    task-select-modal.ts            FuzzySuggestModal for task selection
+    life-dashboard-setting-tab.ts   Settings tab UI
+scripts/
+  sync-plugin.mjs                   version bump, build, vault sync
+esbuild.config.mjs                  bundler config (watch + production modes)
+styles.css                          all component styles (~21 KB)
+```
+
+### Services
+
+**TaskFilterService** — Scans all markdown files and returns `TaskItem[]` matching the configured frontmatter property/value pair (plus optional secondary filter). Used by every view to obtain the concern list.
+
+**TimeLogStore** — Reads and writes `Data/time/time-tracked.json` (configurable). Each note is keyed by a frontmatter UUID; values are arrays of time tokens (`YYYY.MM.DD-HH:MMT<minutes>M`). Validates intervals to prevent overlap, normalises ordering, and produces `TimeLogSnapshot` with per-note totals and detailed entries.
+
+**TrackingService** — Manages the active timer session. On start: validates selection, ensures UUID in frontmatter, stores start timestamp. On stop: enforces minimum duration, appends to TimeLogStore, reloads totals. Flushes any active session on plugin unload.
+
+**DashboardViewController** — Opens/reveals the four view types in the workspace. Provides `refreshView()` (full re-render of all views) and `pushLiveTimerUpdate()` (1 Hz tick for the timer display only).
+
+### ConcernTreePanel
+
+Reusable widget used by both the Canvas (per-card) and Calendar (sidebar) views.
+
+Controls (each independently hideable):
+- Root selector (scope tree to a single concern and its descendants)
+- Range selector (today / this week / this month / all time)
+- Sort mode (recent or priority)
+- Tracked only checkbox
+- Show parents checkbox
+- Filter search input
+
+Outputs:
+- `visiblePaths: Set<string>` — the set of concern paths that pass all filters
+- `displayPathMap: Map<string, string>` — maps each visible path to its closest displayed ancestor (accounts for collapsed nodes)
+
+The panel fires `onChange(visiblePaths, state)` whenever filters, sort, or collapse state change.
+
+### Data flow
+
+```
+Vault notes
+  → TaskFilterService.getTaskTreeItems()
+  → TaskItem[] (filtered by frontmatter property)
+
+Time log JSON
+  → TimeLogStore.loadSnapshot()
+  → TimeLogSnapshot { totals, entriesByNoteId }
+
+TaskItem[] + TimeLogSnapshot
+  → buildTaskTree() — resolves parent/child via frontmatter, sorts, computes cumulative seconds
+  → TaskTreeNode[] roots
+
+Timer start/stop
+  → TrackingService → TimeLogStore.appendTimeEntry() → reloadTotalsAndRefresh()
+
+Vault events (metadata change, rename, delete, create)
+  → plugin event handlers → refreshView() or reloadTotalsAndRefresh()
+  → all views re-render from current data
+
+File system watcher on time log
+  → debounced reload with user notice (handles external edits)
+```
+
+### Event handling
+
+| Event | Handler |
+|-------|---------|
+| `metadataCache.changed` | `refreshView()` |
+| `vault.rename` | `reloadTotalsAndRefresh()` |
+| `vault.delete` | `reloadTotalsAndRefresh()` |
+| `vault.create` | `refreshView()` |
+| `vault.modify` (time log file) | debounced `reloadTotalsAndRefresh()` |
+| `active-leaf-change` | `maybeAutoSelectFromActive()` |
+| OS suspend / lock-screen | auto-stop active tracking via power monitor |
+
+## Time tracking
+
+### Storage format
+
+Default file: `Data/time/time-tracked.json` (vault-relative, configurable in settings).
 
 ```json
 {
@@ -69,64 +163,125 @@ Current schema:
 }
 ```
 
-Behavior:
+- Keys are frontmatter UUIDs (auto-generated on first track)
+- Values are time tokens: `YYYY.MM.DD-HH:MMT<minutes>M`
+- Per-note arrays are sorted by start time ascending
+- Intervals are validated to prevent overlap
 
-- `Start`/`Stop` in panel controls tracking
-- `Open Life Dashboard` opens dashboard views: `Life Timer`, `Concerns Outline`, and `Concerns Canvas (draft)`
-- `Concerns Canvas` saves tree geometry, filters, and collapse states between tab reopenings
-- `Change task...` opens filtered task selector
-- while tracking, round timer shows tracking start time as `HH:mm` (small text above elapsed timer)
-- while tracking, round timer shows a compact `+5m` button next to start time
-- `+5m` shifts timer start earlier by up to 5 minutes without overlapping existing saved entries (all concerns)
-- if no safe extension is available, `+5m` is disabled
-- timer side summary shows cumulative `This week` and `Yesterday`
-- timer side list heading shows `Today (<duration>):`, followed by today's entries as `HH:mm Xm`
-- timer alerts (from notification rules) use system notification + native desktop beep
-- summary and today's entries refresh after startup and after stopping a tracking session
-- if timer is idle and active note matches task filters, it auto-selects
-- when first tracking a note, plugin ensures frontmatter `id` exists (UUID) and uses that stable ID in log entries
-- per-note arrays are sorted by start time ascending
-- intervals for one note are validated to prevent overlap
-- outline has a range selector (`today`, `this week`, `this month`, `all time`) that scopes cumulative time badges
-- optional outline checkbox `Show only tracked this period` hides concerns with under 1 minute in selected range
-- period labels/buttons include tooltips showing the exact date-time window used
+### Tracking lifecycle
 
-## Reload debugging
-
-- on load, plugin writes to console:
-  - `[life-dashboard] loaded v<version> at <ISO timestamp>`
-- hot-reload plugin reloads this plugin when `main.js` or `styles.css` changes and `.hotreload` exists in the plugin folder
-- for one-shot distribution without background watchers, use `npm run deploy`
+1. User clicks **Start** (or uses command palette)
+2. Plugin ensures the note has a frontmatter `id` (UUID); generates one if missing
+3. Start timestamp stored in settings (survives plugin reload)
+4. Timer ticks at 1 Hz; notification rules checked each tick
+5. User clicks **Stop**
+6. Duration validated against minimum trackable minutes (default 2)
+7. Entry appended to JSON log; totals reloaded; all views refresh
 
 ## Task filtering
 
-Settings:
+Notes are included as concerns when their frontmatter matches the configured filter:
 
-- `Task property name` (default `type`)
-- `Task property value` (default `concen`)
-- `Additional filter property` (optional)
-- `Additional filter value` (optional)
-- `Case sensitive`
-- `Week starts on` (`Monday` or `Sunday`, used by `This week` totals and range filtering)
-- `Timer notifications` (multiline rules, one per line)
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Task property name | `type` | Frontmatter key to match |
+| Task property value | `concen` | Required value |
+| Additional filter property | (empty) | Optional second key |
+| Additional filter value | (empty) | Optional second value |
+| Case sensitive | `false` | Whether matching is case-sensitive |
 
-Timer notification rule format:
+### Parent/child hierarchy
 
-- `<duration> "message"`
-- examples:
-  - `30m "Hey, the time is up!"`
-  - `35m "You don't wanna miss the opportunity!"`
-- supported duration units: `s`, `m`, `h`
-- when a threshold is reached, plugin sends a system notification and plays a native desktop beep
+Set `parent: "[[NoteName]]"` in frontmatter to create tree relationships. The plugin resolves wiki-link syntax, aliases (`|`), and anchors (`#`), and supports arrays for multiple candidates.
 
-## Manual plugin install (fallback)
+### Outline filter syntax
 
-Copy these files to:
-`<Vault>/.obsidian/plugins/life-dashboard/`
+The outline and tree panel support advanced filter tokens:
+
+| Token | Example | Description |
+|-------|---------|-------------|
+| bare word | `project` | Matches basename or path |
+| `path:` | `path:folder/sub` | Matches file path |
+| `file:` | `file:myfile` | Matches file basename |
+| `prop:key` | `prop:status` | Checks property exists |
+| `prop:key=value` | `prop:status=active` | Checks property equals value |
+| `"quoted"` | `"my task"` | Literal phrase |
+| `-` prefix | `-archived` | Negation |
+
+### Priority sorting
+
+When sort mode is "priority", frontmatter `priority` (or `prio`, `p`) is ranked:
+
+| Value | Rank |
+|-------|------|
+| `urgent` | 0 |
+| `high` | 1 |
+| `medium` / `med` | 2 |
+| `low` | 3 |
+| `p0`, `p1`, … | numeric |
+| numeric | as-is |
+| absent/unknown | 100 |
+
+Ties broken by most-recent tracked activity, then path.
+
+## Settings
+
+All settings are in **Settings → Life Dashboard**.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Task property name | `type` | Frontmatter key for concern filtering |
+| Task property value | `concen` | Required value for concern filtering |
+| Additional filter property | (empty) | Optional second frontmatter key |
+| Additional filter value | (empty) | Optional second value |
+| Case sensitive | `false` | Case-sensitive property matching |
+| Time log path | `Data/time/time-tracked.json` | Vault-relative path to JSON log |
+| Minimum trackable minutes | `2` | Sessions shorter than this are discarded |
+| Week starts on | `monday` | `monday` or `sunday`; affects week ranges |
+| Timer notifications | (empty) | Multiline rules: `30m "Message"` |
+
+Timer notification format: `<duration> "message"` — units `s`, `m`, `h`. Triggers system notification + native beep.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| Open Life Dashboard | Opens all four views |
+| Open Timer | Opens the timer view |
+| Open Concerns Outline | Opens the outline view |
+| Open Concerns Canvas | Opens the canvas view |
+| Open Calendar | Opens the calendar view |
+| Start Time Tracking | Starts the timer |
+| Stop Time Tracking | Stops the timer |
+
+## Setup
+
+1. `npm install`
+2. `cp .env.example .env`
+3. Set `VAULT_PATH='/absolute/path/to/your/vault'` in `.env`
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | esbuild watch + sync to vault plugin folder |
+| `npm run build` | One-shot production build (`main.js` only) |
+| `npm run deploy` | Bump version, build, touch `.hotreload`, sync to vault |
+| `npm run check` | TypeScript type-check (`tsc --noEmit`) |
+
+## Manual install
+
+Copy to `<Vault>/.obsidian/plugins/life-dashboard/`:
 
 - `manifest.json`
 - `main.js`
 - `styles.css`
 - `versions.json`
 
-Then enable the plugin in **Settings → Community plugins**.
+Enable in **Settings → Community plugins**.
+
+## Debugging
+
+- On load: `[life-dashboard] loaded v<version> at <ISO timestamp>` in console
+- Hot-reload triggers when `main.js` or `styles.css` changes and `.hotreload` exists
+- `npm run deploy` for one-shot builds without background watchers
