@@ -1,0 +1,49 @@
+import type { TaskTreeNode } from "./types";
+import type { OutlineTimeRange } from "../plugin";
+
+export type TaskTreeData = {
+  roots: TaskTreeNode[];
+  cumulativeSeconds: Map<string, number>;
+  ownSeconds: Map<string, number>;
+  nodesByPath: Map<string, TaskTreeNode>;
+};
+
+export type TaskTreeBuildOptions = {
+  ownSecondsForPath?: (path: string) => number;
+  sortMode?: OutlineSortMode;
+  latestTrackedStartForPath?: (path: string) => number;
+};
+
+export type TreeRenderState = {
+  cumulativeSeconds: Map<string, number>;
+  ownSeconds: Map<string, number>;
+  matchedPaths: Set<string>;
+  expandAll?: boolean;
+};
+
+export type OutlineFilterToken =
+  | { key: "any" | "path" | "file"; value: string; negated: boolean }
+  | { key: "prop"; prop: string; value: string | null; negated: boolean };
+
+export type OutlineSortMode = "recent" | "priority";
+
+export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_CANVAS = "life-dashboard-canvas-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_CALENDAR = "life-dashboard-calendar-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_TIMELOG = "life-dashboard-timelog-view";
+
+export const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
+
+export const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
+  { value: "today", label: "today" },
+  { value: "todayYesterday", label: "today+yesterday" },
+  { value: "week", label: "this week" },
+  { value: "month", label: "this month" },
+  { value: "all", label: "all time" }
+];
+
+export const OUTLINE_SORT_OPTIONS: Array<{ value: OutlineSortMode; label: string }> = [
+  { value: "recent", label: "recent tracked" },
+  { value: "priority", label: "priority" }
+];

@@ -1,12 +1,13 @@
 import type { App, WorkspaceLeaf } from "obsidian";
+import { LifeDashboardBaseView } from "../ui/views/base-view";
+import { LifeDashboardTimerView } from "../ui/views/timer-view";
 import {
-  LifeDashboardTimerView,
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
-} from "../ui/life-dashboard-view";
+} from "../models/view-types";
 import type { LifeDashboardSettings } from "../settings";
 
 export class DashboardViewController {
@@ -111,8 +112,8 @@ export class DashboardViewController {
 
   private refreshViewByType(viewType: string): void {
     for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
-      if ("render" in leaf.view && typeof (leaf.view as Record<string, unknown>).render === "function") {
-        void (leaf.view as { render(): Promise<void> }).render();
+      if (leaf.view instanceof LifeDashboardBaseView && "render" in leaf.view) {
+        void (leaf.view as LifeDashboardBaseView & { render(): Promise<void> }).render();
       }
     }
   }

@@ -14,13 +14,15 @@ import {
   LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
   LifeDashboardTimeLogView,
-  LifeDashboardTimerView,
+  LifeDashboardTimerView
+} from "./ui/views";
+import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
-} from "./ui/life-dashboard-view";
+} from "./models/view-types";
 import { DISPLAY_VERSION } from "./version";
 
 export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";

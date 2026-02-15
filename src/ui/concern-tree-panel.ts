@@ -1,33 +1,18 @@
-import { SearchComponent, setTooltip, prepareSimpleSearch } from "obsidian";
+import { SearchComponent, setTooltip } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../models/types";
-import type LifeDashboardPlugin from "../plugin";
-import type { OutlineTimeRange } from "../plugin";
 import {
-  type OutlineFilterToken,
   type OutlineSortMode,
+  type TaskTreeData,
+  type TaskTreeBuildOptions,
+  type TreeRenderState,
   OUTLINE_RANGE_OPTIONS,
   OUTLINE_SORT_OPTIONS,
   MIN_TRACKED_SECONDS_PER_PERIOD
-} from "./life-dashboard-view";
-
-type TaskTreeData = {
-  roots: TaskTreeNode[];
-  cumulativeSeconds: Map<string, number>;
-  ownSeconds: Map<string, number>;
-  nodesByPath: Map<string, TaskTreeNode>;
-};
-
-type TaskTreeBuildOptions = {
-  ownSecondsForPath?: (path: string) => number;
-  sortMode?: OutlineSortMode;
-  latestTrackedStartForPath?: (path: string) => number;
-};
-
-type TreeRenderState = {
-  cumulativeSeconds: Map<string, number>;
-  ownSeconds: Map<string, number>;
-  matchedPaths: Set<string>;
-};
+} from "../models/view-types";
+import type LifeDashboardPlugin from "../plugin";
+import type { OutlineTimeRange } from "../plugin";
+import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder";
+import { filterTasksByQuery } from "../services/outline-filter";
 
 export type ConcernTreePanelState = {
   rootPath: string;
@@ -253,7 +238,7 @@ export class ConcernTreePanel {
     const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
     const scopedTasks = tasks.filter((task) => scopePaths.has(task.file.path));
-    const queryMatched = this.filterTasks(scopedTasks, this.state.query);
+    const queryMatched = filterTasksByQuery(scopedTasks, this.state.query);
     const matched = this.state.trackedOnly
       ? queryMatched.filter(
           (task) => (ownSecondsByPath.get(task.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
@@ -276,7 +261,9 @@ export class ConcernTreePanel {
       : matchedPaths;
     const visibleTasks = tasks.filter((task) => visiblePaths.has(task.file.path));
     const latestTrackedStartForPath = this.createLatestTrackedStartResolver(this.state.range);
-    const taskTree = this.buildTaskTree(visibleTasks, {
+    const resolveParentPathFn = (parentRaw: unknown, sourcePath: string): string | null =>
+      resolveParentPath(parentRaw, sourcePath, this.plugin.app.metadataCache);
+    const taskTree = buildTaskTree(visibleTasks, resolveParentPathFn, {
       ownSecondsForPath: (path) => ownSecondsByPath.get(path) ?? 0,
       sortMode: this.state.sortMode,
       latestTrackedStartForPath
@@ -475,7 +462,7 @@ export class ConcernTreePanel {
     const allPaths = new Set(tasks.map((task) => task.file.path));
     const parentByPath = new Map<string, string>();
     for (const task of tasks) {
-      const parentPath = this.resolveParentPath(task.parentRaw, task.file.path);
+      const parentPath = resolveParentPath(task.parentRaw, task.file.path, this.plugin.app.metadataCache);
       if (!parentPath || !allPaths.has(parentPath) || parentPath === task.file.path) continue;
       parentByPath.set(task.file.path, parentPath);
     }
@@ -603,330 +590,6 @@ export class ConcernTreePanel {
       }
     }
     return map;
-  }
-
-  // ── Tree building (ported from base class) ────────────────────────────
-
-  private buildTaskTree(tasks: TaskItem[], options: TaskTreeBuildOptions = {}): TaskTreeData {
-    const resolveOwnSeconds =
-      options.ownSecondsForPath ?? ((path: string) => this.plugin.getTrackedSeconds(path));
-    const sortMode = options.sortMode ?? "recent";
-    const resolveLatestTrackedStart =
-      options.latestTrackedStartForPath ??
-      ((path: string) => this.plugin.getLatestTrackedStartMsForRange(path, "all"));
-    const nodesByPath = new Map<string, TaskTreeNode>();
-
-    for (const item of tasks) {
-      nodesByPath.set(item.file.path, {
-        item,
-        path: item.file.path,
-        children: [],
-        parentPath: null
-      });
-    }
-
-    for (const node of nodesByPath.values()) {
-      const parentPath = this.resolveParentPath(node.item.parentRaw, node.item.file.path);
-      if (!parentPath || parentPath === node.path || !nodesByPath.has(parentPath)) continue;
-      node.parentPath = parentPath;
-      nodesByPath.get(parentPath)?.children.push(node);
-    }
-
-    const roots = Array.from(nodesByPath.values()).filter((node) => !node.parentPath);
-    const subtreeLatestByPath = new Map<string, number>();
-    const visiting = new Set<string>();
-    for (const root of roots) {
-      this.computeSubtreeLatestStartMs(root, resolveLatestTrackedStart, subtreeLatestByPath, visiting);
-    }
-
-    const sortNodes = (nodes: TaskTreeNode[]): void => {
-      nodes.sort((a, b) => this.compareNodes(a, b, sortMode, subtreeLatestByPath));
-      for (const node of nodes) {
-        sortNodes(node.children);
-      }
-    };
-
-    sortNodes(roots);
-
-    const ownSeconds = new Map<string, number>();
-    const cumulativeSeconds = new Map<string, number>();
-    const computeCumulative = (node: TaskTreeNode, ancestry: Set<string>): number => {
-      if (cumulativeSeconds.has(node.path)) return cumulativeSeconds.get(node.path) ?? 0;
-      const own = ownSeconds.get(node.path) ?? resolveOwnSeconds(node.path);
-      ownSeconds.set(node.path, own);
-      if (ancestry.has(node.path)) return own;
-
-      const nextAncestry = new Set(ancestry);
-      nextAncestry.add(node.path);
-
-      let total = own;
-      for (const child of node.children) {
-        total += computeCumulative(child, nextAncestry);
-      }
-
-      cumulativeSeconds.set(node.path, total);
-      return total;
-    };
-
-    for (const root of roots) {
-      computeCumulative(root, new Set());
-    }
-
-    return { roots, cumulativeSeconds, ownSeconds, nodesByPath };
-  }
-
-  private resolveParentPath(parentRaw: unknown, sourcePath: string): string | null {
-    for (const candidate of this.extractParentCandidates(parentRaw)) {
-      const file = this.plugin.app.metadataCache.getFirstLinkpathDest(candidate, sourcePath);
-      if (file) return file.path;
-    }
-    return null;
-  }
-
-  private extractParentCandidates(value: unknown): string[] {
-    const candidates: string[] = [];
-
-    const addCandidate = (raw: string): void => {
-      let ref = raw.trim();
-      if (!ref) return;
-
-      if (ref.startsWith("[[") && ref.endsWith("]]")) {
-        ref = ref.slice(2, -2).trim();
-      }
-      if (ref.includes("|")) {
-        ref = ref.split("|")[0]?.trim() ?? "";
-      }
-      if (ref.includes("#")) {
-        ref = ref.split("#")[0]?.trim() ?? "";
-      }
-
-      ref = ref.replace(/^\/+/, "").trim();
-      if (!ref) return;
-      candidates.push(ref);
-    };
-
-    const visit = (next: unknown): void => {
-      if (Array.isArray(next)) {
-        for (const entry of next) {
-          visit(entry);
-        }
-        return;
-      }
-      if (next == null) return;
-      addCandidate(String(next));
-    };
-
-    visit(value);
-    return Array.from(new Set(candidates));
-  }
-
-  private computeSubtreeLatestStartMs(
-    node: TaskTreeNode,
-    latestTrackedStartForPath: (path: string) => number,
-    memo: Map<string, number>,
-    visiting: Set<string>
-  ): number {
-    const cached = memo.get(node.path);
-    if (cached != null) return cached;
-    if (visiting.has(node.path)) {
-      const own = latestTrackedStartForPath(node.path);
-      memo.set(node.path, own);
-      return own;
-    }
-
-    visiting.add(node.path);
-    let latest = latestTrackedStartForPath(node.path);
-    for (const child of node.children) {
-      const childLatest = this.computeSubtreeLatestStartMs(
-        child,
-        latestTrackedStartForPath,
-        memo,
-        visiting
-      );
-      if (childLatest > latest) {
-        latest = childLatest;
-      }
-    }
-    visiting.delete(node.path);
-    memo.set(node.path, latest);
-    return latest;
-  }
-
-  private compareNodes(
-    a: TaskTreeNode,
-    b: TaskTreeNode,
-    sortMode: OutlineSortMode,
-    subtreeLatestByPath: Map<string, number>
-  ): number {
-    if (sortMode === "priority") {
-      const priorityCmp = this.comparePriorityValues(
-        this.readPriorityValue(a.item.frontmatter),
-        this.readPriorityValue(b.item.frontmatter)
-      );
-      if (priorityCmp !== 0) return priorityCmp;
-    }
-
-    const latestA = subtreeLatestByPath.get(a.path) ?? 0;
-    const latestB = subtreeLatestByPath.get(b.path) ?? 0;
-    if (latestA !== latestB) {
-      return latestB - latestA;
-    }
-
-    return a.item.file.path.localeCompare(b.item.file.path);
-  }
-
-  private readPriorityValue(frontmatter: TaskItem["frontmatter"]): unknown {
-    if (!frontmatter) return null;
-    return frontmatter.priority ?? frontmatter.prio ?? frontmatter.p;
-  }
-
-  private comparePriorityValues(a: unknown, b: unknown): number {
-    const rankA = this.getPriorityRank(a);
-    const rankB = this.getPriorityRank(b);
-    return rankA - rankB;
-  }
-
-  private getPriorityRank(value: unknown): number {
-    if (value == null) return 100;
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return Math.max(0, value);
-    }
-
-    const normalized = String(value).trim().toLowerCase();
-    if (!normalized) return 100;
-    if (normalized === "urgent") return 0;
-    if (normalized === "high") return 1;
-    if (normalized === "medium" || normalized === "med") return 2;
-    if (normalized === "low") return 3;
-
-    const pMatch = /^p([0-9]+)$/.exec(normalized);
-    if (pMatch?.[1]) {
-      return Number.parseInt(pMatch[1], 10);
-    }
-
-    const parsed = Number.parseFloat(normalized);
-    if (Number.isFinite(parsed)) {
-      return Math.max(0, parsed);
-    }
-
-    return 100;
-  }
-
-  // ── Filter methods (ported from base class) ───────────────────────────
-
-  private filterTasks(tasks: TaskItem[], query: string): TaskItem[] {
-    return this.filterTasksByQuery(tasks, query);
-  }
-
-  private filterTasksByQuery(tasks: TaskItem[], query: string): TaskItem[] {
-    const tokens = this.parseFilterTokens(query);
-    if (tokens.length === 0) return tasks;
-    return tasks.filter((task) => this.taskMatchesFilter(task, tokens));
-  }
-
-  private parseFilterTokens(query: string): OutlineFilterToken[] {
-    const out: OutlineFilterToken[] = [];
-    const pattern = /"([^"]*)"|(\S+)/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = pattern.exec(query)) !== null) {
-      const raw = (match[1] ?? match[2] ?? "").trim();
-      if (!raw) continue;
-
-      let token = raw;
-      let negated = false;
-      if (token.startsWith("-") && token.length > 1) {
-        negated = true;
-        token = token.slice(1);
-      }
-
-      const propertyQualifier = /^(?:prop|fm):([^=:\s]+)(?:=(.+))?$/i.exec(token);
-      if (propertyQualifier) {
-        const prop = propertyQualifier[1]?.trim();
-        const rawValue = propertyQualifier[2]?.trim();
-        if (!prop) continue;
-
-        out.push({
-          key: "prop",
-          prop,
-          value: rawValue ? rawValue.replace(/^['"]|['"]$/g, "") : null,
-          negated
-        });
-        continue;
-      }
-
-      const qualifier = /^(path|file):(.*)$/i.exec(token);
-      const key = (qualifier?.[1]?.toLowerCase() as "path" | "file" | undefined) ?? "any";
-      const value = (qualifier ? qualifier[2] : token).trim();
-      if (!value) continue;
-
-      out.push({ key, value, negated });
-    }
-
-    return out;
-  }
-
-  private taskMatchesFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolean {
-    const pathText = task.file.path.toLowerCase();
-    const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
-    const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
-
-    for (const token of tokens) {
-      if (token.key === "prop") {
-        const matches = this.matchesFrontmatterFilter(task.frontmatter, token.prop, token.value);
-        if (token.negated ? matches : !matches) {
-          return false;
-        }
-        continue;
-      }
-
-      const matcher = prepareSimpleSearch(token.value.toLowerCase());
-      const target = token.key === "path" ? pathText : token.key === "file" ? fileText : anyText;
-      const matches = matcher(target) !== null;
-      if (token.negated ? matches : !matches) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private matchesFrontmatterFilter(
-    frontmatter: TaskItem["frontmatter"],
-    key: string,
-    expectedValue: string | null
-  ): boolean {
-    if (!frontmatter || !(key in frontmatter)) {
-      return false;
-    }
-
-    if (expectedValue == null) {
-      return true;
-    }
-
-    const expected = expectedValue.toLowerCase();
-    const values = this.flattenFrontmatterValues(frontmatter[key]);
-    return values.some((value) => value.toLowerCase() === expected);
-  }
-
-  private flattenFrontmatterValues(value: unknown): string[] {
-    if (Array.isArray(value)) {
-      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
-    }
-
-    if (value == null) {
-      return [""];
-    }
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return [String(value).trim()];
-    }
-
-    try {
-      return [JSON.stringify(value)];
-    } catch {
-      return [String(value)];
-    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────
