@@ -56,6 +56,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private timeLogStore!: TimeLogStore;
   private trackingService!: TrackingService;
   private viewController!: DashboardViewController;
+  highlightedTimeLogStartMs: number | null = null;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
   private canvasDraftSaveTimer: number | null = null;
@@ -86,6 +87,26 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
+    });
+
+    this.addRibbonIcon("network", "Open Concerns Canvas", () => {
+      void this.viewController.activateCanvasView();
+    });
+
+    this.addRibbonIcon("timer", "Open Timer", () => {
+      void this.viewController.activateTimerView();
+    });
+
+    this.addRibbonIcon("list", "Open Concerns Outline", () => {
+      void this.viewController.activateOutlineView();
+    });
+
+    this.addRibbonIcon("calendar", "Open Concerns Calendar", () => {
+      void this.viewController.activateCalendarView();
+    });
+
+    this.addRibbonIcon("history", "Open Time Log", () => {
+      void this.viewController.activateTimeLogView();
     });
 
     this.addCommand({
@@ -315,6 +336,10 @@ export default class LifeDashboardPlugin extends Plugin {
     await this.viewController.activateView();
   }
 
+  async activateTimeLogView(): Promise<void> {
+    await this.viewController.activateTimeLogView();
+  }
+
   async startTracking(): Promise<void> {
     await this.trackingService.startTracking();
   }
@@ -388,7 +413,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   getConcernPeriodSummary(path: string): {
-    todayEntries: string[];
+    todayEntries: Array<{ label: string; startMs: number }>;
     todaySeconds: number;
     yesterdaySeconds: number;
     weekSeconds: number;
@@ -418,7 +443,8 @@ export default class LifeDashboardPlugin extends Plugin {
       .map((entry) => {
         const start = new Date(entry.startMs);
         const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
-        return `${hhmm} ${this.formatShortDuration(entry.durationMinutes * 60)}`;
+        const label = `${hhmm} ${this.formatShortDuration(entry.durationMinutes * 60)}`;
+        return { label, startMs: entry.startMs };
       });
     const todaySeconds = this.sumSecondsInWindow(entries, todayWindow);
     const yesterdaySeconds = this.sumSecondsInWindow(entries, yesterdayWindow);

@@ -1047,6 +1047,26 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   background: var(--background-modifier-hover);
 }
 
+.fmo-timelog-row-highlight {
+  background: color-mix(in srgb, var(--text-accent) 18%, transparent);
+  animation: fmo-highlight-fade 8s ease-out forwards;
+}
+
+@keyframes fmo-highlight-fade {
+  0% { background: color-mix(in srgb, var(--text-accent) 18%, transparent); }
+  100% { background: transparent; }
+}
+
+.frontmatter-outline-view .fmo-today-entry-clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.frontmatter-outline-view .fmo-today-entry-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
 .fmo-timelog-id {
   color: var(--text-faint);
   font-size: 10px;

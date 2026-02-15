@@ -59,10 +59,18 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       return;
     }
 
+    const highlightStartMs = this.plugin.highlightedTimeLogStartMs;
+    this.plugin.highlightedTimeLogStartMs = null;
+
     const list = contentEl.createEl("div", { cls: "fmo-timelog-list" });
+    let highlightedRow: HTMLElement | null = null;
 
     for (const entry of entries) {
-      const row = list.createEl("div", { cls: "fmo-timelog-row" });
+      const isHighlighted = highlightStartMs !== null && entry.startMs === highlightStartMs;
+      const row = list.createEl("div", {
+        cls: isHighlighted ? "fmo-timelog-row fmo-timelog-row-highlight" : "fmo-timelog-row"
+      });
+      if (isHighlighted) highlightedRow = row;
 
       // Concern name
       const name = nameMap.get(entry.noteId) ?? "unknown";
@@ -103,6 +111,10 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
 
       // UUID (small, last)
       row.createEl("span", { cls: "fmo-timelog-id", text: entry.noteId });
+    }
+
+    if (highlightedRow) {
+      highlightedRow.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }
 

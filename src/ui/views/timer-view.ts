@@ -130,8 +130,15 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
     if (summary.todayEntries.length > 0) {
       const list = box.createEl("div", { cls: "fmo-today-entries-list" });
-      for (const label of summary.todayEntries) {
-        list.createEl("div", { cls: "fmo-today-entry", text: label });
+      for (const entry of summary.todayEntries) {
+        const entryEl = list.createEl("div", {
+          cls: "fmo-today-entry fmo-today-entry-clickable",
+          text: entry.label
+        });
+        entryEl.addEventListener("click", () => {
+          this.plugin.highlightedTimeLogStartMs = entry.startMs;
+          void this.plugin.activateTimeLogView();
+        });
       }
     }
   }
