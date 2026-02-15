@@ -975,19 +975,20 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 /* Time Log View */
 .fmo-timelog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 0;
+  display: inline-grid;
+  grid-template-columns: auto auto auto auto auto;
+  column-gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
 }
 
 .fmo-timelog-row {
-  display: flex;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
+  padding: 2px 8px;
   border-radius: 4px;
-  font-size: 13px;
 }
 
 .fmo-timelog-row:hover {
@@ -995,10 +996,6 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 }
 
 .fmo-timelog-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }

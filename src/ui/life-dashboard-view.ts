@@ -13,6 +13,7 @@ import type { TaskTreeNode, TaskItem, TimeLogEntry } from "../models/types";
 import { TaskSelectModal } from "./task-select-modal";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
+import { parseIntervalToken } from "../services/time-log-store";
 import { ConcernTreePanel, type ConcernTreePanelState } from "./concern-tree-panel";
 
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
@@ -2297,24 +2298,14 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       return;
     }
 
-    // Flatten into a list of { noteId, token, startMs, durationMinutes }
-    type FlatEntry = { noteId: string; token: string; startMs: number; durationMinutes: number };
+    type FlatEntry = { noteId: string; token: string; start: string; startMs: number; durationMinutes: number };
     const entries: FlatEntry[] = [];
-    const tokenRegex = /^(\d{4}\.\d{2}\.\d{2}-\d{2}:\d{2})T(?:(?:P)?T)?(\d+)M$/;
 
     for (const [noteId, tokens] of Object.entries(data)) {
       for (const token of tokens) {
-        const m = tokenRegex.exec(token.trim());
-        if (!m) continue;
-        const startStr = m[1];
-        const durationMinutes = Number(m[2]);
-        const parts = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/.exec(startStr);
-        if (!parts) continue;
-        const startMs = new Date(
-          Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]),
-          Number(parts[4]), Number(parts[5])
-        ).getTime();
-        entries.push({ noteId, token, startMs, durationMinutes });
+        const parsed = parseIntervalToken(token);
+        if (!parsed) continue;
+        entries.push({ noteId, token, start: parsed.start, startMs: parsed.startMs, durationMinutes: parsed.durationMinutes });
       }
     }
 
@@ -2336,7 +2327,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       row.createEl("span", { cls: "fmo-timelog-name", text: name });
 
       // Start time (editable)
-      const startStr = entry.token.replace(/T(?:(?:P)?T)?\d+M$/, "");
+      const startStr = entry.start;
       const startEl = row.createEl("span", { cls: "fmo-timelog-start", text: startStr });
       startEl.setAttribute("tabindex", "0");
       startEl.addEventListener("click", () => {

@@ -6,6 +6,42 @@ import {
   type LifeDashboardSettings
 } from "../settings";
 
+export interface ParsedIntervalToken {
+  start: string;
+  durationMinutes: number;
+  startMs: number;
+  endMs: number;
+}
+
+function parseStartTimestamp(value: string): Date | null {
+  const m = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const hours = Number(m[4]);
+  const minutes = Number(m[5]);
+  const date = new Date(year, month, day, hours, minutes, 0, 0);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+export function parseIntervalToken(token: string): ParsedIntervalToken | null {
+  const m = /^(\d{4}\.\d{2}\.\d{2}-\d{2}:\d{2})T(?:(?:P)?T)?(\d+)M$/.exec(token.trim());
+  if (!m) return null;
+
+  const start = m[1];
+  const durationMinutes = Number(m[2]);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+
+  const startDate = parseStartTimestamp(start);
+  if (!startDate) return null;
+
+  const startMs = startDate.getTime();
+  const endMs = startMs + durationMinutes * 60 * 1000;
+  return { start, durationMinutes, startMs, endMs };
+}
+
 export class TimeLogStore {
   private readonly app: App;
   private readonly settings: LifeDashboardSettings;
@@ -47,7 +83,7 @@ export class TimeLogStore {
       let seconds = 0;
 
       for (const token of intervals) {
-        const parsed = this.parseIntervalToken(token);
+        const parsed = parseIntervalToken(token);
         if (!parsed) continue;
         seconds += parsed.durationMinutes * 60;
         parsedEntries.push({ startMs: parsed.startMs, durationMinutes: parsed.durationMinutes });
@@ -173,44 +209,13 @@ export class TimeLogStore {
     await this.app.vault.process(file, () => next);
   }
 
-  private parseStartTimestamp(value: string): Date | null {
-    const m = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/.exec(value);
-    if (!m) return null;
-    const year = Number(m[1]);
-    const month = Number(m[2]) - 1;
-    const day = Number(m[3]);
-    const hours = Number(m[4]);
-    const minutes = Number(m[5]);
-    const date = new Date(year, month, day, hours, minutes, 0, 0);
-    if (Number.isNaN(date.getTime())) return null;
-    return date;
-  }
-
-  private parseIntervalToken(
-    token: string
-  ): { start: string; durationMinutes: number; startMs: number; endMs: number } | null {
-    const m = /^(\d{4}\.\d{2}\.\d{2}-\d{2}:\d{2})T(?:(?:P)?T)?(\d+)M$/.exec(token.trim());
-    if (!m) return null;
-
-    const start = m[1];
-    const durationMinutes = Number(m[2]);
-    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
-
-    const startDate = this.parseStartTimestamp(start);
-    if (!startDate) return null;
-
-    const startMs = startDate.getTime();
-    const endMs = startMs + durationMinutes * 60 * 1000;
-    return { start, durationMinutes, startMs, endMs };
-  }
-
   private formatIntervalToken(start: string, durationMinutes: number): string {
     return `${start}T${durationMinutes}M`;
   }
 
   private normalizeAndValidateNoteIntervals(intervals: string[]): string[] {
     const parsed = Array.from(new Set(intervals))
-      .map((token) => this.parseIntervalToken(token))
+      .map((token) => parseIntervalToken(token))
       .filter((value): value is NonNullable<typeof value> => value !== null)
       .sort((a, b) => a.startMs - b.startMs);
 
