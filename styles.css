@@ -973,3 +973,89 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 /* ── Calendar: Summary Table ────────────────────────────────── */
 
+/* Time Log View */
+.fmo-timelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+}
+
+.fmo-timelog-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.fmo-timelog-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.fmo-timelog-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.fmo-timelog-start,
+.fmo-timelog-duration {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fmo-timelog-start:hover,
+.fmo-timelog-duration:hover {
+  background: var(--background-modifier-hover);
+  outline: 1px solid var(--background-modifier-border);
+}
+
+.fmo-timelog-input {
+  width: 140px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.fmo-timelog-duration .fmo-timelog-input {
+  width: 50px;
+}
+
+.fmo-timelog-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 3px;
+}
+
+.fmo-timelog-delete:hover {
+  color: var(--text-error);
+  background: var(--background-modifier-hover);
+}
+
+.fmo-timelog-id {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-family: var(--font-monospace);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
