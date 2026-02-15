@@ -32,6 +32,11 @@ export class TimeLogStore {
     return this.normalizeAndValidateTimeLogMap(raw);
   }
 
+  async writeTimeLogMap(data: TimeLogByNoteId): Promise<void> {
+    const normalized = this.normalizeAndValidateTimeLogMap(data);
+    await this.writeTimeLog(normalized);
+  }
+
   async loadSnapshot(): Promise<TimeLogSnapshot> {
     const data = await this.readTimeLogMap();
     const totals = new Map<string, number>();
