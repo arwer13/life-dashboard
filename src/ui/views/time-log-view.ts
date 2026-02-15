@@ -1,8 +1,9 @@
-import { Notice, type WorkspaceLeaf } from "obsidian";
+import { Notice, TFile, type WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMELOG } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
 import { parseIntervalToken } from "../../services/time-log-store";
 import { LifeDashboardBaseView } from "./base-view";
+import { TaskSelectModal } from "../task-select-modal";
 
 export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
   getViewType(): string {
@@ -72,9 +73,16 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       });
       if (isHighlighted) highlightedRow = row;
 
-      // Concern name
+      // Concern name (clickable to reassign)
       const name = nameMap.get(entry.noteId) ?? "unknown";
-      row.createEl("span", { cls: "fmo-timelog-name", text: name });
+      const nameEl = row.createEl("span", { cls: "fmo-timelog-name fmo-timelog-name-clickable", text: name });
+      nameEl.addEventListener("click", () => {
+        const tasks = this.plugin.getTaskTreeItems().map((item) => item.file);
+        const modal = new TaskSelectModal(this.app, tasks, (file) => {
+          void this.reassignEntry(data, entry.noteId, entry.token, file);
+        });
+        modal.open();
+      });
 
       // Start time (editable)
       const startStr = entry.start;
@@ -166,6 +174,31 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
     }
     data[noteId] = tokens;
     void this.plugin.saveTimeLog(data).then(() => void this.render());
+  }
+
+  private async reassignEntry(
+    data: Record<string, string[]>,
+    oldNoteId: string,
+    token: string,
+    newFile: TFile
+  ): Promise<void> {
+    const newNoteId = await this.plugin.ensureTaskId(newFile);
+    if (!newNoteId) {
+      new Notice("Could not resolve task ID for the selected note.");
+      return;
+    }
+    if (newNoteId === oldNoteId) return;
+
+    const oldTokens = data[oldNoteId] ?? [];
+    data[oldNoteId] = oldTokens.filter((t) => t !== token);
+    if (data[oldNoteId].length === 0) delete data[oldNoteId];
+
+    const newTokens = data[newNoteId] ?? [];
+    newTokens.push(token);
+    data[newNoteId] = newTokens;
+
+    await this.plugin.saveTimeLog(data);
+    await this.render();
   }
 
   private deleteEntry(

@@ -51,12 +51,12 @@ export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
   timeTotalsById: Map<string, number> = new Map();
   timeEntriesById: Map<string, TimeLogEntry[]> = new Map();
+  highlightedTimeLogStartMs: number | null = null;
 
   private taskFilterService!: TaskFilterService;
   private timeLogStore!: TimeLogStore;
   private trackingService!: TrackingService;
   private viewController!: DashboardViewController;
-  highlightedTimeLogStartMs: number | null = null;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
   private canvasDraftSaveTimer: number | null = null;
@@ -338,6 +338,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
   async activateTimeLogView(): Promise<void> {
     await this.viewController.activateTimeLogView();
+  }
+
+  async ensureTaskId(file: TFile): Promise<string> {
+    return this.ensureTaskIdForFile(file);
   }
 
   async startTracking(): Promise<void> {

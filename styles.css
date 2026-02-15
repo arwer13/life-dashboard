@@ -1000,6 +1000,17 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   font-weight: 500;
 }
 
+.fmo-timelog-name-clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.fmo-timelog-name-clickable:hover {
+  background: var(--background-modifier-hover);
+  outline: 1px solid var(--background-modifier-border);
+}
+
 .fmo-timelog-start,
 .fmo-timelog-duration {
   cursor: pointer;

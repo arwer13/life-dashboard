@@ -17,7 +17,7 @@ Large circular elapsed-time display with Start/Stop control.
 
 - Shows tracking start time (`HH:mm`) and a `+5m` button to shift start earlier (capped to avoid overlaps)
 - Active task context chain with cumulative and own-time badges
-- Today's entries list (`HH:mm Xm`), plus `This week` and `Yesterday` totals
+- Today's entries list (`HH:mm Xm`), plus `This week` and `Yesterday` totals; click any entry to jump to it in the Time Log view
 - `Change task…` opens a fuzzy-search modal over filtered tasks
 - Auto-selects active note when idle if it matches task filters
 - Timer notification rules trigger system notifications and native beep
@@ -59,9 +59,10 @@ Two-column layout: sidebar tree panel + main calendar grid.
 Flat list of all raw time entries from the JSON log, sorted newest-first.
 
 - Each row shows concern name, start timestamp, duration, and note UUID
-- Inline editing: click start time or duration to edit in place
+- Inline editing: click start time or duration to edit in place; click concern name to reassign the entry to a different task via fuzzy search
 - Delete button per entry
 - Saves changes back to the JSON log and refreshes all views
+- Highlight-and-scroll: clicking a today entry in the Timer view opens the Time Log and briefly highlights the matching row with an accent fade animation
 
 ## Architecture
 
