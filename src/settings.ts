@@ -17,6 +17,7 @@ export interface LifeDashboardSettings {
   timerNotificationRules: string;
   canvasDraftState: string;
   calendarPeriod: "today" | "week";
+  calendarZoom: number;
   calendarTreePanelState: string;
 }
 
@@ -42,5 +43,6 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   timerNotificationRules: "",
   canvasDraftState: "",
   calendarPeriod: "today",
+  calendarZoom: 1,
   calendarTreePanelState: ""
 };

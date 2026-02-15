@@ -65,6 +65,7 @@ export class ConcernTreePanel {
   private displayPathMap: Map<string, string> = new Map();
   private previewEl: HTMLElement | null = null;
   private rerenderPreview: (() => void) | null = null;
+  private statusEl: HTMLElement | null = null;
 
   constructor(config: ConcernTreePanelConfig) {
     this.plugin = config.plugin;
@@ -101,6 +102,10 @@ export class ConcernTreePanel {
 
   getDisplayPathMap(): Map<string, string> {
     return new Map(this.displayPathMap);
+  }
+
+  setStatusText(text: string): void {
+    if (this.statusEl) this.statusEl.textContent = text;
   }
 
   getState(): ConcernTreePanelState {
@@ -327,11 +332,14 @@ export class ConcernTreePanel {
 
     const meta = top.createEl("div", { cls: "fmo-tree-panel-preview-meta" });
     meta.createEl("span", {
-      text: `${matchedPaths.size} matched / ${visiblePaths.size} visible`
+      text: `${matchedPaths.size} / ${visiblePaths.size}`
     });
-    meta.createEl("span", {
-      text: `range: ${OUTLINE_RANGE_OPTIONS.find((option) => option.value === this.state.range)?.label ?? this.state.range}`
-    });
+    if (!this.hideControls.range) {
+      meta.createEl("span", {
+        text: `range: ${OUTLINE_RANGE_OPTIONS.find((option) => option.value === this.state.range)?.label ?? this.state.range}`
+      });
+    }
+    this.statusEl = meta.createEl("span");
 
     const list = containerEl.createEl("ul", { cls: "fmo-tree fmo-tree-panel-tree" });
     const renderState: TreeRenderState = {
