@@ -1,13 +1,13 @@
 # Life Dashboard (Obsidian plugin)
 
-Life Dashboard is an Obsidian plugin for tracking time on hierarchical task notes and visualising tracked data across four coordinated views.
+Life Dashboard is an Obsidian plugin for tracking time on hierarchical task notes and visualising tracked data across five coordinated views.
 
 Core capabilities:
 
 - Track time on notes filtered by frontmatter properties (default: `type=concen`)
 - Organise concerns into parent/child trees via the `parent` frontmatter property
 - Persist tracked sessions to a vault-local JSON file
-- Visualise tracked time in a timer, outline tree, draggable canvas, and calendar
+- Visualise tracked time in a timer, outline tree, draggable canvas, calendar, and flat time log
 
 ## Views
 
@@ -54,6 +54,15 @@ Two-column layout: sidebar tree panel + main calendar grid.
 - Sidebar tree panel filters which concerns appear on the grid and only shows concerns with tracked time in the selected period
 - Collapsed-parent rollup: when a tree node is collapsed, its children's calendar entries appear under the parent's colour and label; expanding restores them
 
+### Time Log
+
+Flat list of all raw time entries from the JSON log, sorted newest-first.
+
+- Each row shows concern name, start timestamp, duration, and note UUID
+- Inline editing: click start time or duration to edit in place
+- Delete button per entry
+- Saves changes back to the JSON log and refreshes all views
+
 ## Architecture
 
 ### Project structure
@@ -66,13 +75,23 @@ src/
   version.ts                        build-stamped DISPLAY_VERSION constant
   models/
     types.ts                        TaskItem, TaskTreeNode, TimeLogEntry, TimeLogByNoteId, etc.
+    view-types.ts                   shared view constants and types (VIEW_TYPE_*, filter/sort types)
   services/
     task-filter-service.ts          scans vault for notes matching frontmatter filter
     time-log-store.ts               reads/writes/validates JSON time log, computes snapshots
     tracking-service.ts             start/stop lifecycle, session persistence, UUID provisioning
     dashboard-view-controller.ts    multi-view orchestration (open, reveal, refresh, live-update)
+    task-tree-builder.ts            tree construction, parent resolution, priority sorting
+    outline-filter.ts               filter token parsing and task matching
   ui/
-    life-dashboard-view.ts          4 view classes: Timer, Outline, Canvas, Calendar
+    views/
+      base-view.ts                  abstract base class for all dashboard views
+      timer-view.ts                 Life Timer view
+      outline-view.ts               Concerns Outline view
+      canvas-view.ts                Concerns Canvas view
+      calendar-view.ts              Concerns Calendar view
+      time-log-view.ts              Time Log list view
+      index.ts                      barrel re-export
     concern-tree-panel.ts           reusable tree widget (controls + collapsible preview)
     task-select-modal.ts            FuzzySuggestModal for task selection
     life-dashboard-setting-tab.ts   Settings tab UI
@@ -90,7 +109,7 @@ styles.css                          all component styles (~21 KB)
 
 **TrackingService** — Manages the active timer session. On start: validates selection, ensures UUID in frontmatter, stores start timestamp. On stop: enforces minimum duration, appends to TimeLogStore, reloads totals. Flushes any active session on plugin unload.
 
-**DashboardViewController** — Opens/reveals the four view types in the workspace. Provides `refreshView()` (full re-render of all views) and `pushLiveTimerUpdate()` (1 Hz tick for the timer display only).
+**DashboardViewController** — Opens/reveals the five view types in the workspace. Provides `refreshView()` (full re-render of all views) and `pushLiveTimerUpdate()` (1 Hz tick for the timer display only).
 
 ### ConcernTreePanel
 
@@ -246,11 +265,12 @@ Timer notification format: `<duration> "message"` — units `s`, `m`, `h`. Trigg
 
 | Command | Description |
 |---------|-------------|
-| Open Life Dashboard | Opens all four views |
+| Open Life Dashboard | Opens all five views |
 | Open Timer | Opens the timer view |
 | Open Concerns Outline | Opens the outline view |
 | Open Concerns Canvas | Opens the canvas view |
 | Open Calendar | Opens the calendar view |
+| Open Time Log | Opens the time log list view |
 | Start Time Tracking | Starts the timer |
 | Stop Time Tracking | Stops the timer |
 

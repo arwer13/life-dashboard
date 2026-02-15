@@ -1,4 +1,4 @@
-import { TFile, TFolder, normalizePath, type App } from "obsidian";
+import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
 import type { TimeLogByNoteId, TimeLogEntry, TimeLogSnapshot } from "../models/types";
 import {
   CURRENT_TIME_LOG_SCHEMA_VERSION,
@@ -46,6 +46,7 @@ export class TimeLogStore {
   private readonly app: App;
   private readonly settings: LifeDashboardSettings;
   private readonly saveSettings: () => Promise<void>;
+  private corruptedFileDetected = false;
 
   constructor(app: App, settings: LifeDashboardSettings, saveSettings: () => Promise<void>) {
     this.app = app;
@@ -194,16 +195,55 @@ export class TimeLogStore {
 
   private async readTimeLogRaw(): Promise<unknown> {
     const file = await this.ensureLogFile();
+    const raw = await this.app.vault.cachedRead(file);
+    const trimmed = raw.trim();
+
+    if (!trimmed) {
+      this.corruptedFileDetected = false;
+      return {};
+    }
 
     try {
-      const raw = await this.app.vault.cachedRead(file);
-      return JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(trimmed) as unknown;
+      this.corruptedFileDetected = false;
+      return parsed;
     } catch {
+      if (!this.corruptedFileDetected) {
+        await this.backupCorruptedFile(file, raw);
+      }
+      this.corruptedFileDetected = true;
       return {};
     }
   }
 
+  private async backupCorruptedFile(file: TFile, content: string): Promise<void> {
+    const backupPath = file.path.replace(/\.json$/, "") + `.backup-${Date.now()}.json`;
+    try {
+      await this.ensureDirectoryPath(backupPath);
+      await this.app.vault.create(backupPath, content);
+      new Notice(
+        `Time log file contains invalid JSON. A backup was saved to ${backupPath}. ` +
+        `Please fix or delete the time log file to resume tracking.`,
+        0
+      );
+    } catch {
+      new Notice(
+        `Time log file contains invalid JSON and backup creation failed. ` +
+        `Please check ${file.path} manually.`,
+        0
+      );
+    }
+  }
+
   private async writeTimeLog(data: TimeLogByNoteId): Promise<void> {
+    if (this.corruptedFileDetected) {
+      new Notice(
+        "Cannot save time log: the file contains invalid JSON. " +
+        "Please fix or delete the time log file first.",
+        8000
+      );
+      return;
+    }
     const file = await this.ensureLogFile();
     const next = JSON.stringify(data, null, 2) + "\n";
     await this.app.vault.process(file, () => next);
