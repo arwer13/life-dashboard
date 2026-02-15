@@ -1,5 +1,5 @@
 import { Notice, Plugin, TFile, type FrontMatterCache } from "obsidian";
-import type { TaskItem, TimeLogEntry } from "./models/types";
+import type { TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_SETTINGS,
   type LifeDashboardSettings
@@ -318,6 +318,26 @@ export default class LifeDashboardPlugin extends Plugin {
     const snapshot = await this.timeLogStore.loadSnapshot();
     this.timeTotalsById = snapshot.totals;
     this.timeEntriesById = snapshot.entriesByNoteId;
+  }
+
+  async readTimeLog(): Promise<TimeLogByNoteId> {
+    return this.timeLogStore.readTimeLogMap();
+  }
+
+  async saveTimeLog(data: TimeLogByNoteId): Promise<void> {
+    await this.timeLogStore.writeTimeLogMap(data);
+    await this.reloadTimeTotals();
+    this.refreshView();
+  }
+
+  buildNoteIdToBasenameMap(): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const task of this.getTaskTreeItems()) {
+      const cache = this.app.metadataCache.getFileCache(task.file);
+      const id = cache?.frontmatter?.id;
+      if (id) map.set(String(id).trim(), task.file.basename);
+    }
+    return map;
   }
 
   getTrackedSeconds(path: string): number {
