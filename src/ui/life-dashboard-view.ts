@@ -1,6 +1,7 @@
 import {
   ItemView,
   Modal,
+  Notice,
   SearchComponent,
   TFile,
   prepareSimpleSearch,
@@ -2280,6 +2281,156 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
   async render(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("p", { text: "Time Log (loading...)" });
+    contentEl.addClass("frontmatter-outline-view");
+
+    const header = contentEl.createEl("div", { cls: "fmo-header" });
+    const headerTop = header.createEl("div", { cls: "fmo-header-top" });
+    headerTop.createEl("h3", { text: "Time Log" });
+
+    const nameMap = this.plugin.buildNoteIdToBasenameMap();
+
+    let data: Record<string, string[]>;
+    try {
+      data = await this.plugin.readTimeLog();
+    } catch {
+      contentEl.createEl("p", { cls: "fmo-empty", text: "Failed to load time log." });
+      return;
+    }
+
+    // Flatten into a list of { noteId, token, startMs, durationMinutes }
+    type FlatEntry = { noteId: string; token: string; startMs: number; durationMinutes: number };
+    const entries: FlatEntry[] = [];
+    const tokenRegex = /^(\d{4}\.\d{2}\.\d{2}-\d{2}:\d{2})T(?:(?:P)?T)?(\d+)M$/;
+
+    for (const [noteId, tokens] of Object.entries(data)) {
+      for (const token of tokens) {
+        const m = tokenRegex.exec(token.trim());
+        if (!m) continue;
+        const startStr = m[1];
+        const durationMinutes = Number(m[2]);
+        const parts = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/.exec(startStr);
+        if (!parts) continue;
+        const startMs = new Date(
+          Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]),
+          Number(parts[4]), Number(parts[5])
+        ).getTime();
+        entries.push({ noteId, token, startMs, durationMinutes });
+      }
+    }
+
+    // Sort newest first
+    entries.sort((a, b) => b.startMs - a.startMs);
+
+    if (entries.length === 0) {
+      contentEl.createEl("p", { cls: "fmo-empty", text: "No time entries." });
+      return;
+    }
+
+    const list = contentEl.createEl("div", { cls: "fmo-timelog-list" });
+
+    for (const entry of entries) {
+      const row = list.createEl("div", { cls: "fmo-timelog-row" });
+
+      // Concern name
+      const name = nameMap.get(entry.noteId) ?? "unknown";
+      row.createEl("span", { cls: "fmo-timelog-name", text: name });
+
+      // Start time (editable)
+      const startStr = entry.token.replace(/T(?:(?:P)?T)?\d+M$/, "");
+      const startEl = row.createEl("span", { cls: "fmo-timelog-start", text: startStr });
+      startEl.setAttribute("tabindex", "0");
+      startEl.addEventListener("click", () => {
+        this.makeEditable(startEl, startStr, (newVal) => {
+          this.updateEntry(data, entry.noteId, entry.token, newVal, entry.durationMinutes);
+        });
+      });
+
+      // Duration (editable)
+      const durText = `${entry.durationMinutes}m`;
+      const durEl = row.createEl("span", { cls: "fmo-timelog-duration", text: durText });
+      durEl.setAttribute("tabindex", "0");
+      durEl.addEventListener("click", () => {
+        this.makeEditable(durEl, String(entry.durationMinutes), (newVal) => {
+          const newDur = parseInt(newVal, 10);
+          if (!Number.isFinite(newDur) || newDur <= 0) {
+            new Notice("Duration must be a positive number of minutes.");
+            void this.render();
+            return;
+          }
+          this.updateEntry(data, entry.noteId, entry.token, startStr, newDur);
+        });
+      });
+
+      // Delete button
+      const delBtn = row.createEl("button", { cls: "fmo-timelog-delete", text: "\u00d7" });
+      delBtn.setAttribute("aria-label", "Delete entry");
+      delBtn.addEventListener("click", () => {
+        this.deleteEntry(data, entry.noteId, entry.token);
+      });
+
+      // UUID (small, last)
+      row.createEl("span", { cls: "fmo-timelog-id", text: entry.noteId });
+    }
+  }
+
+  private makeEditable(el: HTMLElement, currentValue: string, onSave: (newVal: string) => void): void {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = currentValue;
+    input.className = "fmo-timelog-input";
+    el.empty();
+    el.appendChild(input);
+    input.focus();
+    input.select();
+
+    const commit = (): void => {
+      const val = input.value.trim();
+      if (val && val !== currentValue) {
+        onSave(val);
+      } else {
+        void this.render();
+      }
+    };
+
+    let committed = false;
+    const safeCommit = (): void => {
+      if (committed) return;
+      committed = true;
+      commit();
+    };
+
+    input.addEventListener("blur", safeCommit);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); safeCommit(); }
+      if (e.key === "Escape") { e.preventDefault(); void this.render(); }
+    });
+  }
+
+  private updateEntry(
+    data: Record<string, string[]>,
+    noteId: string,
+    oldToken: string,
+    newStart: string,
+    newDuration: number
+  ): void {
+    const newToken = `${newStart}T${newDuration}M`;
+    const tokens = data[noteId] ?? [];
+    const idx = tokens.indexOf(oldToken);
+    if (idx >= 0) {
+      tokens[idx] = newToken;
+    }
+    data[noteId] = tokens;
+    void this.plugin.saveTimeLog(data).then(() => void this.render());
+  }
+
+  private deleteEntry(
+    data: Record<string, string[]>,
+    noteId: string,
+    token: string
+  ): void {
+    const tokens = data[noteId] ?? [];
+    data[noteId] = tokens.filter((t) => t !== token);
+    if (data[noteId].length === 0) delete data[noteId];
+    void this.plugin.saveTimeLog(data).then(() => void this.render());
   }
 }
