@@ -887,6 +887,14 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   z-index: 2;
 }
 
+.frontmatter-outline-view .fmo-calendar-block-dimmed {
+  opacity: 0.2;
+}
+
+.frontmatter-outline-view .fmo-calendar-block-highlighted {
+  opacity: 0.95;
+}
+
 /* ── Calendar: Day Timeline ─────────────────────────────────── */
 
 .frontmatter-outline-view .fmo-calendar-timeline {

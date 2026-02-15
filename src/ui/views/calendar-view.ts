@@ -19,6 +19,14 @@ type CalendarEntry = {
 
 type HourRange = { minHour: number; maxHour: number };
 
+type BlockRenderContext = {
+  colorMap: Map<string, string>;
+  minHour: number;
+  pxPerHour: number;
+  dayStartMs: number;
+  highlightedPaths: Set<string> | null;
+};
+
 const CALENDAR_COLORS = [
   "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
   "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
@@ -30,8 +38,26 @@ const BASE_WEEK_PX_PER_HOUR = 40;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
 const BLOCK_MIN_HEIGHT_PX = 3;
+const BLOCK_LABEL_MIN_FONT_PX = 10;
+const BLOCK_LABEL_MAX_FONT_PX = 20;
+const BLOCK_LABEL_SCALE_START_HEIGHT_PX = 12;
+const BLOCK_LABEL_SCALE_END_HEIGHT_PX = 48;
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+function computeBlockFontSizePx(heightPx: number): number {
+  const clampedHeight = Math.max(
+    BLOCK_LABEL_SCALE_START_HEIGHT_PX,
+    Math.min(BLOCK_LABEL_SCALE_END_HEIGHT_PX, heightPx)
+  );
+  const progress =
+    (clampedHeight - BLOCK_LABEL_SCALE_START_HEIGHT_PX) /
+    (BLOCK_LABEL_SCALE_END_HEIGHT_PX - BLOCK_LABEL_SCALE_START_HEIGHT_PX);
+  const size =
+    BLOCK_LABEL_MIN_FONT_PX +
+    progress * (BLOCK_LABEL_MAX_FONT_PX - BLOCK_LABEL_MIN_FONT_PX);
+  return Math.round(size * 10) / 10;
+}
 
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private calendarTreePanel: ConcernTreePanel | null = null;
@@ -46,6 +72,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   };
   private calendarTreeStateLoaded = false;
   private calendarColorMap: Map<string, string> = new Map();
+  private currentVisiblePaths: Set<string> | null = null;
+  private hoveredPaths: Set<string> | null = null;
 
   private get period(): CalendarPeriod {
     return this.plugin.settings.calendarPeriod === "week" ? "week" : "today";
@@ -172,6 +200,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     // Function to render the calendar main area with filtered entries
     const renderCalendarMain = (visiblePaths: Set<string> | null): void => {
+      this.currentVisiblePaths = visiblePaths ? new Set(visiblePaths) : null;
       main.empty();
       const allEntries = this.gatherCalendarEntries();
       let entries = visiblePaths
@@ -179,6 +208,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         : allEntries;
 
       entries = this.remapCollapsedEntries(entries);
+      const highlightedDisplayPaths = this.remapPathsToDisplay(this.hoveredPaths);
 
       if (entries.length === 0) {
         main.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
@@ -187,9 +217,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       }
 
       if (this.period === "today") {
-        this.renderDayTimeline(main, entries, this.calendarColorMap);
+        this.renderDayTimeline(main, entries, this.calendarColorMap, highlightedDisplayPaths);
       } else {
-        this.renderWeekGrid(main, entries, this.calendarColorMap);
+        this.renderWeekGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths);
       }
 
       // Drag handle to resize the grid vertically
@@ -215,6 +245,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         };
         this.persistTreePanelState();
         renderCalendarMain(visiblePaths);
+      },
+      onHoverChange: (hoveredPaths) => {
+        this.hoveredPaths = hoveredPaths ? new Set(hoveredPaths) : null;
+        renderCalendarMain(this.currentVisiblePaths);
       },
     });
 
@@ -322,6 +356,19 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     });
   }
 
+  private remapPathsToDisplay(paths: Set<string> | null): Set<string> | null {
+    if (!paths || paths.size === 0) return null;
+
+    const displayPathMap = this.calendarTreePanel?.getDisplayPathMap() ?? new Map<string, string>();
+    if (displayPathMap.size === 0) return new Set(paths);
+
+    const remapped = new Set<string>();
+    for (const path of paths) {
+      remapped.add(displayPathMap.get(path) ?? path);
+    }
+    return remapped;
+  }
+
   private buildColorMap(entries: CalendarEntry[]): Map<string, string> {
     // Include every concern so colors are stable regardless of filtering/collapsing.
     const pathBasenames = this.getBasenameByPath();
@@ -377,15 +424,12 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private renderEntryBlock(
     container: HTMLElement,
     e: CalendarEntry,
-    colorMap: Map<string, string>,
-    minHour: number,
-    pxPerHour: number,
-    dayStartMs: number
+    ctx: BlockRenderContext
   ): void {
-    const startFrac = (e.entry.startMs - dayStartMs) / (60 * 60 * 1000);
+    const startFrac = (e.entry.startMs - ctx.dayStartMs) / (60 * 60 * 1000);
     const durationHours = e.entry.durationMinutes / 60;
-    const top = (startFrac - minHour) * pxPerHour;
-    const height = Math.max(BLOCK_MIN_HEIGHT_PX, durationHours * pxPerHour);
+    const top = (startFrac - ctx.minHour) * ctx.pxPerHour;
+    const height = Math.max(BLOCK_MIN_HEIGHT_PX, durationHours * ctx.pxPerHour);
 
     const startDate = new Date(e.entry.startMs);
     const timeLabel = `${pad2(startDate.getHours())}:${pad2(startDate.getMinutes())}`;
@@ -393,9 +437,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const tooltip = `${e.basename} ${timeLabel} (${durationLabel})`;
 
     const block = container.createEl("div", { cls: "fmo-calendar-block" });
+    if (ctx.highlightedPaths) {
+      block.addClass(ctx.highlightedPaths.has(e.path) ? "fmo-calendar-block-highlighted" : "fmo-calendar-block-dimmed");
+    }
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    block.style.backgroundColor = colorMap.get(e.path) ?? CALENDAR_COLORS[0];
+    block.style.fontSize = `${computeBlockFontSizePx(height)}px`;
+    block.style.backgroundColor = ctx.colorMap.get(e.path) ?? CALENDAR_COLORS[0];
     block.title = tooltip;
     if (height >= 12) block.setText(height >= 20 ? `${timeLabel} ${e.basename} (${durationLabel})` : `${timeLabel} ${e.basename}`);
 
@@ -405,7 +453,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private renderDayTimeline(
     containerEl: HTMLElement,
     entries: CalendarEntry[],
-    colorMap: Map<string, string>
+    colorMap: Map<string, string>,
+    highlightedPaths: Set<string> | null
   ): void {
     const pxPerHour = this.pxPerHour;
     const hourRange = this.computeHourRange(entries);
@@ -417,15 +466,17 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     this.renderHourLabelsAndGridlines(timeline, hourRange, pxPerHour, "fmo-calendar-hour-label");
 
+    const ctx: BlockRenderContext = { colorMap, minHour: hourRange.minHour, pxPerHour, dayStartMs, highlightedPaths };
     for (const e of entries) {
-      this.renderEntryBlock(timeline, e, colorMap, hourRange.minHour, pxPerHour, dayStartMs);
+      this.renderEntryBlock(timeline, e, ctx);
     }
   }
 
   private renderWeekGrid(
     containerEl: HTMLElement,
     entries: CalendarEntry[],
-    colorMap: Map<string, string>
+    colorMap: Map<string, string>,
+    highlightedPaths: Set<string> | null
   ): void {
     const now = new Date();
     const weekStart = this.plugin.getWeekStart(now);
@@ -478,8 +529,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       }
 
       // Entry blocks
+      const blockCtx: BlockRenderContext = { colorMap, minHour: hourRange.minHour, pxPerHour, dayStartMs: dayMs, highlightedPaths };
       for (const e of dayEntries[d]) {
-        this.renderEntryBlock(dayCol, e, colorMap, hourRange.minHour, pxPerHour, dayMs);
+        this.renderEntryBlock(dayCol, e, blockCtx);
       }
 
       // Day total

@@ -37,9 +37,18 @@ export type ConcernTreePanelConfig = {
     filter?: boolean;
   };
   onChange: (visiblePaths: Set<string>, state: ConcernTreePanelState) => void;
+  onHoverChange?: (hoveredPaths: Set<string> | null) => void;
+};
+
+type TreeNodeRenderContext = {
+  state: TreeRenderState;
+  limit: { count: number; truncated: boolean };
+  rerender: () => void;
+  subtreePathsByPath: Map<string, Set<string>>;
 };
 
 export class ConcernTreePanel {
+  private static readonly HOVER_HIGHLIGHT_DELAY_MS = 1000;
   private plugin: LifeDashboardPlugin;
   private container: HTMLElement;
   private state: ConcernTreePanelState;
@@ -51,6 +60,8 @@ export class ConcernTreePanel {
   private previewEl: HTMLElement | null = null;
   private rerenderPreview: (() => void) | null = null;
   private statusEl: HTMLElement | null = null;
+  private onHoverChange: ConcernTreePanelConfig["onHoverChange"];
+  private pendingHoverTimer: number | null = null;
 
   constructor(config: ConcernTreePanelConfig) {
     this.plugin = config.plugin;
@@ -58,6 +69,7 @@ export class ConcernTreePanel {
     this.state = { ...config.state, collapsedNodePaths: new Set(config.state.collapsedNodePaths) };
     this.hideControls = config.hideControls ?? {};
     this.onChange = config.onChange;
+    this.onHoverChange = config.onHoverChange;
     this.render();
   }
 
@@ -72,6 +84,8 @@ export class ConcernTreePanel {
     this.previewEl = preview;
 
     const rerender = (): void => {
+      this.clearPendingHoverTimer();
+      this.emitHover(null);
       preview.empty();
       this.renderTreePreview(preview, tasks, rerender);
       this.fireChange();
@@ -229,6 +243,7 @@ export class ConcernTreePanel {
       });
       this.visiblePaths = new Set();
       this.displayPathMap = new Map();
+      this.emitHover(null);
       return;
     }
 
@@ -252,6 +267,7 @@ export class ConcernTreePanel {
       });
       this.visiblePaths = new Set();
       this.displayPathMap = new Map();
+      this.emitHover(null);
       return;
     }
 
@@ -277,6 +293,7 @@ export class ConcernTreePanel {
       });
       this.visiblePaths = new Set();
       this.displayPathMap = new Map();
+      this.emitHover(null);
       return;
     }
 
@@ -329,17 +346,21 @@ export class ConcernTreePanel {
     this.statusEl = meta.createEl("span");
 
     const list = containerEl.createEl("ul", { cls: "fmo-tree fmo-tree-panel-tree" });
-    const renderState: TreeRenderState = {
-      cumulativeSeconds: taskTree.cumulativeSeconds,
-      ownSeconds: taskTree.ownSeconds,
-      matchedPaths
+    const nodeCtx: TreeNodeRenderContext = {
+      state: {
+        cumulativeSeconds: taskTree.cumulativeSeconds,
+        ownSeconds: taskTree.ownSeconds,
+        matchedPaths
+      },
+      limit: { count: 0, truncated: false },
+      rerender,
+      subtreePathsByPath: this.buildSubtreePathMap(roots),
     };
-    const limitState = { count: 0, truncated: false };
     for (const root of roots) {
-      this.renderTreeNode(list, root, renderState, new Set(), 0, limitState, rerender);
+      this.renderTreeNode(list, root, new Set(), 0, nodeCtx);
     }
 
-    if (limitState.truncated) {
+    if (nodeCtx.limit.truncated) {
       containerEl.createEl("div", {
         cls: "fmo-tree-panel-truncated",
         text: "Preview truncated at 160 rows."
@@ -352,31 +373,32 @@ export class ConcernTreePanel {
   private renderTreeNode(
     containerEl: HTMLElement,
     node: TaskTreeNode,
-    state: TreeRenderState,
     ancestry: Set<string>,
     depth: number,
-    limit: { count: number; truncated: boolean },
-    rerender: () => void
+    ctx: TreeNodeRenderContext
   ): void {
-    if (limit.truncated) return;
+    if (ctx.limit.truncated) return;
     if (ancestry.has(node.path)) return;
 
-    if (limit.count >= 160) {
-      limit.truncated = true;
+    if (ctx.limit.count >= 160) {
+      ctx.limit.truncated = true;
       return;
     }
-    limit.count += 1;
+    ctx.limit.count += 1;
 
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(node.path);
 
-    const isParentOnly = !state.matchedPaths.has(node.path);
+    const isParentOnly = !ctx.state.matchedPaths.has(node.path);
     const li = containerEl.createEl("li", { cls: "fmo-tree-item fmo-tree-panel-tree-item" });
     const row = li.createEl("div", {
       cls: isParentOnly
         ? "fmo-tree-row fmo-tree-row-parent fmo-tree-panel-tree-row"
         : "fmo-tree-row fmo-tree-panel-tree-row"
     });
+    const hoveredPaths = ctx.subtreePathsByPath.get(node.path) ?? new Set([node.path]);
+    row.addEventListener("mouseenter", () => this.scheduleHover(hoveredPaths));
+    row.addEventListener("mouseleave", (evt) => this.handleRowMouseLeave(evt));
     row.style.paddingInlineStart = `${Math.min(12, depth) * 11}px`;
     const hasChildren = node.children.length > 0;
     if (hasChildren) {
@@ -396,7 +418,7 @@ export class ConcernTreePanel {
         } else {
           this.state.collapsedNodePaths.add(node.path);
         }
-        rerender();
+        ctx.rerender();
       });
     } else {
       row.createEl("span", {
@@ -415,8 +437,8 @@ export class ConcernTreePanel {
       void this.plugin.openFile(node.item.file.path);
     });
 
-    const total = state.cumulativeSeconds.get(node.path) ?? 0;
-    const own = state.ownSeconds.get(node.path) ?? 0;
+    const total = ctx.state.cumulativeSeconds.get(node.path) ?? 0;
+    const own = ctx.state.ownSeconds.get(node.path) ?? 0;
     row.createEl("span", {
       cls: "fmo-time-badge",
       text: this.plugin.formatShortDuration(total),
@@ -429,7 +451,7 @@ export class ConcernTreePanel {
 
     const children = li.createEl("ul", { cls: "fmo-tree fmo-tree-panel-tree-children" });
     for (const child of node.children) {
-      this.renderTreeNode(children, child, state, nextAncestry, depth + 1, limit, rerender);
+      this.renderTreeNode(children, child, nextAncestry, depth + 1, ctx);
     }
   }
 
@@ -592,9 +614,63 @@ export class ConcernTreePanel {
     return map;
   }
 
+  private buildSubtreePathMap(roots: TaskTreeNode[]): Map<string, Set<string>> {
+    const subtreePathsByPath = new Map<string, Set<string>>();
+    const walk = (node: TaskTreeNode, ancestry: Set<string>): Set<string> => {
+      if (ancestry.has(node.path)) return new Set();
+
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(node.path);
+
+      const paths = new Set<string>([node.path]);
+      for (const child of node.children) {
+        const childPaths = walk(child, nextAncestry);
+        for (const path of childPaths) {
+          paths.add(path);
+        }
+      }
+      subtreePathsByPath.set(node.path, paths);
+      return paths;
+    };
+
+    for (const root of roots) {
+      walk(root, new Set());
+    }
+
+    return subtreePathsByPath;
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────
 
   private fireChange(): void {
     this.onChange(this.getVisiblePaths(), this.getState());
+  }
+
+  private emitHover(paths: Set<string> | null): void {
+    if (!this.onHoverChange) return;
+    this.onHoverChange(paths ? new Set(paths) : null);
+  }
+
+  private scheduleHover(paths: Set<string>): void {
+    this.clearPendingHoverTimer();
+    this.pendingHoverTimer = window.setTimeout(() => {
+      this.pendingHoverTimer = null;
+      this.emitHover(paths);
+    }, ConcernTreePanel.HOVER_HIGHLIGHT_DELAY_MS);
+  }
+
+  private handleRowMouseLeave(evt: MouseEvent): void {
+    const next = evt.relatedTarget instanceof Element ? evt.relatedTarget : null;
+    if (next?.closest(".fmo-tree-panel-tree-row")) {
+      return;
+    }
+    this.clearPendingHoverTimer();
+    this.emitHover(null);
+  }
+
+  private clearPendingHoverTimer(): void {
+    if (this.pendingHoverTimer == null) return;
+    window.clearTimeout(this.pendingHoverTimer);
+    this.pendingHoverTimer = null;
   }
 }
