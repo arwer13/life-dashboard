@@ -18,6 +18,7 @@ export const VIEW_TYPE_LIFE_DASHBOARD_TIMER = "life-dashboard-timer-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_CANVAS = "life-dashboard-canvas-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_CALENDAR = "life-dashboard-calendar-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_TIMELOG = "life-dashboard-timelog-view";
 
 type TaskTreeData = {
   roots: TaskTreeNode[];
@@ -2257,4 +2258,28 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
   }
 
+}
+
+export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
+  getViewType(): string {
+    return VIEW_TYPE_LIFE_DASHBOARD_TIMELOG;
+  }
+
+  getDisplayText(): string {
+    return "Time Log";
+  }
+
+  getIcon(): string {
+    return "list";
+  }
+
+  async onOpen(): Promise<void> {
+    await this.render();
+  }
+
+  async render(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("p", { text: "Time Log (loading...)" });
+  }
 }

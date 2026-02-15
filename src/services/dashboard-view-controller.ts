@@ -4,6 +4,7 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER
 } from "../ui/life-dashboard-view";
 import type { LifeDashboardSettings } from "../settings";
@@ -71,11 +72,16 @@ export class DashboardViewController {
     await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, "tab");
   }
 
+  async activateTimeLogView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, "tab");
+  }
+
   private static readonly ALL_VIEW_TYPES = [
     VIEW_TYPE_LIFE_DASHBOARD_TIMER,
     VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
     VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
-    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR
+    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
   ] as const;
 
   refreshView(): void {
