@@ -1,12 +1,15 @@
-import { Notice, Plugin, TFile, type FrontMatterCache } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache } from "obsidian";
 import type { TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
+  DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
   type LifeDashboardSettings
 } from "./settings";
 import { DashboardViewController } from "./services/dashboard-view-controller";
 import { TaskFilterService } from "./services/task-filter-service";
 import { TimeLogStore } from "./services/time-log-store";
+import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type PeriodTooltipRange as PeriodTooltipRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
+import { TimerNotificationService } from "./services/timer-notification-service";
 import { TrackingService } from "./services/tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import {
@@ -25,14 +28,9 @@ import {
 } from "./models/view-types";
 import { DISPLAY_VERSION } from "./version";
 
-export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";
-type PeriodTooltipRange = OutlineTimeRange | "yesterday";
-export type TimeWindow = { startMs: number; endMs: number };
-type TimerNotificationRule = {
-  thresholdSeconds: number;
-  label: string;
-  message: string;
-};
+export type OutlineTimeRange = OutlineTimeRangeType;
+type PeriodTooltipRange = PeriodTooltipRangeType;
+export type TimeWindow = TimeWindowType;
 type PowerMonitorEvent = "suspend" | "lock-screen";
 const AUTO_STOP_POWER_EVENTS: PowerMonitorEvent[] = ["suspend", "lock-screen"];
 type MainProcessPowerMonitor = {
@@ -55,21 +53,19 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private taskFilterService!: TaskFilterService;
   private timeLogStore!: TimeLogStore;
+  private timeWindowService!: TimeWindowService;
+  private timerNotificationService!: TimerNotificationService;
   private trackingService!: TrackingService;
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
   private canvasDraftSaveTimer: number | null = null;
-  private activeNotificationSessionKey = "";
-  private lastElapsedSecondsForNotify: number | null = null;
-  private notifiedThresholdSeconds = new Set<number>();
-  private parsedNotificationRulesCacheRaw = "";
-  private parsedNotificationRulesCache: TimerNotificationRule[] = [];
   private notificationPermissionRequested = false;
   private powerAutoStopInFlight: Promise<void> | null = null;
   private removePowerMonitorListeners: Array<() => void> = [];
   private timeLogFsWatcher: import("fs").FSWatcher | null = null;
   private timeLogReloadDebounce: number | null = null;
+  private watchedTimeLogPath = "";
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -175,27 +171,35 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addSettingTab(new LifeDashboardSettingTab(this.app, this));
 
-    this.registerEvent(this.app.metadataCache.on("changed", () => this.refreshView()));
     this.registerEvent(
-      this.app.vault.on("rename", () => {
-        void this.reloadTotalsAndRefresh();
+      this.app.metadataCache.on("changed", () => {
+        this.handleTaskStructureChange();
       })
     );
     this.registerEvent(
-      this.app.vault.on("delete", () => {
-        void this.reloadTotalsAndRefresh();
+      this.app.vault.on("rename", (file, oldPath) => {
+        void this.handleVaultRename(file, oldPath);
       })
     );
-    this.registerEvent(this.app.vault.on("create", () => this.refreshView()));
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        void this.handleVaultDelete(file);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        void this.handleVaultCreate(file);
+      })
+    );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (file.path === this.settings.timeLogPath) {
+        if (this.isTimeLogPath(file.path)) {
           void this.reloadTotalsAndRefresh();
         }
       })
     );
 
-    this.watchTimeLogFile();
+    this.rewireTimeLogWatcher();
 
     this.registerEvent(
       this.app.workspace.on("layout-change", () => {
@@ -245,8 +249,19 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async postFilterSettingsChanged(): Promise<void> {
+    this.taskFilterService.invalidateCache();
     await this.maybeAutoSelectFromActive();
-    this.refreshView();
+    this.refreshTaskStructureViews();
+  }
+
+  async onTimeLogPathSettingChanged(): Promise<void> {
+    const normalized = this.getNormalizedTimeLogPath();
+    if (this.settings.timeLogPath !== normalized) {
+      this.settings.timeLogPath = normalized;
+      await this.saveSettings();
+    }
+    this.rewireTimeLogWatcher();
+    await this.reloadTotalsAndRefresh();
   }
 
   private async maybeAutoSelectFromActive(): Promise<void> {
@@ -259,7 +274,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.settings.selectedTaskPath = file.path;
     await this.saveSettings();
-    this.refreshView();
+    this.refreshTaskStructureViews();
   }
 
   getActiveTaskPath(): string {
@@ -292,14 +307,14 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.settings.activeTrackingStart = start - applySeconds * 1000;
     await this.saveSettings();
-    this.refreshView();
+    this.refreshTimeTrackingViews();
     return applySeconds;
   }
 
   async setSelectedTaskPath(path: string): Promise<void> {
     this.settings.selectedTaskPath = path;
     await this.saveSettings();
-    this.refreshView();
+    this.refreshTaskStructureViews();
   }
 
   getOutlineFilterQuery(): string {
@@ -365,7 +380,7 @@ export default class LifeDashboardPlugin extends Plugin {
   async saveTimeLog(data: TimeLogByNoteId): Promise<void> {
     await this.timeLogStore.writeTimeLogMap(data);
     await this.reloadTimeTotals();
-    this.refreshView();
+    this.refreshTimeTrackingViews();
   }
 
   buildNoteIdToBasenameMap(): Map<string, string> {
@@ -409,8 +424,9 @@ export default class LifeDashboardPlugin extends Plugin {
     const window = this.getWindowForRange(range, new Date());
     let latest = 0;
     for (const entry of entries) {
-      if (this.isEntryInWindow(entry, window) && entry.startMs > latest) {
-        latest = entry.startMs;
+      const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, window);
+      if (overlapStartMs != null && overlapStartMs > latest) {
+        latest = overlapStartMs;
       }
     }
     return latest;
@@ -442,12 +458,20 @@ export default class LifeDashboardPlugin extends Plugin {
     const weekWindow = this.getWindowForRange("week", now);
 
     const todayEntries = entries
-      .filter((entry) => this.isEntryInWindow(entry, todayWindow))
-      .sort((a, b) => a.startMs - b.startMs)
       .map((entry) => {
-        const start = new Date(entry.startMs);
+        const overlapSeconds = this.timeWindowService.getEntryOverlapSeconds(entry, todayWindow);
+        const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, todayWindow);
+        return { entry, overlapSeconds, overlapStartMs };
+      })
+      .filter(
+        (item): item is { entry: TimeLogEntry; overlapSeconds: number; overlapStartMs: number } =>
+          item.overlapSeconds > 0 && item.overlapStartMs != null
+      )
+      .sort((a, b) => a.overlapStartMs - b.overlapStartMs)
+      .map(({ entry, overlapSeconds, overlapStartMs }) => {
+        const start = new Date(overlapStartMs);
         const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
-        const label = `${hhmm} ${this.formatShortDuration(entry.durationMinutes * 60)}`;
+        const label = `${hhmm} ${this.formatShortDuration(overlapSeconds)}`;
         return { label, startMs: entry.startMs };
       });
     const todaySeconds = this.sumSecondsInWindow(entries, todayWindow);
@@ -458,32 +482,15 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   getTimeRangeDescription(range: PeriodTooltipRange): string {
-    const window = this.getWindowForPeriod(range, new Date());
-    if (!window) return "All tracked entries (no date filter).";
-    return this.formatRangeLabel(new Date(window.startMs), new Date(window.endMs));
+    return this.timeWindowService.getTimeRangeDescription(range, new Date());
   }
 
   formatClockDuration(totalSeconds: number): string {
-    const safe = Math.max(0, Math.floor(totalSeconds));
-    const hours = Math.floor(safe / 3600);
-    const minutes = Math.floor((safe % 3600) / 60);
-    const seconds = safe % 60;
-
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    if (hours > 0) {
-      return `${hours}:${pad(minutes)}:${pad(seconds)}`;
-    }
-    return `${minutes}:${pad(seconds)}`;
+    return this.timeWindowService.formatClockDuration(totalSeconds);
   }
 
   formatShortDuration(totalSeconds: number): string {
-    const safe = Math.max(0, Math.floor(totalSeconds));
-    const hours = Math.floor(safe / 3600);
-    const minutes = Math.floor((safe % 3600) / 60);
-
-    if (hours === 0) return `${minutes}m`;
-    if (minutes === 0) return `${hours}h`;
-    return `${hours}h ${minutes}m`;
+    return this.timeWindowService.formatShortDuration(totalSeconds);
   }
 
   async openFile(path: string): Promise<void> {
@@ -500,6 +507,14 @@ export default class LifeDashboardPlugin extends Plugin {
     this.viewController.refreshView();
   }
 
+  private refreshTaskStructureViews(): void {
+    this.viewController.refreshTaskStructureViews();
+  }
+
+  private refreshTimeTrackingViews(): void {
+    this.viewController.refreshTimeTrackingViews();
+  }
+
   private pushLiveTimerUpdate(): void {
     this.viewController.pushLiveTimerUpdate();
     this.handleTimerNotifications();
@@ -512,13 +527,15 @@ export default class LifeDashboardPlugin extends Plugin {
   private initializeServices(): void {
     this.taskFilterService = new TaskFilterService(this.app, this.settings);
     this.timeLogStore = new TimeLogStore(this.app, this.settings, () => this.saveSettings());
+    this.timeWindowService = new TimeWindowService(() => this.settings.weekStartsOn);
+    this.timerNotificationService = new TimerNotificationService();
     this.viewController = new DashboardViewController(this.app, this.settings, () => this.saveSettings());
 
     this.trackingService = new TrackingService({
       app: this.app,
       settings: this.settings,
       saveSettings: () => this.saveSettings(),
-      refreshView: () => this.refreshView(),
+      refreshView: () => this.refreshTimeTrackingViews(),
       fileMatchesTaskFilter: (file) => this.taskFilterService.fileMatchesTaskFilter(file),
       ensureTaskIdForFile: (file) => this.ensureTaskIdForFile(file),
       appendTimeEntry: (noteId, startMs, endMs) => this.timeLogStore.appendTimeEntry(noteId, startMs, endMs),
@@ -605,10 +622,29 @@ export default class LifeDashboardPlugin extends Plugin {
     this.removePowerMonitorListeners = [];
   }
 
+  private getNormalizedTimeLogPath(): string {
+    const raw = (this.settings.timeLogPath || DEFAULT_TIME_LOG_PATH).trim().replace(/^\/+/, "");
+    return normalizePath(raw || DEFAULT_TIME_LOG_PATH);
+  }
+
+  private isTimeLogPath(path: string): boolean {
+    return normalizePath(path) === this.getNormalizedTimeLogPath();
+  }
+
+  private rewireTimeLogWatcher(): void {
+    const normalized = this.getNormalizedTimeLogPath();
+    if (this.timeLogFsWatcher && this.watchedTimeLogPath === normalized) {
+      return;
+    }
+    this.closeTimeLogFsWatcher();
+    this.watchTimeLogFile();
+  }
+
   private watchTimeLogFile(): void {
     const adapter = this.app.vault.adapter;
     if (!("getBasePath" in adapter) || typeof adapter.getBasePath !== "function") return;
 
+    const timeLogPath = this.getNormalizedTimeLogPath();
     const basePath = adapter.getBasePath() as string;
     const fs = this.requireNode<typeof import("fs")>("fs");
     const path = this.requireNode<typeof import("path")>("path");
@@ -616,12 +652,14 @@ export default class LifeDashboardPlugin extends Plugin {
 
     try {
       this.timeLogFsWatcher = fs.watch(
-        path.join(basePath, this.settings.timeLogPath),
+        path.join(basePath, timeLogPath),
         { persistent: false },
         () => this.debounceTimeLogReload()
       );
+      this.watchedTimeLogPath = timeLogPath;
     } catch {
       console.warn("[life-dashboard] Could not watch time log file for external changes.");
+      this.watchedTimeLogPath = "";
     }
   }
 
@@ -646,6 +684,7 @@ export default class LifeDashboardPlugin extends Plugin {
       this.timeLogFsWatcher.close();
       this.timeLogFsWatcher = null;
     }
+    this.watchedTimeLogPath = "";
   }
 
   private requireNode<T>(id: string): T | null {
@@ -657,9 +696,88 @@ export default class LifeDashboardPlugin extends Plugin {
     }
   }
 
+  private handleTaskStructureChange(): void {
+    this.taskFilterService.invalidateCache();
+    this.refreshTaskStructureViews();
+  }
+
+  private async handleVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {
+    if (this.isTimeLogPath(oldPath) || this.isTimeLogPath(file.path)) {
+      this.rewireTimeLogWatcher();
+      await this.reloadTotalsAndRefresh();
+      return;
+    }
+
+    let settingsChanged = false;
+    const remappedSelected = this.remapPathPrefix(this.settings.selectedTaskPath, oldPath, file.path);
+    if (remappedSelected !== this.settings.selectedTaskPath) {
+      this.settings.selectedTaskPath = remappedSelected;
+      settingsChanged = true;
+    }
+    const remappedActive = this.remapPathPrefix(this.settings.activeTrackingTaskPath, oldPath, file.path);
+    if (remappedActive !== this.settings.activeTrackingTaskPath) {
+      this.settings.activeTrackingTaskPath = remappedActive;
+      settingsChanged = true;
+    }
+
+    if (settingsChanged) {
+      await this.saveSettings();
+    }
+    this.handleTaskStructureChange();
+  }
+
+  private async handleVaultDelete(file: TAbstractFile): Promise<void> {
+    if (this.isTimeLogPath(file.path)) {
+      this.rewireTimeLogWatcher();
+      await this.reloadTotalsAndRefresh();
+      return;
+    }
+
+    let settingsChanged = false;
+    if (this.pathMatchesOrDescends(this.settings.selectedTaskPath, file.path)) {
+      this.settings.selectedTaskPath = "";
+      settingsChanged = true;
+    }
+    if (this.pathMatchesOrDescends(this.settings.activeTrackingTaskPath, file.path)) {
+      this.settings.activeTrackingTaskPath = "";
+      settingsChanged = true;
+    }
+
+    if (settingsChanged) {
+      await this.saveSettings();
+    }
+    this.handleTaskStructureChange();
+  }
+
+  private async handleVaultCreate(file: TAbstractFile): Promise<void> {
+    if (this.isTimeLogPath(file.path)) {
+      this.rewireTimeLogWatcher();
+      await this.reloadTotalsAndRefresh();
+      return;
+    }
+
+    this.handleTaskStructureChange();
+  }
+
+  private remapPathPrefix(path: string, oldPrefix: string, newPrefix: string): string {
+    if (!path) return path;
+    if (path === oldPrefix) {
+      return newPrefix;
+    }
+    const oldPrefixWithSlash = `${oldPrefix}/`;
+    if (!path.startsWith(oldPrefixWithSlash)) {
+      return path;
+    }
+    return `${newPrefix}/${path.slice(oldPrefixWithSlash.length)}`;
+  }
+
+  private pathMatchesOrDescends(path: string, maybePrefix: string): boolean {
+    return path === maybePrefix || path.startsWith(`${maybePrefix}/`);
+  }
+
   private async reloadTotalsAndRefresh(): Promise<void> {
     await this.reloadTimeTotalsSafely();
-    this.refreshView();
+    this.refreshTimeTrackingViews();
   }
 
   private scheduleOutlineFilterSave(): void {
@@ -726,197 +844,42 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
-    if (range === "today") {
-      const start = this.getDayStart(now);
-      const end = new Date(start.getTime());
-      end.setDate(end.getDate() + 1);
-      return { startMs: start.getTime(), endMs: end.getTime() };
-    }
-
-    if (range === "todayYesterday") {
-      const todayStart = this.getDayStart(now);
-      const start = new Date(todayStart.getTime());
-      start.setDate(start.getDate() - 1);
-      const end = new Date(todayStart.getTime());
-      end.setDate(end.getDate() + 1);
-      return { startMs: start.getTime(), endMs: end.getTime() };
-    }
-
-    if (range === "week") {
-      const start = this.getWeekStart(now);
-      const end = new Date(start.getTime());
-      end.setDate(end.getDate() + 7);
-      return { startMs: start.getTime(), endMs: end.getTime() };
-    }
-
-    if (range === "month") {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
-      return { startMs: start.getTime(), endMs: end.getTime() };
-    }
-    return { startMs: 0, endMs: 0 };
-  }
-
-  private getWindowForPeriod(range: PeriodTooltipRange, now: Date): TimeWindow | null {
-    if (range === "all") {
-      return null;
-    }
-
-    if (range === "yesterday") {
-      const todayWindow = this.getWindowForRange("today", now);
-      const yesterdayStart = new Date(todayWindow.startMs);
-      yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-      return {
-        startMs: yesterdayStart.getTime(),
-        endMs: todayWindow.startMs
-      };
-    }
-
-    return this.getWindowForRange(range, now);
+    return this.timeWindowService.getWindowForRange(range, now);
   }
 
   getWeekStart(now: Date): Date {
-    const start = this.getDayStart(now);
-    const day = start.getDay(); // Sunday=0 ... Saturday=6
-    const weekStartsOn = this.settings.weekStartsOn === "sunday" ? 0 : 1;
-    const offset = (day - weekStartsOn + 7) % 7;
-    start.setDate(start.getDate() - offset);
-    return start;
+    return this.timeWindowService.getWeekStart(now);
   }
 
   getDayStart(value: Date): Date {
-    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
-  }
-
-  private formatRangeLabel(start: Date, endExclusive: Date): string {
-    const end = new Date(endExclusive.getTime() - 60 * 1000);
-    return `${this.formatDateTime(start)} - ${this.formatDateTime(end)}`;
+    return this.timeWindowService.getDayStart(value);
   }
 
   private sumSecondsInWindow(entries: TimeLogEntry[], window: TimeWindow): number {
     return entries.reduce((seconds, entry) => {
-      if (!this.isEntryInWindow(entry, window)) {
-        return seconds;
-      }
-      return seconds + entry.durationMinutes * 60;
+      return seconds + this.timeWindowService.getEntryOverlapSeconds(entry, window);
     }, 0);
   }
 
-  private isEntryInWindow(entry: TimeLogEntry, window: TimeWindow): boolean {
-    return entry.startMs >= window.startMs && entry.startMs < window.endMs;
-  }
-
-  private formatDateTime(date: Date): string {
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    const yyyy = date.getFullYear();
-    const mm = pad(date.getMonth() + 1);
-    const dd = pad(date.getDate());
-    const hh = pad(date.getHours());
-    const min = pad(date.getMinutes());
-    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
-  }
-
   private handleTimerNotifications(): void {
-    const start = this.getActiveTrackingStartMs();
-    if (start == null) {
-      this.resetNotificationState();
-      return;
-    }
-
-    const sessionKey = `${start}:${this.settings.activeTrackingTaskId || ""}`;
-    const elapsed = this.getCurrentElapsedSeconds();
-
-    if (sessionKey !== this.activeNotificationSessionKey) {
-      this.activeNotificationSessionKey = sessionKey;
-      this.lastElapsedSecondsForNotify = elapsed;
-      this.notifiedThresholdSeconds.clear();
-      return;
-    }
-
-    const previous = this.lastElapsedSecondsForNotify ?? elapsed;
-    if (elapsed < previous) {
-      this.lastElapsedSecondsForNotify = elapsed;
-      this.notifiedThresholdSeconds.clear();
-      return;
-    }
-
-    const rules = this.getTimerNotificationRules();
-    for (const rule of rules) {
-      if (this.notifiedThresholdSeconds.has(rule.thresholdSeconds)) continue;
-      if (previous < rule.thresholdSeconds && elapsed >= rule.thresholdSeconds) {
-        this.notifiedThresholdSeconds.add(rule.thresholdSeconds);
-        void this.showTimerNotification(rule.message || `Timer hit ${rule.label}`);
-        this.playNotificationBeep();
+    this.timerNotificationService.handleTick(
+      {
+        activeStartMs: this.getActiveTrackingStartMs(),
+        activeTaskId: this.settings.activeTrackingTaskId || "",
+        elapsedSeconds: this.getCurrentElapsedSeconds(),
+        rawRules: this.settings.timerNotificationRules || ""
+      },
+      {
+        notify: (message) => this.showTimerNotification(message),
+        beep: () => this.playNotificationBeep()
       }
-    }
-
-    this.lastElapsedSecondsForNotify = elapsed;
+    );
   }
 
   private getActiveTrackingStartMs(): number | null {
     const start = Number(this.settings.activeTrackingStart);
     if (!Number.isFinite(start) || start <= 0) return null;
     return start;
-  }
-
-  private resetNotificationState(): void {
-    this.activeNotificationSessionKey = "";
-    this.lastElapsedSecondsForNotify = null;
-    this.notifiedThresholdSeconds.clear();
-  }
-
-  private getTimerNotificationRules(): TimerNotificationRule[] {
-    const raw = this.settings.timerNotificationRules || "";
-    if (raw === this.parsedNotificationRulesCacheRaw) {
-      return this.parsedNotificationRulesCache;
-    }
-
-    const parsed = this.parseTimerNotificationRules(raw);
-    this.parsedNotificationRulesCacheRaw = raw;
-    this.parsedNotificationRulesCache = parsed;
-    return parsed;
-  }
-
-  private parseTimerNotificationRules(raw: string): TimerNotificationRule[] {
-    const byThreshold = new Map<number, TimerNotificationRule>();
-    const lines = raw.split(/\r?\n/);
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      const match = /^(\d+\s*[smhSMH])(?:\s+(?:"([^"]+)"|(.*)))?$/.exec(trimmed);
-      if (!match) {
-        console.warn("[life-dashboard] Invalid timer notification rule:", trimmed);
-        continue;
-      }
-
-      const thresholdSeconds = this.parseDurationToSeconds(match[1]);
-      if (thresholdSeconds <= 0) continue;
-
-      const rawMessage = (match[2] ?? match[3] ?? "").trim();
-      const label = match[1].replace(/\s+/g, "").toLowerCase();
-      byThreshold.set(thresholdSeconds, {
-        thresholdSeconds,
-        label,
-        message: rawMessage || `Timer reached ${label}`
-      });
-    }
-
-    return Array.from(byThreshold.values()).sort((a, b) => a.thresholdSeconds - b.thresholdSeconds);
-  }
-
-  private parseDurationToSeconds(raw: string): number {
-    const match = /^(\d+)\s*([smhSMH])$/.exec(raw.trim());
-    if (!match) return 0;
-
-    const value = Number(match[1]);
-    if (!Number.isFinite(value) || value <= 0) return 0;
-
-    const unit = match[2].toLowerCase();
-    if (unit === "h") return value * 3600;
-    if (unit === "m") return value * 60;
-    return value;
   }
 
   private async showTimerNotification(message: string): Promise<void> {
@@ -1013,6 +976,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private async loadSettings(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.timeLogPath = this.getNormalizedTimeLogPath();
   }
 
   async saveSettings(): Promise<void> {

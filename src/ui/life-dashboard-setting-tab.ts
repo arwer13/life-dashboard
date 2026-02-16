@@ -122,8 +122,7 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         },
         transform: (value) => value.trim() || DEFAULT_TIME_LOG_PATH,
         afterSave: async () => {
-          await this.plugin.reloadTimeTotals();
-          this.plugin.refreshView();
+          await this.plugin.onTimeLogPathSettingChanged();
         }
       }
     ];

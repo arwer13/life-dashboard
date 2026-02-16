@@ -5,13 +5,25 @@ import type { LifeDashboardSettings } from "../settings";
 export class TaskFilterService {
   private readonly app: App;
   private readonly settings: LifeDashboardSettings;
+  private cachedTasks: TaskItem[] | null = null;
+  private lastCacheKey = "";
 
   constructor(app: App, settings: LifeDashboardSettings) {
     this.app = app;
     this.settings = settings;
   }
 
+  invalidateCache(): void {
+    this.cachedTasks = null;
+    this.lastCacheKey = "";
+  }
+
   getTaskTreeItems(): TaskItem[] {
+    const cacheKey = this.buildCacheKey();
+    if (this.cachedTasks && this.lastCacheKey === cacheKey) {
+      return [...this.cachedTasks];
+    }
+
     const files = this.app.vault.getMarkdownFiles();
     const tasks: TaskItem[] = [];
 
@@ -28,7 +40,9 @@ export class TaskFilterService {
     }
 
     tasks.sort((a, b) => a.file.path.localeCompare(b.file.path));
-    return tasks;
+    this.cachedTasks = tasks;
+    this.lastCacheKey = cacheKey;
+    return [...tasks];
   }
 
   fileMatchesTaskFilter(file: TFile): boolean {
@@ -82,6 +96,17 @@ export class TaskFilterService {
     } catch {
       return [String(value)];
     }
+  }
+
+  private buildCacheKey(): string {
+    return [
+      this.settings.propertyName.trim(),
+      this.settings.propertyValue.trim(),
+      this.settings.additionalFilterPropertyName.trim(),
+      this.settings.additionalFilterPropertyValue.trim(),
+      this.settings.caseSensitive ? "1" : "0",
+      String(this.app.vault.getMarkdownFiles().length)
+    ].join("|");
   }
 
 }

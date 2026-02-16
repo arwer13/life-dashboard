@@ -167,6 +167,12 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
     newDuration: number
   ): void {
     const newToken = `${newStart}T${newDuration}M`;
+    if (!parseIntervalToken(newToken)) {
+      new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time.");
+      void this.render();
+      return;
+    }
+
     const tokens = data[noteId] ?? [];
     const idx = tokens.indexOf(oldToken);
     if (idx >= 0) {

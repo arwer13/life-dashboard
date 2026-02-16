@@ -80,6 +80,8 @@ src/
   services/
     task-filter-service.ts          scans vault for notes matching frontmatter filter
     time-log-store.ts               reads/writes/validates JSON time log, computes snapshots
+    time-window-service.ts          shared date-window math, overlap-safe period calculations, duration formatting
+    timer-notification-service.ts   parses notification rules and tracks per-session threshold state
     tracking-service.ts             start/stop lifecycle, session persistence, UUID provisioning
     dashboard-view-controller.ts    multi-view orchestration (open, reveal, refresh, live-update)
     task-tree-builder.ts            tree construction, parent resolution, priority sorting
@@ -105,8 +107,13 @@ styles.css                          all component styles (~21 KB)
 ### Services
 
 **TaskFilterService** — Scans all markdown files and returns `TaskItem[]` matching the configured frontmatter property/value pair (plus optional secondary filter). Used by every view to obtain the concern list.
+Caches results between refreshes and invalidates on vault/metadata events.
 
 **TimeLogStore** — Reads and writes `Data/time/time-tracked.json` (configurable). Each note is keyed by a frontmatter UUID; values are arrays of time tokens (`YYYY.MM.DD-HH:MMT<minutes>M`). Validates intervals to prevent overlap, normalises ordering, and produces `TimeLogSnapshot` with per-note totals and detailed entries.
+
+**TimeWindowService** — Owns all period/window calculations (`today`, `week`, etc.), overlap-aware entry math for boundary-crossing sessions, and shared duration/time-range formatting helpers.
+
+**TimerNotificationService** — Parses timer notification rules and tracks per-session threshold crossings so notifications/beeps are emitted once per threshold.
 
 **TrackingService** — Manages the active timer session. On start: validates selection, ensures UUID in frontmatter, stores start timestamp. On stop: enforces minimum duration, appends to TimeLogStore, reloads totals. Flushes any active session on plugin unload.
 

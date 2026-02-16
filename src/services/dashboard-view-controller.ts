@@ -85,10 +85,32 @@ export class DashboardViewController {
     VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
   ] as const;
 
+  private static readonly TASK_STRUCTURE_VIEW_TYPES = [
+    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
+  ] as const;
+
+  private static readonly TIME_TRACKING_VIEW_TYPES = [
+    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
+  ] as const;
+
   refreshView(): void {
-    for (const viewType of DashboardViewController.ALL_VIEW_TYPES) {
-      this.refreshViewByType(viewType);
-    }
+    this.refreshViews(DashboardViewController.ALL_VIEW_TYPES);
+  }
+
+  refreshTaskStructureViews(): void {
+    this.refreshViews(DashboardViewController.TASK_STRUCTURE_VIEW_TYPES);
+  }
+
+  refreshTimeTrackingViews(): void {
+    this.refreshViews(DashboardViewController.TIME_TRACKING_VIEW_TYPES);
   }
 
   pushLiveTimerUpdate(): void {
@@ -115,6 +137,12 @@ export class DashboardViewController {
       if (leaf.view instanceof LifeDashboardBaseView && "render" in leaf.view) {
         void (leaf.view as LifeDashboardBaseView & { render(): Promise<void> }).render();
       }
+    }
+  }
+
+  private refreshViews(viewTypes: readonly string[]): void {
+    for (const viewType of viewTypes) {
+      this.refreshViewByType(viewType);
     }
   }
 
