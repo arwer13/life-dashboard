@@ -18,6 +18,7 @@ import {
   isPriorityDigitKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../services/priority-utils";
+import { createTreeToggleSpacer, setTreeToggleState } from "./tree-toggle";
 
 export type ConcernTreePanelState = {
   rootPath: string;
@@ -425,14 +426,12 @@ export class ConcernTreePanel {
     if (hasChildren) {
       const isCollapsed = this.state.collapsedNodePaths.has(node.path);
       const toggle = row.createEl("button", {
-        cls: "fmo-tree-panel-node-toggle",
-        text: isCollapsed ? "○" : "●",
+        cls: "fmo-tree-toggle",
         attr: {
-          type: "button",
-          "aria-expanded": String(!isCollapsed),
-          "aria-label": `${isCollapsed ? "Expand" : "Collapse"} ${node.item.file.basename}`
+          type: "button"
         }
-      });
+      }) as HTMLButtonElement;
+      setTreeToggleState(toggle, !isCollapsed, node.item.file.basename);
       toggle.addEventListener("click", () => {
         if (this.state.collapsedNodePaths.has(node.path)) {
           this.state.collapsedNodePaths.delete(node.path);
@@ -442,10 +441,7 @@ export class ConcernTreePanel {
         ctx.rerender();
       });
     } else {
-      row.createEl("span", {
-        cls: "fmo-tree-panel-node-marker",
-        text: "•"
-      });
+      createTreeToggleSpacer(row);
     }
 
     const link = row.createEl("a", {

@@ -22,6 +22,11 @@ import {
   isPriorityDigitKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../../services/priority-utils";
+import {
+  createTreeToggleSpacer,
+  isTreeToggleExpanded,
+  setTreeToggleState
+} from "../tree-toggle";
 
 type RecencySection = { label: string; matchedPaths: Set<string> };
 
@@ -508,20 +513,16 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     if (node.children.length > 0) {
       const isExpanded = state.expandAll;
       const toggle = row.createEl("button", {
-        cls: "fmo-toggle",
+        cls: "fmo-tree-toggle",
         attr: {
-          type: "button",
-          "aria-expanded": String(isExpanded),
-          "aria-label": `Expand ${node.item.file.basename}`
+          type: "button"
         }
-      });
-      toggle.setText(isExpanded ? "▾" : "▸");
+      }) as HTMLButtonElement;
+      setTreeToggleState(toggle, isExpanded, node.item.file.basename);
 
       toggle.addEventListener("click", () => {
-        const expanded = toggle.getAttribute("aria-expanded") === "true";
-        const next = !expanded;
-        toggle.setAttribute("aria-expanded", String(next));
-        toggle.setText(next ? "▾" : "▸");
+        const next = !isTreeToggleExpanded(toggle);
+        setTreeToggleState(toggle, next, node.item.file.basename);
         if (childrenList) {
           childrenList.hidden = !next;
         }
@@ -530,7 +531,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       childrenList = li.createEl("ul", { cls: "fmo-tree fmo-tree-children" });
       childrenList.hidden = !isExpanded;
     } else {
-      row.createEl("span", { cls: "fmo-toggle-spacer", text: "" });
+      createTreeToggleSpacer(row);
     }
 
     const link = row.createEl("a", {

@@ -32,6 +32,7 @@ Collapsible tree of all filtered concerns with time badges.
 - `Show parents` checkbox (includes ancestor nodes of matched concerns)
 - Done filter for `status:done` notes
 - Expand/collapse all
+- Single left-side chevron control for branch nodes (leaf rows keep aligned spacer)
 - Recency grouping: Today, Yesterday, This Week, Earlier
 - Priority badges next to concern names (`p0`..`pN`, or truncated custom priority value)
 - Hover + hotkeys: `0`..`4` set `priority: p0`..`p4`, `-` removes `priority`
