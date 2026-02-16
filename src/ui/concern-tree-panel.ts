@@ -13,6 +13,11 @@ import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
 import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder";
 import { filterTasksByQuery } from "../services/outline-filter";
+import {
+  formatPriorityBadgeText,
+  isPriorityDigitKey,
+  shouldIgnorePriorityHotkeyTarget
+} from "../services/priority-utils";
 
 export type ConcernTreePanelState = {
   rootPath: string;
@@ -28,6 +33,7 @@ export type ConcernTreePanelConfig = {
   plugin: LifeDashboardPlugin;
   container: HTMLElement;
   state: ConcernTreePanelState;
+  initialPreviewScrollTop?: number;
   hideControls?: {
     root?: boolean;
     range?: boolean;
@@ -62,18 +68,23 @@ export class ConcernTreePanel {
   private statusEl: HTMLElement | null = null;
   private onHoverChange: ConcernTreePanelConfig["onHoverChange"];
   private pendingHoverTimer: number | null = null;
+  private hoveredConcernPath: string | null = null;
+  private initialPreviewScrollTop = 0;
 
   constructor(config: ConcernTreePanelConfig) {
     this.plugin = config.plugin;
     this.container = config.container;
     this.state = { ...config.state, collapsedNodePaths: new Set(config.state.collapsedNodePaths) };
+    this.initialPreviewScrollTop = Math.max(0, config.initialPreviewScrollTop ?? 0);
     this.hideControls = config.hideControls ?? {};
     this.onChange = config.onChange;
     this.onHoverChange = config.onHoverChange;
+    this.initializePriorityHotkeys();
     this.render();
   }
 
   render(): void {
+    const previousPreviewScrollTop = this.previewEl?.scrollTop ?? this.initialPreviewScrollTop;
     this.container.empty();
 
     const tasks = this.plugin.getTaskTreeItems();
@@ -82,12 +93,17 @@ export class ConcernTreePanel {
 
     const preview = this.container.createEl("div", { cls: "fmo-tree-panel-preview" });
     this.previewEl = preview;
+    let pendingInitialScrollTop: number | null = previousPreviewScrollTop;
 
     const rerender = (): void => {
+      const currentScrollTop = pendingInitialScrollTop ?? preview.scrollTop;
+      pendingInitialScrollTop = null;
       this.clearPendingHoverTimer();
+      this.hoveredConcernPath = null;
       this.emitHover(null);
       preview.empty();
       this.renderTreePreview(preview, tasks, rerender);
+      preview.scrollTop = currentScrollTop;
       this.fireChange();
     };
     this.rerenderPreview = rerender;
@@ -396,8 +412,13 @@ export class ConcernTreePanel {
         ? "fmo-tree-row fmo-tree-row-parent fmo-tree-panel-tree-row"
         : "fmo-tree-row fmo-tree-panel-tree-row"
     });
+    row.dataset.concernPath = node.path;
     const hoveredPaths = ctx.subtreePathsByPath.get(node.path) ?? new Set([node.path]);
-    row.addEventListener("mouseenter", () => this.scheduleHover(hoveredPaths));
+    row.addEventListener("mouseenter", () => {
+      this.hoveredConcernPath = node.path;
+      this.container.focus({ preventScroll: true });
+      this.scheduleHover(hoveredPaths);
+    });
     row.addEventListener("mouseleave", (evt) => this.handleRowMouseLeave(evt));
     row.style.paddingInlineStart = `${Math.min(12, depth) * 11}px`;
     const hasChildren = node.children.length > 0;
@@ -436,6 +457,15 @@ export class ConcernTreePanel {
       evt.preventDefault();
       void this.plugin.openFile(node.item.file.path);
     });
+
+    const priorityBadge = formatPriorityBadgeText(node.item.frontmatter?.priority);
+    if (priorityBadge) {
+      row.createEl("span", {
+        cls: "fmo-priority-badge",
+        text: priorityBadge,
+        attr: { title: `Priority: ${priorityBadge}` }
+      });
+    }
 
     const total = ctx.state.cumulativeSeconds.get(node.path) ?? 0;
     const own = ctx.state.ownSeconds.get(node.path) ?? 0;
@@ -660,6 +690,10 @@ export class ConcernTreePanel {
   }
 
   private handleRowMouseLeave(evt: MouseEvent): void {
+    const row = evt.currentTarget instanceof HTMLElement ? evt.currentTarget : null;
+    if (row?.dataset.concernPath && this.hoveredConcernPath === row.dataset.concernPath) {
+      this.hoveredConcernPath = null;
+    }
     const next = evt.relatedTarget instanceof Element ? evt.relatedTarget : null;
     if (next?.closest(".fmo-tree-panel-tree-row")) {
       return;
@@ -672,5 +706,42 @@ export class ConcernTreePanel {
     if (this.pendingHoverTimer == null) return;
     window.clearTimeout(this.pendingHoverTimer);
     this.pendingHoverTimer = null;
+  }
+
+  private initializePriorityHotkeys(): void {
+    this.container.tabIndex = -1;
+    this.container.addEventListener("keydown", (event) => {
+      if (!this.hoveredConcernPath) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.repeat) return;
+      if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
+
+      const isPriorityDigit = isPriorityDigitKey(event.key);
+      const isPriorityClear = event.key === "-";
+      if (!isPriorityDigit && !isPriorityClear) return;
+
+      const path = this.hoveredConcernPath;
+      if (!path) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (isPriorityClear) {
+        void this.applyHoveredPriorityClear(path);
+        return;
+      }
+      void this.applyHoveredPriorityValue(path, event.key);
+    });
+  }
+
+  private async applyHoveredPriorityValue(path: string, digit: string): Promise<void> {
+    const changed = await this.plugin.setConcernPriority(path, digit);
+    if (!changed) return;
+    this.rerenderPreview?.();
+  }
+
+  private async applyHoveredPriorityClear(path: string): Promise<void> {
+    const changed = await this.plugin.clearConcernPriority(path);
+    if (!changed) return;
+    this.rerenderPreview?.();
   }
 }

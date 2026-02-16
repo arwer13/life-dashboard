@@ -61,6 +61,7 @@ function computeBlockFontSizePx(heightPx: number): number {
 
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private calendarTreePanel: ConcernTreePanel | null = null;
+  private calendarTreePanelScrollTop = 0;
   private calendarTreeState: ConcernTreePanelState = {
     rootPath: "",
     query: "",
@@ -154,6 +155,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   async render(): Promise<void> {
     const { contentEl } = this;
+    const existingPreview = contentEl.querySelector<HTMLElement>(".fmo-tree-panel-preview");
+    this.calendarTreePanelScrollTop = existingPreview?.scrollTop ?? this.calendarTreePanelScrollTop;
     contentEl.empty();
     contentEl.addClass("frontmatter-outline-view");
 
@@ -236,6 +239,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     this.calendarTreePanel = new ConcernTreePanel({
       plugin: this.plugin,
       container: sidebar,
+      initialPreviewScrollTop: this.calendarTreePanelScrollTop,
       state: { ...this.calendarTreeState },
       hideControls: { range: true, trackedOnly: true },
       onChange: (visiblePaths, newState) => {

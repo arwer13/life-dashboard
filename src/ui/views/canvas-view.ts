@@ -64,6 +64,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
   private canvasTrees: CanvasTreeDraft[] = [];
   private nextCanvasTreeOrdinal = 1;
   private canvasTreesLoaded = false;
+  private canvasTreePanelScrollById = new Map<string, number>();
+  private canvasViewportScroll = { left: 0, top: 0 };
 
   getViewType(): string {
     return VIEW_TYPE_LIFE_DASHBOARD_CANVAS;
@@ -83,6 +85,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
   async render(): Promise<void> {
     const { contentEl } = this;
+    this.captureCanvasViewportScrollState();
+    this.captureCanvasTreePanelScrollState();
     contentEl.empty();
     contentEl.addClass("frontmatter-outline-view");
     contentEl.addClass("fmo-canvas-view");
@@ -151,6 +155,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
     for (const tree of this.canvasTrees) {
       this.renderCanvasTreeCard(stage, tree, tasks);
     }
+    viewport.scrollLeft = this.canvasViewportScroll.left;
+    viewport.scrollTop = this.canvasViewportScroll.top;
   }
 
   private ensureCanvasTrees(tasks: TaskItem[]): void {
@@ -382,6 +388,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
   private renderCanvasTreeCard(stageEl: HTMLElement, tree: CanvasTreeDraft, tasks: TaskItem[]): void {
     const card = stageEl.createEl("section", { cls: "fmo-canvas-card" });
+    card.dataset.treeId = tree.id;
     card.classList.toggle("fmo-canvas-card-collapsed", tree.collapsed);
     card.style.left = `${tree.x}px`;
     card.style.top = `${tree.y}px`;
@@ -459,6 +466,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
     new ConcernTreePanel({
       plugin: this.plugin,
       container: panelContainer,
+      initialPreviewScrollTop: this.canvasTreePanelScrollById.get(tree.id) ?? 0,
       state: {
         rootPath: tree.rootPath,
         query: tree.query,
@@ -479,6 +487,33 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         this.persistCanvasTrees();
       },
     });
+  }
+
+  private captureCanvasTreePanelScrollState(): void {
+    const next = new Map<string, number>(this.canvasTreePanelScrollById);
+    let foundAny = false;
+    const cards = this.contentEl.querySelectorAll(".fmo-canvas-card");
+    cards.forEach((cardEl) => {
+      const card = cardEl as HTMLElement;
+      const id = card.dataset.treeId?.trim();
+      if (!id) return;
+      const preview = card.querySelector(".fmo-tree-panel-preview") as HTMLElement | null;
+      if (!preview) return;
+      foundAny = true;
+      next.set(id, preview.scrollTop);
+    });
+    if (foundAny) {
+      this.canvasTreePanelScrollById = next;
+    }
+  }
+
+  private captureCanvasViewportScrollState(): void {
+    const viewport = this.contentEl.querySelector<HTMLElement>(".fmo-canvas-viewport");
+    if (!viewport) return;
+    this.canvasViewportScroll = {
+      left: viewport.scrollLeft,
+      top: viewport.scrollTop
+    };
   }
 
   private attachCanvasCardDragging(

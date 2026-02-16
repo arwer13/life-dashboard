@@ -33,6 +33,8 @@ Collapsible tree of all filtered concerns with time badges.
 - Done filter for `status:done` notes
 - Expand/collapse all
 - Recency grouping: Today, Yesterday, This Week, Earlier
+- Priority badges next to concern names (`p0`..`pN`, or truncated custom priority value)
+- Hover + hotkeys: `0`..`4` set `priority: p0`..`p4`, `-` removes `priority`
 - Advanced filter syntax (see [Outline filter syntax](#outline-filter-syntax))
 
 ### Concerns Canvas
@@ -42,6 +44,7 @@ Infinite-scroll canvas (3600 × 2400 px) with draggable, resizable tree cards.
 - Each card embeds an independent ConcernTreePanel with its own root, range, sort, tracked-only, parents, and filter controls
 - Add Card / Reset Layout buttons
 - All card positions, sizes, and tree states persist between sessions via plugin settings
+- Same hover priority hotkeys as Outline (`0`..`4`, `-`) inside each tree panel
 
 ### Concerns Calendar
 
@@ -53,6 +56,7 @@ Two-column layout: sidebar tree panel + main calendar grid.
 - Summary table below the grid, sorted by total tracked time with colour dots
 - Sidebar tree panel filters which concerns appear on the grid and only shows concerns with tracked time in the selected period
 - Collapsed-parent rollup: when a tree node is collapsed, its children's calendar entries appear under the parent's colour and label; expanding restores them
+- Sidebar tree panel supports the same hover priority hotkeys (`0`..`4`, `-`)
 
 ### Time Log
 

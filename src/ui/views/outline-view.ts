@@ -17,6 +17,11 @@ import {
 import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
+import {
+  formatPriorityBadgeText,
+  isPriorityDigitKey,
+  shouldIgnorePriorityHotkeyTarget
+} from "../../services/priority-utils";
 
 type RecencySection = { label: string; matchedPaths: Set<string> };
 
@@ -27,6 +32,8 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   private outlineShowOnlyTrackedThisPeriod = true;
   private outlineSortMode: OutlineSortMode = "recent";
   private outlineShowParents = true;
+  private hoveredConcernPath: string | null = null;
+  private keydownRegistered = false;
 
   getViewType(): string {
     return VIEW_TYPE_LIFE_DASHBOARD_OUTLINE;
@@ -41,16 +48,26 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   async onOpen(): Promise<void> {
+    this.ensurePriorityHotkeyListener();
     await this.render();
+  }
+
+  async onClose(): Promise<void> {
+    this.hoveredConcernPath = null;
   }
 
   async render(): Promise<void> {
     const { contentEl } = this;
+    const scrollEl = this.getOutlineScrollContainer();
+    const scrollTop = scrollEl?.scrollTop ?? 0;
     contentEl.empty();
     contentEl.addClass("frontmatter-outline-view");
 
     const tasks = this.plugin.getTaskTreeItems();
     this.renderOutline(contentEl, tasks);
+    if (scrollEl) {
+      scrollEl.scrollTop = scrollTop;
+    }
   }
 
   private renderOutline(contentEl: HTMLElement, tasks: TaskItem[]): void {
@@ -159,6 +176,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const parentByPath = this.buildParentPathMap(tasks);
     const renderFilteredOutline = (query: string): void => {
       outlineBody.empty();
+      this.hoveredConcernPath = null;
 
       if (!prop) {
         outlineBody.createEl("p", {
@@ -474,6 +492,14 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const row = li.createEl("div", {
       cls: isParentOnly ? "fmo-tree-row fmo-tree-row-parent" : "fmo-tree-row"
     });
+    row.addEventListener("mouseenter", () => {
+      this.hoveredConcernPath = node.path;
+    });
+    row.addEventListener("mouseleave", () => {
+      if (this.hoveredConcernPath === node.path) {
+        this.hoveredConcernPath = null;
+      }
+    });
 
     const total = state.cumulativeSeconds.get(node.path) ?? 0;
     const own = state.ownSeconds.get(node.path) ?? 0;
@@ -518,6 +544,17 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       void this.plugin.openFile(node.item.file.path);
     });
 
+    const priorityBadge = formatPriorityBadgeText(node.item.frontmatter?.priority);
+    if (priorityBadge) {
+      row.createEl("span", {
+        cls: "fmo-priority-badge",
+        text: priorityBadge,
+        attr: {
+          title: `Priority: ${priorityBadge}`
+        }
+      });
+    }
+
     row.createEl("span", {
       cls: "fmo-time-badge",
       text: this.plugin.formatShortDuration(total),
@@ -531,5 +568,46 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
         this.renderTreeNode(childrenList, child, state, nextAncestry);
       }
     }
+  }
+
+  private ensurePriorityHotkeyListener(): void {
+    if (this.keydownRegistered) return;
+    this.keydownRegistered = true;
+    this.registerDomEvent(document, "keydown", (event) => {
+      if (!this.hoveredConcernPath) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.repeat) return;
+      if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
+      const isPriorityDigit = isPriorityDigitKey(event.key);
+      const isPriorityClear = event.key === "-";
+      if (!isPriorityDigit && !isPriorityClear) return;
+
+      const hoveredPath = this.hoveredConcernPath;
+      if (!hoveredPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (isPriorityClear) {
+        void this.clearHoveredPriority(hoveredPath);
+        return;
+      }
+      void this.applyHoveredPriority(hoveredPath, event.key);
+    });
+  }
+
+  private async applyHoveredPriority(path: string, digit: string): Promise<void> {
+    const changed = await this.plugin.setConcernPriority(path, digit);
+    if (!changed) return;
+    await this.render();
+  }
+
+  private async clearHoveredPriority(path: string): Promise<void> {
+    const changed = await this.plugin.clearConcernPriority(path);
+    if (!changed) return;
+    await this.render();
+  }
+
+  private getOutlineScrollContainer(): HTMLElement | null {
+    return this.contentEl.closest(".view-content");
   }
 }

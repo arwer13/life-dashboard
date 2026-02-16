@@ -487,6 +487,16 @@ body.fmo-resizing-h * {
   padding: 1px 6px;
 }
 
+.frontmatter-outline-view .fmo-priority-badge {
+  margin-left: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
 .frontmatter-outline-view .fmo-tree-children {
   margin-left: 10px;
   border-left: 1px dashed var(--background-modifier-border);

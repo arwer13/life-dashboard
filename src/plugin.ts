@@ -11,6 +11,7 @@ import { TimeLogStore } from "./services/time-log-store";
 import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type PeriodTooltipRange as PeriodTooltipRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
 import { TimerNotificationService } from "./services/timer-notification-service";
 import { TrackingService } from "./services/tracking-service";
+import { normalizePriorityValue } from "./services/priority-utils";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import {
   LifeDashboardCalendarView,
@@ -381,6 +382,59 @@ export default class LifeDashboardPlugin extends Plugin {
     await this.timeLogStore.writeTimeLogMap(data);
     await this.reloadTimeTotals();
     this.refreshTimeTrackingViews();
+  }
+
+  async setConcernPriority(path: string, priority: string): Promise<boolean> {
+    const normalizedPriority = normalizePriorityValue(priority);
+    if (!normalizedPriority) return false;
+
+    return this.updateConcernFrontmatter(
+      path,
+      (fm) => {
+        const current =
+          fm.priority == null
+            ? ""
+            : String(fm.priority).trim().toLowerCase();
+        if (current === normalizedPriority) return false;
+        fm.priority = normalizedPriority;
+        return true;
+      },
+      "Could not update frontmatter priority"
+    );
+  }
+
+  async clearConcernPriority(path: string): Promise<boolean> {
+    return this.updateConcernFrontmatter(
+      path,
+      (fm) => {
+        if (!Object.prototype.hasOwnProperty.call(fm, "priority")) return false;
+        delete fm.priority;
+        return true;
+      },
+      "Could not remove frontmatter priority"
+    );
+  }
+
+  private async updateConcernFrontmatter(
+    path: string,
+    mutate: (fm: Record<string, unknown>) => boolean,
+    errorPrefix: string
+  ): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return false;
+
+    let changed = false;
+    try {
+      await this.app.fileManager.processFrontMatter(file, (fm) => {
+        changed = mutate(fm as Record<string, unknown>) || changed;
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`${errorPrefix}: ${message}`);
+      return false;
+    }
+
+    return changed;
   }
 
   buildNoteIdToBasenameMap(): Map<string, string> {
