@@ -10,7 +10,7 @@ import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel, type ConcernTreePanelState } from "../concern-tree-panel";
 import { TaskSelectModal } from "../task-select-modal";
 
-type CalendarPeriod = "today" | "week";
+type CalendarPeriod = "today" | "week" | "previousWeek";
 
 type CalendarEntry = {
   path: string;
@@ -45,11 +45,17 @@ const BASE_DAY_PX_PER_HOUR = 60;
 const BASE_WEEK_PX_PER_HOUR = 40;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const BLOCK_MIN_HEIGHT_PX = 3;
 const BLOCK_LABEL_MIN_FONT_PX = 10;
 const BLOCK_LABEL_MAX_FONT_PX = 20;
 const BLOCK_LABEL_SCALE_START_HEIGHT_PX = 12;
 const BLOCK_LABEL_SCALE_END_HEIGHT_PX = 48;
+const CALENDAR_PERIOD_OPTIONS: Array<{ value: CalendarPeriod; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This Week" },
+  { value: "previousWeek", label: "Previous Week" }
+];
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
@@ -88,7 +94,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private concernPickerOpen = false;
 
   private get period(): CalendarPeriod {
-    return this.plugin.settings.calendarPeriod === "week" ? "week" : "today";
+    const value = this.plugin.settings.calendarPeriod;
+    return (value === "week" || value === "previousWeek") ? value : "today";
   }
 
   private set period(value: CalendarPeriod) {
@@ -187,10 +194,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     headerTop.createEl("h3", { text: "Concerns Calendar" });
 
     const rangeRow = header.createEl("div", { cls: "fmo-outline-range-row" });
-    for (const option of [
-      { value: "today" as CalendarPeriod, label: "Today" },
-      { value: "week" as CalendarPeriod, label: "This Week" }
-    ]) {
+    for (const option of CALENDAR_PERIOD_OPTIONS) {
       const button = rangeRow.createEl("button", {
         cls: this.period === option.value
           ? "fmo-outline-range-btn fmo-outline-range-btn-active"
@@ -279,7 +283,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private gatherCalendarEntries(): CalendarEntry[] {
     const now = new Date();
-    const window = this.plugin.getWindowForRange(this.period, now);
+    const window = this.getCalendarWindow(now);
     const result: CalendarEntry[] = [];
 
     for (const task of this.plugin.getTaskTreeItems()) {
@@ -291,6 +295,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
 
     return result.sort((a, b) => a.entry.startMs - b.entry.startMs);
+  }
+
+  private getCalendarWindow(now: Date): { startMs: number; endMs: number } {
+    return this.plugin.getWindowForRange(this.period, now);
   }
 
   private attachDragResize(
@@ -511,7 +519,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     highlightedPaths: Set<string> | null
   ): void {
     const now = new Date();
-    const weekStart = this.plugin.getWeekStart(now);
+    const weekWindow = this.getCalendarWindow(now);
+    const weekStartMs = weekWindow.startMs;
     const dayNames = this.plugin.settings.weekStartsOn === "sunday"
       ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
       : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -519,8 +528,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const dayEntries: CalendarEntry[][] = Array.from({ length: 7 }, () => []);
     for (const e of entries) {
       const dayIndex = Math.floor(
-        (this.plugin.getDayStart(new Date(e.entry.startMs)).getTime() - weekStart.getTime()) /
-        (24 * 60 * 60 * 1000)
+        (this.plugin.getDayStart(new Date(e.entry.startMs)).getTime() - weekStartMs) /
+        DAY_MS
       );
       if (dayIndex >= 0 && dayIndex < 7) dayEntries[dayIndex].push(e);
     }
@@ -528,7 +537,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const pxPerHour = this.pxPerHour;
     const hourRange = this.computeHourRange(entries);
     const gridHeight = (hourRange.maxHour - hourRange.minHour) * pxPerHour;
-    const todayMs = this.plugin.getDayStart(now).getTime();
+    const todayMs = this.period === "week"
+      ? this.plugin.getDayStart(now).getTime()
+      : -1;
 
     const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-week-wrapper" });
 
@@ -541,7 +552,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const grid = wrapper.createEl("div", { cls: "fmo-calendar-week-grid" });
 
     for (let d = 0; d < 7; d++) {
-      const dayMs = weekStart.getTime() + d * 24 * 60 * 60 * 1000;
+      const dayMs = weekStartMs + d * DAY_MS;
       const isToday = dayMs === todayMs;
 
       const col = grid.createEl("div", { cls: "fmo-calendar-week-col" });

@@ -16,7 +16,7 @@ export interface LifeDashboardSettings {
   weekStartsOn: "monday" | "sunday";
   timerNotificationRules: string;
   canvasDraftState: string;
-  calendarPeriod: "today" | "week";
+  calendarPeriod: "today" | "week" | "previousWeek";
   calendarZoom: number;
   calendarTreePanelState: string;
 }

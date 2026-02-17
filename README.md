@@ -51,7 +51,7 @@ Infinite-scroll canvas (3600 × 2400 px) with draggable, resizable tree cards.
 
 Two-column layout: sidebar tree panel + main calendar grid.
 
-- Period toggle: Today (day timeline) or This Week (7-day grid)
+- Period toggle: Today (day timeline), This Week (7-day grid), or Previous Week (7-day grid)
 - Day timeline: hour-aligned coloured blocks; each block shows start time and concern name (e.g. `14:30 MyTask (25m)`)
 - Week grid: stacked coloured segments per day column
 - Summary table below the grid, sorted by total tracked time with colour dots

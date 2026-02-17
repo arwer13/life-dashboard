@@ -1,6 +1,6 @@
 import type { TimeLogEntry } from "../models/types";
 
-export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "month" | "all";
+export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "previousWeek" | "month" | "all";
 export type PeriodTooltipRange = OutlineTimeRange | "yesterday";
 export type TimeWindow = { startMs: number; endMs: number };
 type WeekStartsOn = "monday" | "sunday";
@@ -14,26 +14,22 @@ export class TimeWindowService {
 
   getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
     if (range === "today") {
-      const start = this.getDayStart(now);
-      const end = new Date(start.getTime());
-      end.setDate(end.getDate() + 1);
-      return { startMs: start.getTime(), endMs: end.getTime() };
+      return this.buildWindowFromStart(this.getDayStart(now), 1);
     }
 
     if (range === "todayYesterday") {
       const todayStart = this.getDayStart(now);
       const start = new Date(todayStart.getTime());
       start.setDate(start.getDate() - 1);
-      const end = new Date(todayStart.getTime());
-      end.setDate(end.getDate() + 1);
-      return { startMs: start.getTime(), endMs: end.getTime() };
+      return this.buildWindowFromStart(start, 2);
     }
 
     if (range === "week") {
-      const start = this.getWeekStart(now);
-      const end = new Date(start.getTime());
-      end.setDate(end.getDate() + 7);
-      return { startMs: start.getTime(), endMs: end.getTime() };
+      return this.buildWeekWindow(now, 0);
+    }
+
+    if (range === "previousWeek") {
+      return this.buildWeekWindow(now, -1);
     }
 
     const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
@@ -122,6 +118,20 @@ export class TimeWindowService {
       startMs: entry.startMs,
       endMs: entry.startMs + entry.durationMinutes * 60 * 1000
     };
+  }
+
+  private buildWeekWindow(now: Date, weekOffset: number): TimeWindow {
+    const start = this.getWeekStart(now);
+    if (weekOffset !== 0) {
+      start.setDate(start.getDate() + weekOffset * 7);
+    }
+    return this.buildWindowFromStart(start, 7);
+  }
+
+  private buildWindowFromStart(start: Date, daySpan: number): TimeWindow {
+    const end = new Date(start.getTime());
+    end.setDate(end.getDate() + daySpan);
+    return { startMs: start.getTime(), endMs: end.getTime() };
   }
 
   private formatRangeLabel(start: Date, endExclusive: Date): string {
