@@ -147,6 +147,19 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
     });
 
     this.addToggleSetting(containerEl, {
+      name: "macOS menu bar timer (experimental)",
+      description:
+        "Shows the running timer in the macOS menu bar while Obsidian is open. Requires desktop Obsidian on macOS.",
+      getValue: () => this.plugin.settings.macOsTrayTimerEnabled,
+      setValue: (value) => {
+        this.plugin.settings.macOsTrayTimerEnabled = value;
+      },
+      afterSave: async () => {
+        this.plugin.onMacOsTrayTimerSettingChanged();
+      }
+    });
+
+    this.addToggleSetting(containerEl, {
       name: "Case sensitive",
       description: "If enabled, value matching is case sensitive for all filters.",
       getValue: () => this.plugin.settings.caseSensitive,

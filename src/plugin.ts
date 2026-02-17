@@ -6,6 +6,7 @@ import {
   type LifeDashboardSettings
 } from "./settings";
 import { DashboardViewController } from "./services/dashboard-view-controller";
+import { MacOsTrayTimerService } from "./services/macos-tray-timer-service";
 import { TaskFilterService } from "./services/task-filter-service";
 import { TimeLogStore } from "./services/time-log-store";
 import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type PeriodTooltipRange as PeriodTooltipRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
@@ -43,6 +44,7 @@ type ElectronMainLike = {
   powerMonitor?: MainProcessPowerMonitor;
 };
 type ElectronWithRemoteLike = {
+  shell?: { beep?: () => void };
   remote?: ElectronMainLike;
 };
 
@@ -67,6 +69,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private timeLogFsWatcher: import("fs").FSWatcher | null = null;
   private timeLogReloadDebounce: number | null = null;
   private watchedTimeLogPath = "";
+  private macOsTrayTimerService!: MacOsTrayTimerService;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -220,6 +223,9 @@ export default class LifeDashboardPlugin extends Plugin {
       this.refreshView();
     });
 
+    this.macOsTrayTimerService.syncEnabled(this.settings.macOsTrayTimerEnabled, false);
+    this.updateMacOsTrayTimer();
+
     this.registerInterval(
       window.setInterval(() => {
         this.pushLiveTimerUpdate();
@@ -228,6 +234,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async onunload(): Promise<void> {
+    this.macOsTrayTimerService.destroy();
     this.clearPowerMonitorListeners();
     this.closeTimeLogFsWatcher();
 
@@ -263,6 +270,11 @@ export default class LifeDashboardPlugin extends Plugin {
     }
     this.rewireTimeLogWatcher();
     await this.reloadTotalsAndRefresh();
+  }
+
+  onMacOsTrayTimerSettingChanged(): void {
+    this.macOsTrayTimerService.syncEnabled(this.settings.macOsTrayTimerEnabled, true);
+    this.updateMacOsTrayTimer();
   }
 
   private async maybeAutoSelectFromActive(): Promise<void> {
@@ -585,11 +597,13 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private refreshTimeTrackingViews(): void {
     this.viewController.refreshTimeTrackingViews();
+    this.updateMacOsTrayTimer();
   }
 
   private pushLiveTimerUpdate(): void {
     this.viewController.pushLiveTimerUpdate();
     this.handleTimerNotifications();
+    this.updateMacOsTrayTimer();
   }
 
   private async persistVisibilityState(force = false): Promise<void> {
@@ -601,6 +615,17 @@ export default class LifeDashboardPlugin extends Plugin {
     this.timeLogStore = new TimeLogStore(this.app, this.settings, () => this.saveSettings());
     this.timeWindowService = new TimeWindowService(() => this.settings.weekStartsOn);
     this.timerNotificationService = new TimerNotificationService();
+    this.macOsTrayTimerService = new MacOsTrayTimerService({
+      openTimer: () => {
+        void this.viewController.activateTimerView();
+      },
+      startTimer: () => {
+        void this.startTracking();
+      },
+      stopTimer: () => {
+        void this.stopTracking();
+      }
+    });
     this.viewController = new DashboardViewController(this.app, this.settings, () => this.saveSettings());
 
     this.trackingService = new TrackingService({
@@ -692,6 +717,28 @@ export default class LifeDashboardPlugin extends Plugin {
       remove();
     }
     this.removePowerMonitorListeners = [];
+  }
+
+  private updateMacOsTrayTimer(): void {
+    const isTracking = Boolean(this.settings.activeTrackingStart);
+    const elapsedSeconds = isTracking ? this.getCurrentElapsedSeconds() : 0;
+    this.macOsTrayTimerService.update({
+      enabled: this.settings.macOsTrayTimerEnabled,
+      isTracking,
+      elapsedLabel: this.formatClockDuration(elapsedSeconds),
+      taskLabel: this.getMacOsTrayTaskLabel()
+    });
+  }
+
+  private getMacOsTrayTaskLabel(): string {
+    const taskPath = this.getActiveTaskPath();
+    if (!taskPath) return "";
+    const file = this.app.vault.getAbstractFileByPath(taskPath);
+    if (file instanceof TFile) {
+      return file.basename;
+    }
+    const parts = taskPath.split("/");
+    return parts[parts.length - 1] || taskPath;
   }
 
   private getNormalizedTimeLogPath(): string {

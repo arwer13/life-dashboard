@@ -1,1 +1,1 @@
-export const DISPLAY_VERSION = "0.1.106";
+export const DISPLAY_VERSION = "0.1.108";

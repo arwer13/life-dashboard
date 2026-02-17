@@ -15,6 +15,7 @@ export interface LifeDashboardSettings {
   minimumTrackableMinutes: number;
   weekStartsOn: "monday" | "sunday";
   timerNotificationRules: string;
+  macOsTrayTimerEnabled: boolean;
   canvasDraftState: string;
   calendarPeriod: "today" | "week" | "previousWeek";
   calendarZoom: number;
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   minimumTrackableMinutes: 2,
   weekStartsOn: "monday",
   timerNotificationRules: "",
+  macOsTrayTimerEnabled: false,
   canvasDraftState: "",
   calendarPeriod: "today",
   calendarZoom: 1,

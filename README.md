@@ -21,6 +21,7 @@ Large circular elapsed-time display with Start/Stop control.
 - `Change task…` opens a fuzzy-search modal over filtered tasks
 - Auto-selects active note when idle if it matches task filters
 - Timer notification rules trigger system notifications and native beep
+- Optional experimental macOS menu bar timer title (`HH:MM:SS`) with quick actions
 
 ### Concerns Outline
 
@@ -88,6 +89,7 @@ src/
     time-log-store.ts               reads/writes/validates JSON time log, computes snapshots
     time-window-service.ts          shared date-window math, overlap-safe period calculations, duration formatting
     timer-notification-service.ts   parses notification rules and tracks per-session threshold state
+    macos-tray-timer-service.ts     optional macOS menu bar tray integration for live timer state
     tracking-service.ts             start/stop lifecycle, session persistence, UUID provisioning
     dashboard-view-controller.ts    multi-view orchestration (open, reveal, refresh, live-update)
     task-tree-builder.ts            tree construction, parent resolution, priority sorting
@@ -120,6 +122,8 @@ Caches results between refreshes and invalidates on vault/metadata events.
 **TimeWindowService** — Owns all period/window calculations (`today`, `week`, etc.), overlap-aware entry math for boundary-crossing sessions, and shared duration/time-range formatting helpers.
 
 **TimerNotificationService** — Parses timer notification rules and tracks per-session threshold crossings so notifications/beeps are emitted once per threshold.
+
+**MacOsTrayTimerService** — Owns optional macOS menu bar tray integration for the timer title/menu and isolates Electron tray bridge access from plugin lifecycle code.
 
 **TrackingService** — Manages the active timer session. On start: validates selection, ensures UUID in frontmatter, stores start timestamp. On stop: enforces minimum duration, appends to TimeLogStore, reloads totals. Flushes any active session on plugin unload.
 
@@ -272,8 +276,18 @@ All settings are in **Settings → Life Dashboard**.
 | Minimum trackable minutes | `2` | Sessions shorter than this are discarded |
 | Week starts on | `monday` | `monday` or `sunday`; affects week ranges |
 | Timer notifications | (empty) | Multiline rules: `30m "Message"` |
+| macOS menu bar timer (experimental) | `false` | Shows timer in macOS menu bar tray with Open/Start/Stop actions |
 
 Timer notification format: `<duration> "message"` — units `s`, `m`, `h`. Triggers system notification + native beep.
+
+### macOS menu bar timer
+
+1. Open **Settings → Life Dashboard**.
+2. Enable **macOS menu bar timer (experimental)**.
+3. Start tracking from the Timer view (or command palette).
+4. Use the menu bar item to quickly **Open Timer** or **Start/Stop Timer**.
+
+The menu bar timer is available only on desktop Obsidian running on macOS.
 
 ## Commands
 
