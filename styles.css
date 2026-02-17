@@ -301,6 +301,11 @@ body.fmo-calendar-resizing {
   user-select: none;
 }
 
+body.fmo-calendar-creating {
+  user-select: none;
+  cursor: ns-resize;
+}
+
 body.fmo-resizing-v,
 body.fmo-resizing-v * {
   cursor: ns-resize !important;
@@ -911,6 +916,44 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   opacity: 0.85;
   transition: opacity 0.12s ease;
   z-index: 1;
+}
+
+.frontmatter-outline-view .fmo-calendar-draft-block {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  min-height: 2px;
+  border: 1px dashed var(--interactive-accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.frontmatter-outline-view .fmo-calendar-timeline .fmo-calendar-draft-block {
+  left: 8px;
+  right: 8px;
+}
+
+.frontmatter-outline-view .fmo-calendar-draft-block-fixed {
+  background: color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+}
+
+.frontmatter-outline-view .fmo-calendar-draft-plus {
+  position: absolute;
+  top: -9px;
+  left: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .frontmatter-outline-view .fmo-calendar-block:hover {

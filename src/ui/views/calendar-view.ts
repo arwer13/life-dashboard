@@ -1,4 +1,4 @@
-import { type WorkspaceLeaf } from "obsidian";
+import { Notice, type WorkspaceLeaf } from "obsidian";
 import type { TaskItem, TimeLogEntry } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
@@ -8,6 +8,7 @@ import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel, type ConcernTreePanelState } from "../concern-tree-panel";
+import { TaskSelectModal } from "../task-select-modal";
 
 type CalendarPeriod = "today" | "week";
 
@@ -25,6 +26,13 @@ type BlockRenderContext = {
   pxPerHour: number;
   dayStartMs: number;
   highlightedPaths: Set<string> | null;
+};
+
+type CalendarGridSpec = {
+  dayStartMs: number;
+  minHour: number;
+  maxHour: number;
+  pxPerHour: number;
 };
 
 const CALENDAR_COLORS = [
@@ -75,6 +83,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private calendarColorMap: Map<string, string> = new Map();
   private currentVisiblePaths: Set<string> | null = null;
   private hoveredPaths: Set<string> | null = null;
+  private activeDragCleanup: (() => void) | null = null;
+  private pendingDraftBlock: HTMLElement | null = null;
+  private concernPickerOpen = false;
 
   private get period(): CalendarPeriod {
     return this.plugin.settings.calendarPeriod === "week" ? "week" : "today";
@@ -119,6 +130,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     await this.render();
   }
 
+  async onClose(): Promise<void> {
+    this.clearCalendarCreateState();
+  }
+
   private loadTreePanelState(): void {
     if (this.calendarTreeStateLoaded) return;
     this.calendarTreeStateLoaded = true;
@@ -154,6 +169,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   }
 
   async render(): Promise<void> {
+    this.clearCalendarCreateState();
     const { contentEl } = this;
     const existingPreview = contentEl.querySelector<HTMLElement>(".fmo-tree-panel-preview");
     this.calendarTreePanelScrollTop = existingPreview?.scrollTop ?? this.calendarTreePanelScrollTop;
@@ -214,9 +230,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       const highlightedDisplayPaths = this.remapPathsToDisplay(this.hoveredPaths);
 
       if (entries.length === 0) {
-        main.createEl("p", { cls: "fmo-empty", text: "No tracked time in this period." });
-        this.calendarTreePanel?.setStatusText("");
-        return;
+        main.createEl("p", {
+          cls: "fmo-empty",
+          text: "No tracked time in this period yet. Drag on the grid to add a segment."
+        });
       }
 
       if (this.period === "today") {
@@ -226,7 +243,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       }
 
       // Drag handle to resize the grid vertically
-      const gridEl = main.firstElementChild as HTMLElement | null;
+      const gridEl = main.querySelector<HTMLElement>(".fmo-calendar-timeline, .fmo-calendar-week-wrapper");
       if (gridEl) {
         this.attachResizeHandle(main, gridEl);
       }
@@ -392,6 +409,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   }
 
   private computeHourRange(entries: CalendarEntry[]): HourRange {
+    if (entries.length === 0) {
+      return { minHour: 0, maxHour: 24 };
+    }
+
     let minHour = 23;
     let maxHour = 0;
     for (const e of entries) {
@@ -474,6 +495,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     for (const e of entries) {
       this.renderEntryBlock(timeline, e, ctx);
     }
+
+    this.attachTimeSegmentCreation(timeline, {
+      dayStartMs,
+      minHour: hourRange.minHour,
+      maxHour: hourRange.maxHour,
+      pxPerHour
+    });
   }
 
   private renderWeekGrid(
@@ -518,7 +546,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
       const col = grid.createEl("div", { cls: "fmo-calendar-week-col" });
 
-      const dayLabel = col.createEl("div", {
+      col.createEl("div", {
         cls: isToday ? "fmo-calendar-day-label fmo-calendar-day-today" : "fmo-calendar-day-label",
         text: `${dayNames[d] ?? ""} ${pad2(new Date(dayMs).getDate())}`
       });
@@ -538,12 +566,197 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         this.renderEntryBlock(dayCol, e, blockCtx);
       }
 
+      this.attachTimeSegmentCreation(dayCol, {
+        dayStartMs: dayMs,
+        minHour: hourRange.minHour,
+        maxHour: hourRange.maxHour,
+        pxPerHour
+      });
+
       // Day total
       const total = dayEntries[d].reduce((s, e) => s + e.entry.durationMinutes * 60, 0);
       col.createEl("div", {
         cls: "fmo-calendar-day-total",
         text: total > 0 ? this.plugin.formatShortDuration(total) : ""
       });
+    }
+  }
+
+  private clearCalendarCreateState(): void {
+    if (this.activeDragCleanup) {
+      this.activeDragCleanup();
+      this.activeDragCleanup = null;
+    }
+    this.discardPendingDraft();
+    this.concernPickerOpen = false;
+  }
+
+  private discardPendingDraft(): void {
+    if (this.pendingDraftBlock) {
+      this.pendingDraftBlock.remove();
+      this.pendingDraftBlock = null;
+    }
+  }
+
+  private attachTimeSegmentCreation(containerEl: HTMLElement, spec: CalendarGridSpec): void {
+    containerEl.addEventListener("mousedown", (event) => {
+      if (event.button !== 0 || this.concernPickerOpen) return;
+      if (!(event.target instanceof HTMLElement)) return;
+      if (event.target.closest(".fmo-calendar-block")) return;
+      if (event.target.closest(".fmo-calendar-draft-block")) return;
+      if (event.target.closest(".fmo-calendar-hour-label")) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (this.activeDragCleanup) {
+        this.activeDragCleanup();
+        this.activeDragCleanup = null;
+      }
+      this.discardPendingDraft();
+
+      const gridHeight = this.getGridHeightPx(spec);
+      const anchorY = this.clientYToLocalY(event.clientY, containerEl, gridHeight);
+      let currentY = anchorY;
+
+      const draftBlock = containerEl.createEl("div", { cls: "fmo-calendar-draft-block" });
+      draftBlock.createEl("span", { cls: "fmo-calendar-draft-plus", text: "+" });
+      this.pendingDraftBlock = draftBlock;
+
+      const updateDraft = (clientY: number): void => {
+        currentY = this.clientYToLocalY(clientY, containerEl, gridHeight);
+        const top = Math.min(anchorY, currentY);
+        const height = Math.max(2, Math.abs(currentY - anchorY));
+        draftBlock.style.top = `${top}px`;
+        draftBlock.style.height = `${height}px`;
+      };
+
+      updateDraft(event.clientY);
+
+      const move = (moveEvent: MouseEvent): void => {
+        updateDraft(moveEvent.clientY);
+      };
+
+      const finalize = (clientY: number): void => {
+        updateDraft(clientY);
+        const { startMs, endMs } = this.getSegmentRangeFromLocalYs(anchorY, currentY, spec);
+        void this.finalizeSegmentCreation(startMs, endMs, draftBlock);
+      };
+
+      const up = (upEvent: MouseEvent): void => {
+        cleanup();
+        finalize(upEvent.clientY);
+      };
+
+      const cleanup = (): void => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.removeClass("fmo-calendar-creating");
+        if (this.activeDragCleanup === cleanup) {
+          this.activeDragCleanup = null;
+        }
+      };
+
+      this.activeDragCleanup = cleanup;
+      document.body.addClass("fmo-calendar-creating");
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+  }
+
+  private clientYToLocalY(clientY: number, containerEl: HTMLElement, maxY: number): number {
+    const rect = containerEl.getBoundingClientRect();
+    return this.clamp(clientY - rect.top, 0, maxY);
+  }
+
+  private localYToTimestampMs(localY: number, spec: CalendarGridSpec): number {
+    const clampedY = this.clamp(localY, 0, this.getGridHeightPx(spec));
+    const hourOffset = clampedY / spec.pxPerHour;
+    const timestamp = spec.dayStartMs + (spec.minHour + hourOffset) * 60 * 60 * 1000;
+    return Math.floor(timestamp / 60_000) * 60_000;
+  }
+
+  private getGridHeightPx(spec: CalendarGridSpec): number {
+    return (spec.maxHour - spec.minHour) * spec.pxPerHour;
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  private getSegmentRangeFromLocalYs(
+    anchorY: number,
+    currentY: number,
+    spec: CalendarGridSpec
+  ): { startMs: number; endMs: number } {
+    const anchorMs = this.localYToTimestampMs(anchorY, spec);
+    const currentMs = this.localYToTimestampMs(currentY, spec);
+    const startMs = Math.min(anchorMs, currentMs);
+    const endMs = Math.max(anchorMs, currentMs);
+    return {
+      startMs,
+      endMs: endMs > startMs ? endMs : startMs + 60_000
+    };
+  }
+
+  private selectConcernPathForSegment(draftBlock: HTMLElement): Promise<string | null> {
+    const taskFiles = this.plugin.getTaskTreeItems().map((item) => item.file);
+    if (taskFiles.length === 0) {
+      new Notice("No concerns available to assign this segment.");
+      return Promise.resolve(null);
+    }
+
+    this.concernPickerOpen = true;
+    draftBlock.addClass("fmo-calendar-draft-block-fixed");
+
+    return new Promise<string | null>((resolve) => {
+      let settled = false;
+      const resolveOnce = (value: string | null): void => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      const modal = new TaskSelectModal(
+        this.app,
+        taskFiles,
+        (file) => {
+          this.concernPickerOpen = false;
+          resolveOnce(file.path);
+        },
+        () => {
+          this.concernPickerOpen = false;
+          resolveOnce(null);
+        }
+      );
+      modal.open();
+    });
+  }
+
+  private async finalizeSegmentCreation(
+    startMs: number,
+    endMs: number,
+    draftBlock: HTMLElement
+  ): Promise<void> {
+    try {
+      const selectedPath = await this.selectConcernPathForSegment(draftBlock);
+      if (!selectedPath) {
+        this.discardPendingDraft();
+        return;
+      }
+
+      const appended = await this.plugin.appendTimeEntryForPath(selectedPath, startMs, endMs);
+      if (!appended) {
+        this.discardPendingDraft();
+        new Notice("Could not create time segment for the selected concern.");
+        return;
+      }
+      this.pendingDraftBlock = null;
+      await this.render();
+    } catch (error) {
+      this.discardPendingDraft();
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`Could not create time segment: ${message}`);
     }
   }
 

@@ -384,6 +384,24 @@ export default class LifeDashboardPlugin extends Plugin {
     this.refreshTimeTrackingViews();
   }
 
+  async appendTimeEntryForPath(path: string, startMs: number, endMs: number): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return false;
+
+    const normalizedStartMs = Math.min(startMs, endMs);
+    const normalizedEndMs = Math.max(startMs, endMs);
+    if (!Number.isFinite(normalizedStartMs) || !Number.isFinite(normalizedEndMs)) return false;
+    if (normalizedEndMs <= normalizedStartMs) return false;
+
+    const noteId = await this.ensureTaskIdForFile(file);
+    if (!noteId) return false;
+
+    await this.timeLogStore.appendTimeEntry(noteId, normalizedStartMs, normalizedEndMs);
+    await this.reloadTimeTotals();
+    this.refreshTimeTrackingViews();
+    return true;
+  }
+
   async setConcernPriority(path: string, priority: string): Promise<boolean> {
     const normalizedPriority = normalizePriorityValue(priority);
     if (!normalizedPriority) return false;

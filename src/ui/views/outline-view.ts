@@ -511,7 +511,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
     let childrenList: HTMLElement | null = null;
     if (node.children.length > 0) {
-      const isExpanded = state.expandAll;
+      const isExpanded = Boolean(state.expandAll);
       const toggle = row.createEl("button", {
         cls: "fmo-tree-toggle",
         attr: {

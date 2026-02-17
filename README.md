@@ -58,6 +58,7 @@ Two-column layout: sidebar tree panel + main calendar grid.
 - Sidebar tree panel filters which concerns appear on the grid and only shows concerns with tracked time in the selected period
 - Collapsed-parent rollup: when a tree node is collapsed, its children's calendar entries appear under the parent's colour and label; expanding restores them
 - Sidebar tree panel supports the same hover priority hotkeys (`0`..`4`, `-`)
+- Drag-to-create segments: mouse down on empty grid space, drag up/down to size a draft region, release to open concern picker; canceling picker discards the draft segment
 
 ### Time Log
 
