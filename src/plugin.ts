@@ -69,6 +69,8 @@ export default class LifeDashboardPlugin extends Plugin {
   private timeLogFsWatcher: import("fs").FSWatcher | null = null;
   private timeLogReloadDebounce: number | null = null;
   private watchedTimeLogPath = "";
+  private watchedTimeLogAbsolutePath = "";
+  private watchedTimeLogHash: string | null = null;
   private macOsTrayTimerService!: MacOsTrayTimerService;
 
   async onload(): Promise<void> {
@@ -769,16 +771,21 @@ export default class LifeDashboardPlugin extends Plugin {
     const path = this.requireNode<typeof import("path")>("path");
     if (!fs || !path) return;
 
+    const absolutePath = path.join(basePath, timeLogPath);
     try {
       this.timeLogFsWatcher = fs.watch(
-        path.join(basePath, timeLogPath),
+        absolutePath,
         { persistent: false },
         () => this.debounceTimeLogReload()
       );
       this.watchedTimeLogPath = timeLogPath;
+      this.watchedTimeLogAbsolutePath = absolutePath;
+      void this.refreshWatchedTimeLogHash();
     } catch {
       console.warn("[life-dashboard] Could not watch time log file for external changes.");
       this.watchedTimeLogPath = "";
+      this.watchedTimeLogAbsolutePath = "";
+      this.watchedTimeLogHash = null;
     }
   }
 
@@ -788,9 +795,7 @@ export default class LifeDashboardPlugin extends Plugin {
     }
     this.timeLogReloadDebounce = window.setTimeout(() => {
       this.timeLogReloadDebounce = null;
-      void this.reloadTotalsAndRefresh().then(() => {
-        new Notice("Time tracking data reloaded.");
-      });
+      void this.reloadTotalsAndRefreshIfHashChanged();
     }, 500);
   }
 
@@ -804,6 +809,47 @@ export default class LifeDashboardPlugin extends Plugin {
       this.timeLogFsWatcher = null;
     }
     this.watchedTimeLogPath = "";
+    this.watchedTimeLogAbsolutePath = "";
+    this.watchedTimeLogHash = null;
+  }
+
+  private async reloadTotalsAndRefreshIfHashChanged(): Promise<void> {
+    const previousHash = this.watchedTimeLogHash;
+    const nextHash = await this.computeWatchedTimeLogHash();
+    if (nextHash !== null && previousHash !== null && nextHash === previousHash) {
+      return;
+    }
+
+    await this.reloadTotalsAndRefresh();
+    if (nextHash !== null) {
+      this.watchedTimeLogHash = nextHash;
+    } else {
+      await this.refreshWatchedTimeLogHash();
+    }
+    new Notice("Time tracking data reloaded.");
+  }
+
+  private async refreshWatchedTimeLogHash(): Promise<void> {
+    this.watchedTimeLogHash = await this.computeWatchedTimeLogHash();
+  }
+
+  private async computeWatchedTimeLogHash(): Promise<string | null> {
+    if (!this.watchedTimeLogAbsolutePath) {
+      return null;
+    }
+    const fs = this.requireNode<typeof import("fs")>("fs");
+    const crypto = this.requireNode<typeof import("crypto")>("crypto");
+    if (!fs || !crypto || !fs.promises) {
+      return null;
+    }
+
+    try {
+      const data = await fs.promises.readFile(this.watchedTimeLogAbsolutePath, "utf8");
+      return crypto.createHash("sha256").update(data).digest("hex");
+    } catch (error) {
+      console.warn("[life-dashboard] Could not compute time log hash:", error);
+      return null;
+    }
   }
 
   private requireNode<T>(id: string): T | null {
