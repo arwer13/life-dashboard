@@ -299,6 +299,7 @@ The menu bar timer is available only on desktop Obsidian running on macOS.
 | Open Concerns Canvas | Opens the canvas view |
 | Open Calendar | Opens the calendar view |
 | Open Time Log | Opens the time log list view |
+| Quick Open Concern | Opens concern quick search and opens the selected note in the current tab |
 | Start Time Tracking | Starts the timer |
 | Stop Time Tracking | Stops the timer |
 

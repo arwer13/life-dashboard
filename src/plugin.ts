@@ -1,4 +1,4 @@
-import { Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
 import type { TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_TIME_LOG_PATH,
@@ -14,6 +14,7 @@ import { TimerNotificationService } from "./services/timer-notification-service"
 import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
+import { TaskSelectModal } from "./ui/task-select-modal";
 import {
   LifeDashboardCalendarView,
   LifeDashboardConcernCanvasView,
@@ -22,6 +23,7 @@ import {
   LifeDashboardTimerView
 } from "./ui/views";
 import {
+  LIFE_DASHBOARD_VIEW_TYPES,
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
@@ -46,6 +48,14 @@ type ElectronMainLike = {
 type ElectronWithRemoteLike = {
   shell?: { beep?: () => void };
   remote?: ElectronMainLike;
+};
+const LIFE_DASHBOARD_VIEW_TYPE_SET = new Set<string>(LIFE_DASHBOARD_VIEW_TYPES);
+type ConcernPickerOptions = {
+  onChoose: (file: TFile) => void;
+  onCloseWithoutChoice?: () => void;
+  placeholder?: string;
+  showPathInSuggestion?: boolean;
+  emptyNotice?: string;
 };
 
 export default class LifeDashboardPlugin extends Plugin {
@@ -156,6 +166,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Open Time Log",
       callback: () => {
         void this.viewController.activateTimeLogView();
+      }
+    });
+
+    this.addCommand({
+      id: "select-concern",
+      name: "Quick Open Concern",
+      callback: () => {
+        this.openConcernQuickSearch();
       }
     });
 
@@ -330,6 +348,62 @@ export default class LifeDashboardPlugin extends Plugin {
     this.settings.selectedTaskPath = path;
     await this.saveSettings();
     this.refreshTaskStructureViews();
+  }
+
+  private openConcernQuickSearch(): void {
+    const targetLeaf = this.getConcernQuickOpenTargetLeaf();
+    this.openConcernPicker({
+      onChoose: (file) => {
+        void targetLeaf.openFile(file, { active: true });
+      },
+      placeholder: "Find concern note...",
+      showPathInSuggestion: false,
+      emptyNotice: "No concerns available to open."
+    });
+  }
+
+  openConcernPicker(options: ConcernPickerOptions): void {
+    const taskFiles = this.getTaskTreeItems().map((item) => item.file);
+    if (taskFiles.length === 0) {
+      new Notice(options.emptyNotice ?? "No concerns available.");
+      options.onCloseWithoutChoice?.();
+      return;
+    }
+
+    const modal = new TaskSelectModal(
+      this.app,
+      taskFiles,
+      options.onChoose,
+      options.onCloseWithoutChoice,
+      {
+        placeholder: options.placeholder,
+        showPathInSuggestion: options.showPathInSuggestion
+      }
+    );
+    modal.open();
+  }
+
+  private getConcernQuickOpenTargetLeaf(): WorkspaceLeaf {
+    const activeLeaf = this.app.workspace.activeLeaf;
+    if (activeLeaf && !this.isLifeDashboardLeaf(activeLeaf)) {
+      return activeLeaf;
+    }
+
+    const mostRecentLeaf = this.app.workspace.getMostRecentLeaf();
+    if (mostRecentLeaf && !this.isLifeDashboardLeaf(mostRecentLeaf)) {
+      return mostRecentLeaf;
+    }
+
+    const markdownLeaf = this.app.workspace.getLeavesOfType("markdown")[0];
+    if (markdownLeaf) {
+      return markdownLeaf;
+    }
+
+    return this.app.workspace.getLeaf("tab");
+  }
+
+  private isLifeDashboardLeaf(leaf: WorkspaceLeaf): boolean {
+    return LIFE_DASHBOARD_VIEW_TYPE_SET.has(leaf.getViewState().type);
   }
 
   getOutlineFilterQuery(): string {

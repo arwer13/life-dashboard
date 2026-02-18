@@ -3,7 +3,6 @@ import type { TaskItem, TaskTreeNode } from "../../models/types";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMER, type TaskTreeData } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
-import { TaskSelectModal } from "../task-select-modal";
 
 const TRACKING_ADJUST_MINUTES = 5;
 
@@ -164,14 +163,14 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
     const activeTaskPath = this.plugin.getActiveTaskPath();
     if (!activeTaskPath) {
       block.createEl("div", { cls: "fmo-selected-sub", text: "No task selected" });
-      this.renderChangeTaskButton(block, tasks);
+      this.renderChangeTaskButton(block);
       return;
     }
 
     const activeTaskFile = this.plugin.app.vault.getAbstractFileByPath(activeTaskPath);
     if (!(activeTaskFile instanceof TFile)) {
       block.createEl("div", { cls: "fmo-selected-sub", text: "Selected task note was not found" });
-      this.renderChangeTaskButton(block, tasks);
+      this.renderChangeTaskButton(block);
       return;
     }
 
@@ -204,7 +203,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
         });
 
         if (isTracked) {
-          this.renderChangeTaskButton(row, tasks);
+          this.renderChangeTaskButton(row);
         }
       }
       return;
@@ -239,7 +238,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       });
 
       if (isTracked) {
-        this.renderChangeTaskButton(row, tasks);
+        this.renderChangeTaskButton(row);
       }
 
       const total = tree.cumulativeSeconds.get(node.path) ?? 0;
@@ -304,7 +303,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
     return `${"  ".repeat(Math.max(0, depth - 1))}└─ `;
   }
 
-  private renderChangeTaskButton(containerEl: HTMLElement, tasks: TaskItem[]): void {
+  private renderChangeTaskButton(containerEl: HTMLElement): void {
     const button = containerEl.createEl("button", {
       cls: "fmo-context-change-btn",
       text: "🔁",
@@ -315,11 +314,11 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       }
     });
     button.addEventListener("click", () => {
-      const taskFiles = tasks.map((item) => item.file);
-      const modal = new TaskSelectModal(this.app, taskFiles, (file) => {
-        void this.plugin.setSelectedTaskPath(file.path);
+      this.plugin.openConcernPicker({
+        onChoose: (file) => {
+          void this.plugin.setSelectedTaskPath(file.path);
+        }
       });
-      modal.open();
     });
   }
 }

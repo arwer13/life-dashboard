@@ -2,6 +2,7 @@ import type { App, WorkspaceLeaf } from "obsidian";
 import { LifeDashboardBaseView } from "../ui/views/base-view";
 import { LifeDashboardTimerView } from "../ui/views/timer-view";
 import {
+  LIFE_DASHBOARD_VIEW_TYPES,
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
@@ -77,40 +78,18 @@ export class DashboardViewController {
     await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, "tab");
   }
 
-  private static readonly ALL_VIEW_TYPES = [
-    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
-    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
-    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
-    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
-    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
-  ] as const;
-
-  private static readonly TASK_STRUCTURE_VIEW_TYPES = [
-    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
-    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
-    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
-    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
-    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
-  ] as const;
-
-  private static readonly TIME_TRACKING_VIEW_TYPES = [
-    VIEW_TYPE_LIFE_DASHBOARD_TIMER,
-    VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
-    VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
-    VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
-    VIEW_TYPE_LIFE_DASHBOARD_TIMELOG
-  ] as const;
+  private static readonly DASHBOARD_VIEW_TYPES = LIFE_DASHBOARD_VIEW_TYPES;
 
   refreshView(): void {
-    this.refreshViews(DashboardViewController.ALL_VIEW_TYPES);
+    this.refreshViews(DashboardViewController.DASHBOARD_VIEW_TYPES);
   }
 
   refreshTaskStructureViews(): void {
-    this.refreshViews(DashboardViewController.TASK_STRUCTURE_VIEW_TYPES);
+    this.refreshViews(DashboardViewController.DASHBOARD_VIEW_TYPES);
   }
 
   refreshTimeTrackingViews(): void {
-    this.refreshViews(DashboardViewController.TIME_TRACKING_VIEW_TYPES);
+    this.refreshViews(DashboardViewController.DASHBOARD_VIEW_TYPES);
   }
 
   pushLiveTimerUpdate(): void {
@@ -147,7 +126,7 @@ export class DashboardViewController {
   }
 
   private isDashboardVisible(): boolean {
-    return DashboardViewController.ALL_VIEW_TYPES.some(
+    return DashboardViewController.DASHBOARD_VIEW_TYPES.some(
       (t) => this.app.workspace.getLeavesOfType(t).length > 0
     );
   }
