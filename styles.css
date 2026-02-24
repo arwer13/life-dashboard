@@ -1182,3 +1182,9 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Obsidian Header Path ──────────────────────────────────── */
+/* Minimal theme can fade file headers until hover; keep them visible in markdown panes. */
+.workspace-leaf-content[data-type="markdown"] .view-header-title-container {
+  opacity: 1 !important;
+}
