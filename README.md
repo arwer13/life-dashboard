@@ -276,7 +276,7 @@ All settings are in **Settings → Life Dashboard**.
 | Minimum trackable minutes | `2` | Sessions shorter than this are discarded |
 | Week starts on | `monday` | `monday` or `sunday`; affects week ranges |
 | Timer notifications | (empty) | Multiline rules: `30m "Message"` |
-| macOS menu bar timer (experimental) | `false` | Shows timer in macOS menu bar tray with Open/Start/Stop actions |
+| macOS menu bar timer (experimental) | `false` | Shows timer in macOS menu bar tray with Open/Start/Stop actions and up to 3 recent concerns when idle |
 
 Timer notification format: `<duration> "message"` — units `s`, `m`, `h`. Triggers system notification + native beep.
 
@@ -286,6 +286,7 @@ Timer notification format: `<duration> "message"` — units `s`, `m`, `h`. Trigg
 2. Enable **macOS menu bar timer (experimental)**.
 3. Start tracking from the Timer view (or command palette).
 4. Use the menu bar item to quickly **Open Timer** or **Start/Stop Timer**.
+5. When timer is idle, the tray menu shows the 3 most recently tracked concerns (newest first); click one to select it and start tracking.
 
 The menu bar timer is available only on desktop Obsidian running on macOS.
 

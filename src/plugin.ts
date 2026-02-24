@@ -6,7 +6,11 @@ import {
   type LifeDashboardSettings
 } from "./settings";
 import { DashboardViewController } from "./services/dashboard-view-controller";
-import { MacOsTrayTimerService } from "./services/macos-tray-timer-service";
+import {
+  MacOsTrayTimerService,
+  MAX_MACOS_TRAY_RECENT_CONCERNS,
+  type MacOsTrayRecentConcern
+} from "./services/macos-tray-timer-service";
 import { TaskFilterService } from "./services/task-filter-service";
 import { TimeLogStore } from "./services/time-log-store";
 import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type PeriodTooltipRange as PeriodTooltipRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
@@ -57,6 +61,10 @@ type ConcernPickerOptions = {
   showPathInSuggestion?: boolean;
   emptyNotice?: string;
 };
+type NoteTaskInfo = {
+  path: string;
+  label: string;
+};
 
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
@@ -82,6 +90,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private watchedTimeLogAbsolutePath = "";
   private watchedTimeLogHash: string | null = null;
   private macOsTrayTimerService!: MacOsTrayTimerService;
+  private macOsTrayRecentConcerns: MacOsTrayRecentConcern[] = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -345,6 +354,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async setSelectedTaskPath(path: string): Promise<void> {
+    if (this.settings.selectedTaskPath === path) return;
     this.settings.selectedTaskPath = path;
     await this.saveSettings();
     this.refreshTaskStructureViews();
@@ -460,6 +470,7 @@ export default class LifeDashboardPlugin extends Plugin {
     const snapshot = await this.timeLogStore.loadSnapshot();
     this.timeTotalsById = snapshot.totals;
     this.timeEntriesById = snapshot.entriesByNoteId;
+    this.recomputeMacOsTrayRecentConcerns();
   }
 
   async readTimeLog(): Promise<TimeLogByNoteId> {
@@ -545,10 +556,8 @@ export default class LifeDashboardPlugin extends Plugin {
 
   buildNoteIdToBasenameMap(): Map<string, string> {
     const map = new Map<string, string>();
-    for (const task of this.getTaskTreeItems()) {
-      const cache = this.app.metadataCache.getFileCache(task.file);
-      const id = cache?.frontmatter?.id;
-      if (id) map.set(String(id).trim(), task.file.basename);
+    for (const [noteId, info] of this.buildNoteIdToTaskInfoMap()) {
+      map.set(noteId, info.label);
     }
     return map;
   }
@@ -700,6 +709,9 @@ export default class LifeDashboardPlugin extends Plugin {
       },
       stopTimer: () => {
         void this.stopTracking();
+      },
+      startRecentConcern: (path) => {
+        void this.selectConcernForTrayAndStartTracking(path);
       }
     });
     this.viewController = new DashboardViewController(this.app, this.settings, () => this.saveSettings());
@@ -798,11 +810,13 @@ export default class LifeDashboardPlugin extends Plugin {
   private updateMacOsTrayTimer(): void {
     const isTracking = Boolean(this.settings.activeTrackingStart);
     const elapsedSeconds = isTracking ? this.getCurrentElapsedSeconds() : 0;
+    const recentConcerns = isTracking ? [] : this.getMacOsTrayRecentConcerns();
     this.macOsTrayTimerService.update({
       enabled: this.settings.macOsTrayTimerEnabled,
       isTracking,
       elapsedLabel: this.formatClockDuration(elapsedSeconds),
-      taskLabel: this.getMacOsTrayTaskLabel()
+      taskLabel: this.getMacOsTrayTaskLabel(),
+      recentConcerns
     });
   }
 
@@ -815,6 +829,76 @@ export default class LifeDashboardPlugin extends Plugin {
     }
     const parts = taskPath.split("/");
     return parts[parts.length - 1] || taskPath;
+  }
+
+  private getMacOsTrayRecentConcerns(): MacOsTrayRecentConcern[] {
+    return this.macOsTrayRecentConcerns.slice(0, MAX_MACOS_TRAY_RECENT_CONCERNS);
+  }
+
+  private async selectConcernForTrayAndStartTracking(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || !this.taskFilterService.fileMatchesTaskFilter(file)) {
+      new Notice("Could not start tracking this concern from tray.");
+      this.recomputeMacOsTrayRecentConcerns();
+      this.updateMacOsTrayTimer();
+      return;
+    }
+
+    await this.setSelectedTaskPath(path);
+    await this.startTracking();
+  }
+
+  private recomputeMacOsTrayRecentConcerns(): void {
+    if (this.timeEntriesById.size === 0) {
+      this.macOsTrayRecentConcerns = [];
+      return;
+    }
+
+    const latestEndMsByNoteId = new Map<string, number>();
+    for (const [noteId, entries] of this.timeEntriesById.entries()) {
+      const latestEndMs = this.getLatestTrackedEndMsForEntries(entries);
+      if (latestEndMs > 0) {
+        latestEndMsByNoteId.set(noteId, latestEndMs);
+      }
+    }
+
+    if (latestEndMsByNoteId.size === 0) {
+      this.macOsTrayRecentConcerns = [];
+      return;
+    }
+
+    const taskInfoByNoteId = this.buildNoteIdToTaskInfoMap();
+    this.macOsTrayRecentConcerns = Array.from(latestEndMsByNoteId.entries())
+      .map(([noteId, latestEndMs]) => {
+        const info = taskInfoByNoteId.get(noteId);
+        if (!info) return null;
+        return { latestEndMs, path: info.path, label: info.label };
+      })
+      .filter(
+        (item): item is { latestEndMs: number; path: string; label: string } => item !== null
+      )
+      .sort((a, b) => {
+        if (a.latestEndMs !== b.latestEndMs) {
+          return b.latestEndMs - a.latestEndMs;
+        }
+        return a.label.localeCompare(b.label);
+      })
+      .slice(0, MAX_MACOS_TRAY_RECENT_CONCERNS)
+      .map(({ path, label }) => ({ path, label }));
+  }
+
+  private buildNoteIdToTaskInfoMap(): Map<string, NoteTaskInfo> {
+    const map = new Map<string, NoteTaskInfo>();
+    for (const task of this.getTaskTreeItems()) {
+      const cache = this.app.metadataCache.getFileCache(task.file);
+      const id = cache?.frontmatter?.id;
+      if (!id) continue;
+      map.set(String(id).trim(), {
+        path: task.file.path,
+        label: task.file.basename
+      });
+    }
+    return map;
   }
 
   private getNormalizedTimeLogPath(): string {
@@ -937,6 +1021,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private handleTaskStructureChange(): void {
     this.taskFilterService.invalidateCache();
+    this.recomputeMacOsTrayRecentConcerns();
     this.refreshTaskStructureViews();
   }
 
@@ -1056,6 +1141,7 @@ export default class LifeDashboardPlugin extends Plugin {
     } catch (error) {
       this.timeTotalsById = new Map();
       this.timeEntriesById = new Map();
+      this.recomputeMacOsTrayRecentConcerns();
       console.error("[life-dashboard] Failed to read time totals:", error);
     }
   }
@@ -1072,11 +1158,20 @@ export default class LifeDashboardPlugin extends Plugin {
   private getLatestTrackedEndMs(): number {
     let latestEndMs = 0;
     for (const entries of this.timeEntriesById.values()) {
-      for (const entry of entries) {
-        const endMs = entry.startMs + entry.durationMinutes * 60 * 1000;
-        if (endMs > latestEndMs) {
-          latestEndMs = endMs;
-        }
+      const entryLatestEndMs = this.getLatestTrackedEndMsForEntries(entries);
+      if (entryLatestEndMs > latestEndMs) {
+        latestEndMs = entryLatestEndMs;
+      }
+    }
+    return latestEndMs;
+  }
+
+  private getLatestTrackedEndMsForEntries(entries: TimeLogEntry[]): number {
+    let latestEndMs = 0;
+    for (const entry of entries) {
+      const endMs = entry.startMs + entry.durationMinutes * 60_000;
+      if (endMs > latestEndMs) {
+        latestEndMs = endMs;
       }
     }
     return latestEndMs;

@@ -46,18 +46,26 @@ type ElectronTrayBridge = {
 
 const TRANSPARENT_TRAY_PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7jquQAAAAASUVORK5CYII=";
+export const MAX_MACOS_TRAY_RECENT_CONCERNS = 3;
+
+export type MacOsTrayRecentConcern = {
+  label: string;
+  path: string;
+};
 
 export type MacOsTrayTimerViewModel = {
   enabled: boolean;
   isTracking: boolean;
   elapsedLabel: string;
   taskLabel: string;
+  recentConcerns: MacOsTrayRecentConcern[];
 };
 
 type MacOsTrayTimerActions = {
   openTimer: () => void;
   startTimer: () => void;
   stopTimer: () => void;
+  startRecentConcern: (path: string) => void;
 };
 
 export class MacOsTrayTimerService {
@@ -118,9 +126,8 @@ export class MacOsTrayTimerService {
     if (!this.tray) return;
 
     const stateLabel = model.isTracking ? `Running ${model.elapsedLabel}` : "Timer idle";
-    const toolTip = model.taskLabel
-      ? `Life Dashboard Timer\n${stateLabel}\nTask: ${model.taskLabel}`
-      : `Life Dashboard Timer\n${stateLabel}`;
+    const recentConcerns = this.clampRecentConcerns(model.recentConcerns);
+    const toolTip = this.buildToolTip(stateLabel, model, recentConcerns);
 
     this.tray.setTitle?.(model.isTracking ? model.elapsedLabel : "--:--:--");
     this.tray.setToolTip?.(toolTip);
@@ -129,10 +136,7 @@ export class MacOsTrayTimerService {
 
     const template: ElectronMenuItemTemplateLike[] = [
       { label: stateLabel, enabled: false },
-      {
-        label: model.taskLabel ? `Task: ${model.taskLabel}` : "Task: none selected",
-        enabled: false
-      },
+      ...this.buildStateDetailItems(model, recentConcerns),
       { type: "separator" },
       {
         label: "Open Timer",
@@ -145,6 +149,70 @@ export class MacOsTrayTimerService {
     ];
 
     this.tray.setContextMenu?.(this.trayMenu.buildFromTemplate(template));
+  }
+
+  private clampRecentConcerns(concerns: MacOsTrayRecentConcern[]): MacOsTrayRecentConcern[] {
+    return concerns.slice(0, MAX_MACOS_TRAY_RECENT_CONCERNS);
+  }
+
+  private buildToolTip(
+    stateLabel: string,
+    model: MacOsTrayTimerViewModel,
+    recentConcerns: MacOsTrayRecentConcern[]
+  ): string {
+    const toolTipLines = ["Life Dashboard Timer", stateLabel];
+
+    if (model.isTracking) {
+      if (model.taskLabel) {
+        toolTipLines.push(`Task: ${model.taskLabel}`);
+      }
+      return toolTipLines.join("\n");
+    }
+
+    if (recentConcerns.length > 0) {
+      toolTipLines.push("Recent concerns:");
+      for (const concern of recentConcerns) {
+        toolTipLines.push(`- ${concern.label}`);
+      }
+      return toolTipLines.join("\n");
+    }
+
+    if (model.taskLabel) {
+      toolTipLines.push(`Task: ${model.taskLabel}`);
+    }
+
+    return toolTipLines.join("\n");
+  }
+
+  private buildStateDetailItems(
+    model: MacOsTrayTimerViewModel,
+    recentConcerns: MacOsTrayRecentConcern[]
+  ): ElectronMenuItemTemplateLike[] {
+    if (model.isTracking) {
+      return [
+        {
+          label: model.taskLabel ? `Task: ${model.taskLabel}` : "Task: none selected",
+          enabled: false
+        }
+      ];
+    }
+
+    if (recentConcerns.length > 0) {
+      return [
+        { label: "Recent concerns:", enabled: false },
+        ...recentConcerns.map((concern) => ({
+          label: concern.label,
+          click: () => this.actions.startRecentConcern(concern.path)
+        }))
+      ];
+    }
+
+    return [
+      {
+        label: model.taskLabel ? `Task: ${model.taskLabel}` : "Task: none tracked",
+        enabled: false
+      }
+    ];
   }
 
   destroy(): void {
