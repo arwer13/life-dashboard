@@ -1039,6 +1039,23 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   color: var(--text-accent);
 }
 
+.frontmatter-outline-view .fmo-calendar-day-total-top,
+.frontmatter-outline-view .fmo-calendar-day-total {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.frontmatter-outline-view .fmo-calendar-day-total-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.2em;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
 .frontmatter-outline-view .fmo-calendar-day-bar {
   position: relative;
   width: 100%;
@@ -1046,11 +1063,7 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 }
 
 .frontmatter-outline-view .fmo-calendar-day-total {
-  font-size: 10px;
-  color: var(--text-muted);
   margin-top: 4px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 
 /* ── Calendar: Summary Table ────────────────────────────────── */

@@ -54,7 +54,7 @@ Two-column layout: sidebar tree panel + main calendar grid.
 
 - Period toggle: Today (day timeline), This Week (7-day grid), or Previous Week (7-day grid)
 - Day timeline: hour-aligned coloured blocks; each block shows start time and concern name (e.g. `14:30 MyTask (25m)`)
-- Week grid: stacked coloured segments per day column
+- Week grid: stacked coloured segments per day column with per-day tracked totals shown both above and below each day grid
 - Summary table below the grid, sorted by total tracked time with colour dots
 - Sidebar tree panel filters which concerns appear on the grid and only shows concerns with tracked time in the selected period
 - Collapsed-parent rollup: when a tree node is collapsed, its children's calendar entries appear under the parent's colour and label; expanding restores them

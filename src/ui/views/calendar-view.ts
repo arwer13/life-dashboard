@@ -562,6 +562,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         text: `${dayNames[d] ?? ""} ${pad2(new Date(dayMs).getDate())}`
       });
 
+      const total = dayEntries[d].reduce((s, e) => s + e.entry.durationMinutes * 60, 0);
+      const totalLabel = total > 0 ? this.plugin.formatShortDuration(total) : "";
+      col.createEl("div", {
+        cls: "fmo-calendar-day-total-top",
+        text: totalLabel
+      });
+
       const dayCol = col.createEl("div", { cls: "fmo-calendar-day-bar" });
       dayCol.style.height = `${gridHeight}px`;
 
@@ -584,11 +591,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         pxPerHour
       });
 
-      // Day total
-      const total = dayEntries[d].reduce((s, e) => s + e.entry.durationMinutes * 60, 0);
+      // Day total (bottom duplicate)
       col.createEl("div", {
         cls: "fmo-calendar-day-total",
-        text: total > 0 ? this.plugin.formatShortDuration(total) : ""
+        text: totalLabel
       });
     }
   }
