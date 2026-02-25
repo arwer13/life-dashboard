@@ -54,6 +54,7 @@ type ElectronWithRemoteLike = {
   remote?: ElectronMainLike;
 };
 const LIFE_DASHBOARD_VIEW_TYPE_SET = new Set<string>(LIFE_DASHBOARD_VIEW_TYPES);
+const PRIORITY_FRONTMATTER_KEY = "priority";
 type ConcernPickerOptions = {
   onChoose: (file: TFile) => void;
   onCloseWithoutChoice?: () => void;
@@ -199,6 +200,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Stop task timer",
       callback: () => {
         void this.stopTracking();
+      }
+    });
+
+    this.addCommand({
+      id: "reset-all-concern-priorities",
+      name: "Reset all concern priorities",
+      callback: () => {
+        void this.resetAllConcernPriorities();
       }
     });
 
@@ -508,12 +517,13 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.updateConcernFrontmatter(
       path,
       (fm) => {
+        const currentRaw = fm[PRIORITY_FRONTMATTER_KEY];
         const current =
-          fm.priority == null
+          currentRaw == null
             ? ""
-            : String(fm.priority).trim().toLowerCase();
+            : String(currentRaw).trim().toLowerCase();
         if (current === normalizedPriority) return false;
-        fm.priority = normalizedPriority;
+        fm[PRIORITY_FRONTMATTER_KEY] = normalizedPriority;
         return true;
       },
       "Could not update frontmatter priority"
@@ -524,11 +534,42 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.updateConcernFrontmatter(
       path,
       (fm) => {
-        if (!Object.prototype.hasOwnProperty.call(fm, "priority")) return false;
-        delete fm.priority;
+        if (!Object.prototype.hasOwnProperty.call(fm, PRIORITY_FRONTMATTER_KEY)) return false;
+        delete fm[PRIORITY_FRONTMATTER_KEY];
         return true;
       },
       "Could not remove frontmatter priority"
+    );
+  }
+
+  async resetAllConcernPriorities(): Promise<void> {
+    const concernItems = this.getTaskTreeItems();
+    const paths = concernItems
+      .filter((item) =>
+        Object.prototype.hasOwnProperty.call(item.frontmatter ?? {}, PRIORITY_FRONTMATTER_KEY)
+      )
+      .map((item) => item.file.path);
+
+    if (concernItems.length === 0) {
+      new Notice("No concerns found.");
+      return;
+    }
+
+    if (paths.length === 0) {
+      new Notice("No concern priorities found to reset.");
+      return;
+    }
+
+    let clearedCount = 0;
+    for (const path of paths) {
+      const changed = await this.clearConcernPriority(path);
+      if (changed) clearedCount += 1;
+    }
+
+    new Notice(
+      clearedCount === 1
+        ? "Reset priority on 1 concern."
+        : `Reset priority on ${clearedCount} concerns.`
     );
   }
 
