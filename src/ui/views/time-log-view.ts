@@ -74,7 +74,8 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       if (isHighlighted) highlightedRow = row;
 
       // Concern name (clickable to reassign)
-      const name = nameMap.get(entry.noteId) ?? "unknown";
+      const normalizedNoteId = entry.noteId.trim();
+      const name = nameMap.get(normalizedNoteId) ?? "unknown";
       const nameEl = row.createEl("span", { cls: "fmo-timelog-name fmo-timelog-name-clickable", text: name });
       nameEl.addEventListener("click", () => {
         const tasks = this.plugin.getTaskTreeItems().map((item) => item.file);
@@ -118,7 +119,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       });
 
       // UUID (small, last)
-      row.createEl("span", { cls: "fmo-timelog-id", text: entry.noteId });
+      row.createEl("span", { cls: "fmo-timelog-id", text: normalizedNoteId || entry.noteId });
     }
 
     if (highlightedRow) {

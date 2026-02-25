@@ -889,13 +889,13 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private buildNoteIdToTaskInfoMap(): Map<string, NoteTaskInfo> {
     const map = new Map<string, NoteTaskInfo>();
-    for (const task of this.getTaskTreeItems()) {
-      const cache = this.app.metadataCache.getFileCache(task.file);
-      const id = cache?.frontmatter?.id;
+    const files = this.app.vault.getMarkdownFiles().slice().sort((a, b) => a.path.localeCompare(b.path));
+    for (const file of files) {
+      const id = this.getTaskIdForFile(file);
       if (!id) continue;
-      map.set(String(id).trim(), {
-        path: task.file.path,
-        label: task.file.basename
+      map.set(id, {
+        path: file.path,
+        label: file.basename
       });
     }
     return map;

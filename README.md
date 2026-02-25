@@ -201,6 +201,7 @@ Default file: `Data/time/time-tracked.json` (vault-relative, configurable in set
 ```
 
 - Keys are frontmatter UUIDs (auto-generated on first track)
+- Note IDs are normalized with `trim()`; keys differing only by outer whitespace are merged
 - Values are time tokens: `YYYY.MM.DD-HH:MMT<minutes>M`
 - Per-note arrays are sorted by start time ascending
 - Intervals are validated to prevent overlap

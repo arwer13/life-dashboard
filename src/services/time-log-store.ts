@@ -56,10 +56,14 @@ export class TimeLogStore {
 
   async appendTimeEntry(noteId: string, startMs: number, endMs: number): Promise<void> {
     const token = this.formatIntervalTokenFromMs(startMs, endMs);
+    const normalizedNoteId = this.normalizeNoteId(noteId);
+    if (!normalizedNoteId) {
+      throw new Error("Cannot append time entry: note id is empty.");
+    }
 
     const data = await this.readTimeLogMap();
-    const current = data[noteId] ?? [];
-    data[noteId] = this.normalizeAndValidateNoteIntervals([...current, token]);
+    const current = data[normalizedNoteId] ?? [];
+    data[normalizedNoteId] = this.normalizeAndValidateNoteIntervals([...current, token]);
     await this.writeTimeLog(data);
   }
 
@@ -280,22 +284,41 @@ export class TimeLogStore {
     }
 
     const obj = raw as Record<string, unknown>;
-    const output: TimeLogByNoteId = {};
+    const mergedIntervalsByNoteId = new Map<string, string[]>();
 
-    for (const [noteId, value] of Object.entries(obj)) {
-      if (!noteId.trim()) continue;
-      if (!Array.isArray(value)) continue;
+    for (const [rawNoteId, value] of Object.entries(obj)) {
+      const noteId = this.normalizeNoteId(rawNoteId);
+      if (!noteId || !Array.isArray(value)) continue;
 
       const intervals = value.filter((v): v is string => typeof v === "string");
+      const existing = mergedIntervalsByNoteId.get(noteId);
+      if (existing) {
+        existing.push(...intervals);
+      } else {
+        mergedIntervalsByNoteId.set(noteId, [...intervals]);
+      }
+    }
+
+    const output: TimeLogByNoteId = {};
+    for (const [noteId, intervals] of mergedIntervalsByNoteId.entries()) {
+      let normalizedIntervals: string[];
       try {
-        output[noteId] = this.normalizeAndValidateNoteIntervals(intervals);
+        normalizedIntervals = this.normalizeAndValidateNoteIntervals(intervals);
       } catch {
         // Skip invalid note payloads instead of failing the entire plugin.
-        output[noteId] = [];
+        normalizedIntervals = [];
+      }
+
+      if (normalizedIntervals.length > 0) {
+        output[noteId] = normalizedIntervals;
       }
     }
 
     return output;
+  }
+
+  private normalizeNoteId(noteId: string): string {
+    return noteId.trim();
   }
 
   private formatTimestamp(date: Date): string {
