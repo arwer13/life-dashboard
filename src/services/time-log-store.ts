@@ -56,14 +56,30 @@ export class TimeLogStore {
 
   async appendTimeEntry(noteId: string, startMs: number, endMs: number): Promise<void> {
     const token = this.formatIntervalTokenFromMs(startMs, endMs);
+    await this.mutateNoteIntervals(noteId, (intervals) => [...intervals, token]);
+  }
+
+  async updateTimeEntry(noteId: string, startMs: number, oldEndMs: number, newEndMs: number): Promise<void> {
+    const oldToken = this.formatIntervalTokenFromMs(startMs, oldEndMs);
+    const newToken = this.formatIntervalTokenFromMs(startMs, newEndMs);
+    await this.mutateNoteIntervals(noteId, (intervals) => {
+      const idx = intervals.indexOf(oldToken);
+      if (idx === -1) throw new Error("Cannot update time entry: original entry not found.");
+      const updated = [...intervals];
+      updated[idx] = newToken;
+      return updated;
+    });
+  }
+
+  private async mutateNoteIntervals(noteId: string, mutate: (intervals: string[]) => string[]): Promise<void> {
     const normalizedNoteId = this.normalizeNoteId(noteId);
     if (!normalizedNoteId) {
-      throw new Error("Cannot append time entry: note id is empty.");
+      throw new Error("Cannot modify time entry: note id is empty.");
     }
 
     const data = await this.readTimeLogMap();
     const current = data[normalizedNoteId] ?? [];
-    data[normalizedNoteId] = this.normalizeAndValidateNoteIntervals([...current, token]);
+    data[normalizedNoteId] = this.normalizeAndValidateNoteIntervals(mutate(current));
     await this.writeTimeLog(data);
   }
 

@@ -22,10 +22,8 @@ type HourRange = { minHour: number; maxHour: number };
 
 type BlockRenderContext = {
   colorMap: Map<string, string>;
-  minHour: number;
-  pxPerHour: number;
-  dayStartMs: number;
   highlightedPaths: Set<string> | null;
+  spec: CalendarGridSpec;
 };
 
 type CalendarGridSpec = {
@@ -47,10 +45,8 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BLOCK_MIN_HEIGHT_PX = 3;
-const BLOCK_LABEL_MIN_FONT_PX = 10;
-const BLOCK_LABEL_MAX_FONT_PX = 20;
-const BLOCK_LABEL_SCALE_START_HEIGHT_PX = 12;
-const BLOCK_LABEL_SCALE_END_HEIGHT_PX = 48;
+const BLOCK_LABEL_FONT_PX = 10;
+const RESIZE_SNAP_MS = 5 * 60 * 1000;
 const CALENDAR_PERIOD_OPTIONS: Array<{ value: CalendarPeriod; label: string }> = [
   { value: "today", label: "Today" },
   { value: "week", label: "This Week" },
@@ -58,20 +54,6 @@ const CALENDAR_PERIOD_OPTIONS: Array<{ value: CalendarPeriod; label: string }> =
 ];
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
-
-function computeBlockFontSizePx(heightPx: number): number {
-  const clampedHeight = Math.max(
-    BLOCK_LABEL_SCALE_START_HEIGHT_PX,
-    Math.min(BLOCK_LABEL_SCALE_END_HEIGHT_PX, heightPx)
-  );
-  const progress =
-    (clampedHeight - BLOCK_LABEL_SCALE_START_HEIGHT_PX) /
-    (BLOCK_LABEL_SCALE_END_HEIGHT_PX - BLOCK_LABEL_SCALE_START_HEIGHT_PX);
-  const size =
-    BLOCK_LABEL_MIN_FONT_PX +
-    progress * (BLOCK_LABEL_MAX_FONT_PX - BLOCK_LABEL_MIN_FONT_PX);
-  return Math.round(size * 10) / 10;
-}
 
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private calendarTreePanel: ConcernTreePanel | null = null;
@@ -459,10 +441,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     e: CalendarEntry,
     ctx: BlockRenderContext
   ): void {
-    const startFrac = (e.entry.startMs - ctx.dayStartMs) / (60 * 60 * 1000);
+    const { spec } = ctx;
+    const startFrac = (e.entry.startMs - spec.dayStartMs) / (60 * 60 * 1000);
     const durationHours = e.entry.durationMinutes / 60;
-    const top = (startFrac - ctx.minHour) * ctx.pxPerHour;
-    const height = Math.max(BLOCK_MIN_HEIGHT_PX, durationHours * ctx.pxPerHour);
+    const top = (startFrac - spec.minHour) * spec.pxPerHour;
+    const height = Math.max(BLOCK_MIN_HEIGHT_PX, durationHours * spec.pxPerHour);
 
     const startDate = new Date(e.entry.startMs);
     const timeLabel = `${pad2(startDate.getHours())}:${pad2(startDate.getMinutes())}`;
@@ -475,12 +458,65 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
-    block.style.fontSize = `${computeBlockFontSizePx(height)}px`;
+    block.style.fontSize = `${BLOCK_LABEL_FONT_PX}px`;
     block.style.backgroundColor = ctx.colorMap.get(e.path) ?? CALENDAR_COLORS[0];
     block.title = tooltip;
-    if (height >= 12) block.setText(height >= 20 ? `${timeLabel} ${e.basename} (${durationLabel})` : `${timeLabel} ${e.basename}`);
+    if (height >= 12) block.setText(e.basename);
 
     block.addEventListener("click", () => { void this.plugin.openFile(e.path); });
+    this.attachBlockResize(block, container, e, spec);
+  }
+
+  private attachBlockResize(
+    block: HTMLElement,
+    container: HTMLElement,
+    e: CalendarEntry,
+    spec: CalendarGridSpec
+  ): void {
+    const handle = block.createEl("div", { cls: "fmo-calendar-block-resize-handle" });
+    const endMs = e.entry.startMs + e.entry.durationMinutes * 60 * 1000;
+
+    handle.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this.clearCalendarCreateState();
+
+      const gridHeight = this.getGridHeightPx(spec);
+      const origEndMs = endMs;
+      let lastNewEndMs = origEndMs;
+
+      const move = (moveEv: MouseEvent): void => {
+        const localY = this.clientYToLocalY(moveEv.clientY, container, gridHeight);
+        const rawMs = this.localYToTimestampMs(localY, spec);
+        const snappedMs = Math.round(rawMs / RESIZE_SNAP_MS) * RESIZE_SNAP_MS;
+        const newEndMs = Math.max(e.entry.startMs + 60_000, snappedMs);
+        lastNewEndMs = newEndMs;
+
+        const newDurationHours = (newEndMs - e.entry.startMs) / (60 * 60 * 1000);
+        block.style.height = `${Math.max(BLOCK_MIN_HEIGHT_PX, newDurationHours * spec.pxPerHour)}px`;
+      };
+
+      const cleanup = (): void => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        document.body.removeClass("fmo-calendar-resizing");
+        if (this.activeDragCleanup === cleanup) {
+          this.activeDragCleanup = null;
+        }
+      };
+
+      const up = (): void => {
+        cleanup();
+        if (lastNewEndMs !== origEndMs) {
+          void this.plugin.updateTimeEntryForPath(e.path, e.entry.startMs, origEndMs, lastNewEndMs);
+        }
+      };
+
+      this.activeDragCleanup = cleanup;
+      document.body.addClass("fmo-calendar-resizing");
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
   }
 
   private renderDayTimeline(
@@ -499,17 +535,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     this.renderHourLabelsAndGridlines(timeline, hourRange, pxPerHour, "fmo-calendar-hour-label");
 
-    const ctx: BlockRenderContext = { colorMap, minHour: hourRange.minHour, pxPerHour, dayStartMs, highlightedPaths };
+    const spec: CalendarGridSpec = { dayStartMs, minHour: hourRange.minHour, maxHour: hourRange.maxHour, pxPerHour };
+    const ctx: BlockRenderContext = { colorMap, highlightedPaths, spec };
     for (const e of entries) {
       this.renderEntryBlock(timeline, e, ctx);
     }
 
-    this.attachTimeSegmentCreation(timeline, {
-      dayStartMs,
-      minHour: hourRange.minHour,
-      maxHour: hourRange.maxHour,
-      pxPerHour
-    });
+    this.attachTimeSegmentCreation(timeline, spec);
   }
 
   private renderWeekGrid(
@@ -579,17 +611,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       }
 
       // Entry blocks
-      const blockCtx: BlockRenderContext = { colorMap, minHour: hourRange.minHour, pxPerHour, dayStartMs: dayMs, highlightedPaths };
+      const daySpec: CalendarGridSpec = { dayStartMs: dayMs, minHour: hourRange.minHour, maxHour: hourRange.maxHour, pxPerHour };
+      const blockCtx: BlockRenderContext = { colorMap, highlightedPaths, spec: daySpec };
       for (const e of dayEntries[d]) {
         this.renderEntryBlock(dayCol, e, blockCtx);
       }
 
-      this.attachTimeSegmentCreation(dayCol, {
-        dayStartMs: dayMs,
-        minHour: hourRange.minHour,
-        maxHour: hourRange.maxHour,
-        pxPerHour
-      });
+      this.attachTimeSegmentCreation(dayCol, daySpec);
 
       // Day total (bottom duplicate)
       col.createEl("div", {

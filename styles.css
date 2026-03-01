@@ -956,6 +956,15 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   line-height: 1;
 }
 
+.frontmatter-outline-view .fmo-calendar-block-resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
 .frontmatter-outline-view .fmo-calendar-block:hover {
   opacity: 1;
   z-index: 2;

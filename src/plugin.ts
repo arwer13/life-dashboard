@@ -493,18 +493,33 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   async appendTimeEntryForPath(path: string, startMs: number, endMs: number): Promise<boolean> {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) return false;
-
     const normalizedStartMs = Math.min(startMs, endMs);
     const normalizedEndMs = Math.max(startMs, endMs);
     if (!Number.isFinite(normalizedStartMs) || !Number.isFinite(normalizedEndMs)) return false;
     if (normalizedEndMs <= normalizedStartMs) return false;
 
+    return this.withNoteIdForPath(path, (noteId) =>
+      this.timeLogStore.appendTimeEntry(noteId, normalizedStartMs, normalizedEndMs)
+    );
+  }
+
+  async updateTimeEntryForPath(path: string, startMs: number, oldEndMs: number, newEndMs: number): Promise<boolean> {
+    if (!Number.isFinite(startMs) || !Number.isFinite(oldEndMs) || !Number.isFinite(newEndMs)) return false;
+    if (newEndMs <= startMs) return false;
+
+    return this.withNoteIdForPath(path, (noteId) =>
+      this.timeLogStore.updateTimeEntry(noteId, startMs, oldEndMs, newEndMs)
+    );
+  }
+
+  private async withNoteIdForPath(path: string, action: (noteId: string) => Promise<void>): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return false;
+
     const noteId = await this.ensureTaskIdForFile(file);
     if (!noteId) return false;
 
-    await this.timeLogStore.appendTimeEntry(noteId, normalizedStartMs, normalizedEndMs);
+    await action(noteId);
     await this.reloadTimeTotals();
     this.refreshTimeTrackingViews();
     return true;
