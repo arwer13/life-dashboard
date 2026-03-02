@@ -24,3 +24,9 @@ export interface TimeLogSnapshot {
   totals: Map<string, number>;
   entriesByNoteId: Map<string, TimeLogEntry[]>;
 }
+
+export type ListEntry = {
+  text: string;
+  textLower: string;
+  line: number;
+};

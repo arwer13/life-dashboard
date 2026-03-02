@@ -1,5 +1,5 @@
-import { Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
-import type { TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
+import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
+import type { ListEntry, TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -18,6 +18,7 @@ import { TimerNotificationService } from "./services/timer-notification-service"
 import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
+import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TaskSelectModal } from "./ui/task-select-modal";
 import {
   LifeDashboardCalendarView,
@@ -211,6 +212,14 @@ export default class LifeDashboardPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "search-list-entries",
+      name: "Search list entries in current file",
+      callback: () => {
+        void this.openListEntrySearch();
+      }
+    });
+
     this.addSettingTab(new LifeDashboardSettingTab(this.app, this));
 
     this.registerEvent(
@@ -379,6 +388,48 @@ export default class LifeDashboardPlugin extends Plugin {
       showPathInSuggestion: false,
       emptyNotice: "No concerns available to open."
     });
+  }
+
+  private async openListEntrySearch(): Promise<void> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice("No active file.");
+      return;
+    }
+
+    const cache = this.app.metadataCache.getFileCache(file);
+    const rootListItems = cache?.listItems?.filter((li) => li.parent < 0);
+    if (!rootListItems || rootListItems.length === 0) {
+      new Notice("No top-level list entries found.");
+      return;
+    }
+
+    const text = await this.app.vault.cachedRead(file);
+    const lines = text.split("\n");
+    const entries: ListEntry[] = [];
+    for (const li of rootListItems) {
+      const line = li.position.start.line;
+      const raw = lines[line] ?? "";
+      const content = raw.replace(/^[-*+]\s+/, "");
+      if (content) {
+        entries.push({ text: content, textLower: content.toLowerCase(), line });
+      }
+    }
+
+    if (entries.length === 0) {
+      new Notice("No top-level list entries found.");
+      return;
+    }
+
+    const modal = new ListEntrySearchModal(this.app, entries, (entry) => {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view?.editor) {
+        const pos = { line: entry.line, ch: 0 };
+        view.editor.setCursor(pos);
+        view.editor.scrollIntoView({ from: pos, to: pos }, true);
+      }
+    });
+    modal.open();
   }
 
   openConcernPicker(options: ConcernPickerOptions): void {
