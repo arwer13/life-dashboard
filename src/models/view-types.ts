@@ -32,6 +32,7 @@ export const VIEW_TYPE_LIFE_DASHBOARD_OUTLINE = "life-dashboard-outline-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_CANVAS = "life-dashboard-canvas-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_CALENDAR = "life-dashboard-calendar-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMELOG = "life-dashboard-timelog-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT = "life-dashboard-beancount-view";
 export const LIFE_DASHBOARD_VIEW_TYPES = [
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,

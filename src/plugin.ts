@@ -21,6 +21,7 @@ import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TaskSelectModal } from "./ui/task-select-modal";
 import {
+  LifeDashboardBeancountView,
   LifeDashboardCalendarView,
   LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
@@ -33,7 +34,8 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
-  VIEW_TYPE_LIFE_DASHBOARD_TIMER
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+  VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
 } from "./models/view-types";
 import { DISPLAY_VERSION } from "./version";
 
@@ -107,6 +109,8 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CANVAS, (leaf) => new LifeDashboardConcernCanvasView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, (leaf) => new LifeDashboardCalendarView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, (leaf) => new LifeDashboardTimeLogView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
+    this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
