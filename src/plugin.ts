@@ -329,12 +329,39 @@ export default class LifeDashboardPlugin extends Plugin {
 
     const file = this.app.workspace.getActiveFile();
     if (!(file instanceof TFile)) return;
-    if (!this.taskFilterService.fileMatchesTaskFilter(file)) return;
-    if (this.settings.selectedTaskPath === file.path) return;
 
-    this.settings.selectedTaskPath = file.path;
+    let concernPath: string;
+    if (this.taskFilterService.fileMatchesTaskFilter(file)) {
+      concernPath = file.path;
+    } else {
+      // For non-concern notes, auto-select the concern that wikilinks to this note
+      // (only when exactly one concern references it)
+      const single = this.findSingleReferencingConcern(file);
+      if (!single) return;
+      concernPath = single;
+    }
+
+    if (this.settings.selectedTaskPath === concernPath) return;
+
+    this.settings.selectedTaskPath = concernPath;
     await this.saveSettings();
     this.refreshTaskStructureViews();
+  }
+
+  /** Returns the concern path if exactly one concern has a wikilink to the given file, null otherwise. */
+  private findSingleReferencingConcern(file: TFile): string | null {
+    const resolvedLinks = this.app.metadataCache.resolvedLinks;
+
+    let foundPath: string | null = null;
+    for (const concern of this.taskFilterService.getTaskTreeItems()) {
+      const outgoing = resolvedLinks[concern.file.path];
+      if (outgoing && file.path in outgoing) {
+        if (foundPath !== null) return null;
+        foundPath = concern.file.path;
+      }
+    }
+
+    return foundPath;
   }
 
   getActiveTaskPath(): string {
@@ -524,6 +551,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   async stopTracking(): Promise<void> {
     await this.trackingService.stopTracking();
+    await this.maybeAutoSelectFromActive();
   }
 
   async reloadTimeTotals(): Promise<void> {
