@@ -12,7 +12,7 @@ const VERSION_SOURCE_PATH = path.join(ROOT, "src", "version.ts");
 const HOT_RELOAD_PATH = path.join(ROOT, ".hotreload");
 
 const WATCH_MODE = process.argv.includes("--watch");
-const BUMP_MODE = process.argv.includes("--bump");
+const RELEASE_MODE = process.argv.includes("--release");
 const FILES_TO_SYNC = ["manifest.json", "main.js", "styles.css", "versions.json", ".hotreload"];
 
 function parseSemver(version) {
@@ -177,7 +177,12 @@ async function bumpProjectVersion(minAppVersion) {
   manifest.version = bumped;
   pkg.version = bumped;
 
-  const versions = {};
+  let versions = {};
+  try {
+    versions = JSON.parse(await fsp.readFile(VERSIONS_PATH, "utf8"));
+  } catch {
+    // start fresh if missing or corrupt
+  }
   versions[bumped] = minAppVersion;
 
   const versionSourceRaw = await fsp.readFile(VERSION_SOURCE_PATH, "utf8");
@@ -197,6 +202,7 @@ async function bumpProjectVersion(minAppVersion) {
   ]);
 
   console.log(`[version] bumped to ${bumped}`);
+  return bumped;
 }
 
 async function touchHotReloadMarker() {
@@ -209,11 +215,40 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function gitExec(...args) {
+  execFileSync("git", args, { cwd: ROOT, stdio: "inherit" });
+}
+
+function gitOutput(...args) {
+  return execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+}
+
+function commitAndTag(version) {
+  const versionFiles = [
+    "manifest.json",
+    "package.json",
+    "versions.json",
+    "src/version.ts"
+  ];
+
+  const status = gitOutput("status", "--porcelain", "--", ...versionFiles);
+  if (!status) {
+    throw new Error("No version file changes to commit. Was the version already bumped?");
+  }
+
+  gitExec("add", "--", ...versionFiles);
+  gitExec("commit", "-m", `release: ${version}`);
+  gitExec("tag", "-a", version, "-m", version);
+  console.log(`[release] committed and tagged ${version}`);
+  console.log(`[release] run 'git push --follow-tags' to trigger the release workflow`);
+}
+
 async function main() {
   const { targetDir, pluginId, minAppVersion } = await readConfig();
 
-  if (BUMP_MODE) {
-    await bumpProjectVersion(minAppVersion);
+  let bumpedVersion;
+  if (RELEASE_MODE) {
+    bumpedVersion = await bumpProjectVersion(minAppVersion);
   }
 
   if (WATCH_MODE) {
@@ -223,14 +258,16 @@ async function main() {
     runBuildOnce();
   }
 
-  if (BUMP_MODE) {
-    await touchHotReloadMarker();
-  }
-
+  await touchHotReloadMarker();
   await syncAll(targetDir);
 
   console.log(`[ready] plugin=${pluginId}`);
   console.log(`[ready] target=${targetDir}`);
+
+  if (RELEASE_MODE) {
+    commitAndTag(bumpedVersion);
+    return;
+  }
 
   if (!WATCH_MODE) return;
 

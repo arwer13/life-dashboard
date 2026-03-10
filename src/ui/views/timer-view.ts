@@ -260,7 +260,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
     while (current) {
       if (visited.has(current.path)) {
-        console.warn("[life-dashboard] Parent cycle detected while building task context:", current.path);
+        console.error("[life-dashboard] Parent cycle detected while building task context:", current.path);
         break;
       }
 
@@ -279,7 +279,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
     while (current) {
       if (visited.has(current.path)) {
-        console.warn("[life-dashboard] Parent cycle detected while building fallback task context:", current.path);
+        console.error("[life-dashboard] Parent cycle detected while building fallback task context:", current.path);
         break;
       }
 

@@ -38,7 +38,6 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
 } from "./models/view-types";
 import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
-import { DISPLAY_VERSION } from "./version";
 
 export type OutlineTimeRange = OutlineTimeRangeType;
 type PeriodTooltipRange = PeriodTooltipRangeType;
@@ -101,9 +100,6 @@ export default class LifeDashboardPlugin extends Plugin {
     await this.loadSettings();
     this.initializeServices();
     this.registerMainProcessPowerMonitorAutoStop();
-    console.info(
-      `[life-dashboard] loaded v${DISPLAY_VERSION} at ${new Date().toISOString()}`
-    );
 
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMER, (leaf) => new LifeDashboardTimerView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, (leaf) => new LifeDashboardOutlineView(leaf, this));
@@ -495,11 +491,6 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   private getConcernQuickOpenTargetLeaf(): WorkspaceLeaf {
-    const activeLeaf = this.app.workspace.activeLeaf;
-    if (activeLeaf && !this.isLifeDashboardLeaf(activeLeaf)) {
-      return activeLeaf;
-    }
-
     const mostRecentLeaf = this.app.workspace.getMostRecentLeaf();
     if (mostRecentLeaf && !this.isLifeDashboardLeaf(mostRecentLeaf)) {
       return mostRecentLeaf;
@@ -913,7 +904,6 @@ export default class LifeDashboardPlugin extends Plugin {
   private registerMainProcessPowerMonitorAutoStop(): void {
     const powerMonitor = this.getMainProcessPowerMonitor();
     if (!powerMonitor || typeof powerMonitor.on !== "function") {
-      console.warn("[life-dashboard] Main-process powerMonitor is unavailable.");
       return;
     }
 
@@ -936,9 +926,6 @@ export default class LifeDashboardPlugin extends Plugin {
     for (const event of AUTO_STOP_POWER_EVENTS) {
       subscribe(event);
     }
-    console.info(
-      "[life-dashboard] Registered main-process powerMonitor auto-stop listeners (suspend, lock-screen)."
-    );
   }
 
   private getMainProcessPowerMonitor(): MainProcessPowerMonitor | null {
@@ -970,7 +957,6 @@ export default class LifeDashboardPlugin extends Plugin {
     if (!this.settings.activeTrackingStart) return;
     if (this.powerAutoStopInFlight) return;
 
-    console.info(`[life-dashboard] Auto-stopping timer due to power event: ${source}`);
     this.powerAutoStopInFlight = this.stopTracking()
       .catch((error) => {
         console.error("[life-dashboard] Failed to auto-stop timer from power event:", source, error);
@@ -1120,7 +1106,7 @@ export default class LifeDashboardPlugin extends Plugin {
       this.watchedTimeLogAbsolutePath = absolutePath;
       void this.refreshWatchedTimeLogHash();
     } catch {
-      console.warn("[life-dashboard] Could not watch time log file for external changes.");
+      console.error("[life-dashboard] Could not watch time log file for external changes.");
       this.watchedTimeLogPath = "";
       this.watchedTimeLogAbsolutePath = "";
       this.watchedTimeLogHash = null;
@@ -1185,7 +1171,7 @@ export default class LifeDashboardPlugin extends Plugin {
       const data = await fs.promises.readFile(this.watchedTimeLogAbsolutePath, "utf8");
       return crypto.createHash("sha256").update(data).digest("hex");
     } catch (error) {
-      console.warn("[life-dashboard] Could not compute time log hash:", error);
+      console.error("[life-dashboard] Could not compute time log hash:", error);
       return null;
     }
   }
@@ -1400,7 +1386,6 @@ export default class LifeDashboardPlugin extends Plugin {
     const title = "Life Dashboard Timer";
 
     if (typeof window === "undefined" || !("Notification" in window)) {
-      console.warn("[life-dashboard] System notifications are unavailable in this environment.");
       return;
     }
 
@@ -1410,7 +1395,6 @@ export default class LifeDashboardPlugin extends Plugin {
     }
 
     if (window.Notification.permission === "denied") {
-      console.warn("[life-dashboard] System notifications are denied by the user.");
       return;
     }
 
@@ -1420,11 +1404,9 @@ export default class LifeDashboardPlugin extends Plugin {
       const permission = await window.Notification.requestPermission();
       if (permission === "granted") {
         new window.Notification(title, { body: message });
-      } else {
-        console.warn("[life-dashboard] System notification permission was not granted.");
       }
     } catch (error) {
-      console.warn("[life-dashboard] Failed to request notification permission:", error);
+      console.error("[life-dashboard] Failed to request notification permission:", error);
     }
   }
 
@@ -1435,11 +1417,9 @@ export default class LifeDashboardPlugin extends Plugin {
       ).require?.("electron");
       if (electron?.shell?.beep) {
         electron.shell.beep();
-      } else {
-        console.warn("[life-dashboard] Native desktop beep is unavailable in this environment.");
       }
     } catch {
-      console.warn("[life-dashboard] Failed to play native desktop beep.");
+      // expected on mobile/web
     }
   }
 

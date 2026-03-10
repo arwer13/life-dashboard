@@ -86,7 +86,7 @@ export class TimerNotificationService {
 
       const match = /^(\d+\s*[smhSMH])(?:\s+(?:"([^"]+)"|(.*)))?$/.exec(trimmed);
       if (!match) {
-        console.warn("[life-dashboard] Invalid timer notification rule:", trimmed);
+        console.error("[life-dashboard] Invalid timer notification rule:", trimmed);
         continue;
       }
 

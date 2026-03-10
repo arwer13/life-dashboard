@@ -75,93 +75,122 @@ export class LifeDashboardBeancountView extends TextFileView {
   }
 
   private renderHighlight(): void {
+    this.highlightEl.empty();
     const text = this.editorEl.value;
     const lines = text.split("\n");
-    const html = lines.map((line) => highlightLine(line)).join("\n");
-    this.highlightEl.innerHTML = html;
+    const frag = createFragment();
+
+    for (let i = 0; i < lines.length; i++) {
+      if (i > 0) frag.appendText("\n");
+      highlightLine(frag, lines[i]);
+    }
+
+    this.highlightEl.appendChild(frag);
   }
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function highlightLine(line: string): string {
+function highlightLine(parent: DocumentFragment | HTMLElement, line: string): void {
   if (RE_COMMENT_LINE.test(line)) {
-    return `<span class="bc-comment">${escapeHtml(line)}</span>`;
+    parent.createSpan({ cls: "bc-comment", text: line });
+    return;
   }
 
   if (RE_DIRECTIVE_LINE.test(line)) {
-    const matched = line.replace(
-      RE_DIRECTIVE_CAPTURE,
-      (_, ws, dir, sp, str, rest) =>
-        `${escapeHtml(ws)}<span class="bc-directive">${escapeHtml(dir)}</span>${escapeHtml(sp)}<span class="bc-string">${escapeHtml(str)}</span>${highlightTokens(rest)}`
-    );
-    if (matched !== line) return matched;
-    return escapeHtml(line);
+    const m = line.match(RE_DIRECTIVE_CAPTURE);
+    if (m) {
+      parent.appendText(m[1]);
+      parent.createSpan({ cls: "bc-directive", text: m[2] });
+      parent.appendText(m[3]);
+      parent.createSpan({ cls: "bc-string", text: m[4] });
+      highlightTokens(parent, m[5]);
+      return;
+    }
+    parent.appendText(line);
+    return;
   }
 
   const dateMatch = line.match(RE_DATE_PREFIX);
   if (dateMatch) {
-    const dateStr = dateMatch[1];
-    const rest = line.slice(dateMatch[0].length);
-    return `<span class="bc-date">${escapeHtml(dateStr)}</span> ${highlightDirectiveLine(rest)}`;
+    parent.createSpan({ cls: "bc-date", text: dateMatch[1] });
+    parent.appendText(" ");
+    highlightDirectiveLine(parent, line.slice(dateMatch[0].length));
+    return;
   }
 
   if (RE_INDENTED.test(line)) {
-    return highlightPosting(line);
+    highlightPosting(parent, line);
+    return;
   }
 
-  return escapeHtml(line);
+  parent.appendText(line);
 }
 
-function highlightDirectiveLine(rest: string): string {
+function highlightDirectiveLine(parent: DocumentFragment | HTMLElement, rest: string): void {
   const txnMatch = rest.match(RE_TXN_FLAG);
   if (txnMatch) {
-    return `<span class="bc-flag">${escapeHtml(txnMatch[1])}</span> ${highlightTokens(txnMatch[2])}`;
+    parent.createSpan({ cls: "bc-flag", text: txnMatch[1] });
+    parent.appendText(" ");
+    highlightTokens(parent, txnMatch[2]);
+    return;
   }
 
   const dirMatch = rest.match(RE_DIR_KEYWORD);
   if (dirMatch) {
-    return `<span class="bc-directive">${escapeHtml(dirMatch[1])}</span> ${highlightTokens(dirMatch[2])}`;
+    parent.createSpan({ cls: "bc-directive", text: dirMatch[1] });
+    parent.appendText(" ");
+    highlightTokens(parent, dirMatch[2]);
+    return;
   }
 
-  return highlightTokens(rest);
+  highlightTokens(parent, rest);
 }
 
-function highlightPosting(line: string): string {
+function highlightPosting(parent: DocumentFragment | HTMLElement, line: string): void {
   const m = line.match(RE_POSTING);
-  if (!m) return escapeHtml(line);
+  if (!m) {
+    parent.appendText(line);
+    return;
+  }
 
-  const indent = m[1];
-  const account = m[2];
-  const rest = m[3];
-
-  const accountSpan = RE_ACCOUNT.test(account)
-    ? `<span class="bc-account">${escapeHtml(account)}</span>`
-    : escapeHtml(account);
-
-  return `${escapeHtml(indent)}${accountSpan}${highlightTokens(rest)}`;
+  parent.appendText(m[1]);
+  if (RE_ACCOUNT.test(m[2])) {
+    parent.createSpan({ cls: "bc-account", text: m[2] });
+  } else {
+    parent.appendText(m[2]);
+  }
+  highlightTokens(parent, m[3]);
 }
 
-function highlightTokens(s: string): string {
-  if (!s) return "";
+function highlightTokens(parent: DocumentFragment | HTMLElement, s: string): void {
+  if (!s) return;
   RE_TOKENS.lastIndex = 0;
-  return s.replace(
-    RE_TOKENS,
-    (match, str, num, ccy, comment, acct) => {
-      if (str) return `<span class="bc-string">${escapeHtml(str)}</span>`;
-      if (num) {
-        let result = `<span class="bc-amount">${escapeHtml(num)}</span>`;
-        if (ccy) result += ` <span class="bc-currency">${escapeHtml(ccy)}</span>`;
-        return result;
-      }
-      if (comment) return `<span class="bc-comment">${escapeHtml(comment)}</span>`;
-      if (acct) return `<span class="bc-account">${escapeHtml(acct)}</span>`;
-      return escapeHtml(match);
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = RE_TOKENS.exec(s)) !== null) {
+    if (match.index > lastIndex) {
+      parent.appendText(s.slice(lastIndex, match.index));
     }
-  );
+    const [full, str, num, ccy, comment, acct] = match;
+    if (str) {
+      parent.createSpan({ cls: "bc-string", text: str });
+    } else if (num) {
+      parent.createSpan({ cls: "bc-amount", text: num });
+      if (ccy) {
+        parent.appendText(" ");
+        parent.createSpan({ cls: "bc-currency", text: ccy });
+      }
+    } else if (comment) {
+      parent.createSpan({ cls: "bc-comment", text: comment });
+    } else if (acct) {
+      parent.createSpan({ cls: "bc-account", text: acct });
+    } else {
+      parent.appendText(full);
+    }
+    lastIndex = RE_TOKENS.lastIndex;
+  }
+
+  if (lastIndex < s.length) {
+    parent.appendText(s.slice(lastIndex));
+  }
 }

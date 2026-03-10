@@ -112,8 +112,7 @@ export class MacOsTrayTimerService {
       this.tray = new bridge.Tray(icon);
       this.trayMenu = bridge.Menu;
       this.unavailableNotified = false;
-    } catch (error) {
-      console.warn("[life-dashboard] Failed to create macOS menu bar tray:", error);
+    } catch {
       this.destroy();
       this.notifyUnavailable(showUnavailableNotice, "Could not initialize macOS menu bar timer.");
     }
@@ -219,8 +218,8 @@ export class MacOsTrayTimerService {
     if (this.tray) {
       try {
         this.tray.destroy?.();
-      } catch (error) {
-        console.warn("[life-dashboard] Failed to destroy macOS menu bar tray:", error);
+      } catch {
+        // best-effort cleanup
       }
     }
     this.tray = null;

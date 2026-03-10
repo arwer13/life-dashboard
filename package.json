@@ -1,12 +1,13 @@
 {
   "name": "life-dashboard",
-  "version": "0.1.148",
+  "version": "0.1.0",
   "private": true,
   "description": "Obsidian Life Dashboard plugin development helpers",
   "scripts": {
     "build": "node esbuild.config.mjs production",
-    "deploy": "node scripts/sync-plugin.mjs --bump",
+    "deploy": "node scripts/sync-plugin.mjs",
     "dev": "node scripts/sync-plugin.mjs --watch",
+    "release": "node scripts/sync-plugin.mjs --release",
     "build:plugin": "node esbuild.config.mjs production",
     "build:watch": "node esbuild.config.mjs watch",
     "check": "tsc --noEmit"
