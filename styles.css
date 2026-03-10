@@ -1438,3 +1438,51 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 .fmo-kanban-card-prop-value {
   color: var(--text-normal);
 }
+
+/* Text input modal */
+.fmo-text-input-modal-input {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.fmo-text-input-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* Inline sub-concerns widget */
+.fmo-sub-concerns-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  padding: 1px 0 6px;
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+  line-height: 1.4;
+  user-select: none;
+}
+
+.fmo-sub-concerns-prefix {
+  margin-right: 4px;
+  opacity: 0.6;
+}
+
+.fmo-sub-concerns-sep {
+  margin: 0 5px;
+  opacity: 0.4;
+}
+
+.fmo-sub-concern-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.fmo-sub-concern-link:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}

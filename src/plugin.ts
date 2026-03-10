@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_TIME_LOG_PATH,
@@ -19,6 +19,7 @@ import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
+import { TextInputModal } from "./ui/text-input-modal";
 import { TaskSelectModal } from "./ui/task-select-modal";
 import {
   LifeDashboardBeancountView,
@@ -38,6 +39,7 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
 } from "./models/view-types";
 import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
+import { createSubConcernsExtension } from "./ui/editor/sub-concerns-extension";
 
 export type OutlineTimeRange = OutlineTimeRangeType;
 type PeriodTooltipRange = PeriodTooltipRangeType;
@@ -75,6 +77,7 @@ export default class LifeDashboardPlugin extends Plugin {
   timeTotalsById: Map<string, number> = new Map();
   timeEntriesById: Map<string, TimeLogEntry[]> = new Map();
   highlightedTimeLogStartMs: number | null = null;
+  treeStructureVersion = 0;
 
   private taskFilterService!: TaskFilterService;
   private timeLogStore!: TimeLogStore;
@@ -85,6 +88,8 @@ export default class LifeDashboardPlugin extends Plugin {
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
   private canvasDraftSaveTimer: number | null = null;
+  private subConcernActionEl: HTMLElement | null = null;
+  private subConcernActionFilePath: string | null = null;
   private notificationPermissionRequested = false;
   private powerAutoStopInFlight: Promise<void> | null = null;
   private removePowerMonitorListeners: Array<() => void> = [];
@@ -109,6 +114,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
     this.registerBasesView(KANBAN_BASES_VIEW_ID, createKanbanViewRegistration(this));
+    this.registerEditorExtension(createSubConcernsExtension(this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
@@ -230,6 +236,14 @@ export default class LifeDashboardPlugin extends Plugin {
       }
     });
 
+    this.addCommand({
+      id: "create-sub-concern",
+      name: "Create sub-concern for active note",
+      callback: () => {
+        this.createSubConcern();
+      }
+    });
+
     this.addSettingTab(new LifeDashboardSettingTab(this.app, this));
 
     this.registerEvent(
@@ -271,6 +285,22 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", () => {
         void this.maybeAutoSelectFromActive();
+        this.updateSubConcernHeaderButton();
+      })
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu, file: TAbstractFile) => {
+        if (!(file instanceof TFile)) return;
+        if (!this.taskFilterService.fileMatchesTaskFilter(file)) return;
+        menu.addItem((item) => {
+          item
+            .setTitle("Create sub-concern")
+            .setIcon("plus-circle")
+            .onClick(() => {
+              this.createSubConcernForFile(file);
+            });
+        });
       })
     );
 
@@ -278,6 +308,7 @@ export default class LifeDashboardPlugin extends Plugin {
       this.scheduleStartupTotalsLoad();
       void this.maybeAutoSelectFromActive();
       this.refreshView();
+      this.updateSubConcernHeaderButton();
     });
 
     this.macOsTrayTimerService.syncEnabled(this.settings.macOsTrayTimerEnabled, false);
@@ -304,6 +335,10 @@ export default class LifeDashboardPlugin extends Plugin {
       this.canvasDraftSaveTimer = null;
     }
     await this.saveSettings();
+
+    this.subConcernActionEl?.remove();
+    this.subConcernActionEl = null;
+    this.subConcernActionFilePath = null;
 
     await this.trackingService.flushActiveTrackingOnUnload();
     await this.persistVisibilityState(true);
@@ -812,6 +847,103 @@ export default class LifeDashboardPlugin extends Plugin {
     await leaf.openFile(file, { active: true });
   }
 
+  private createSubConcern(): void {
+    const activeFile = this.app.workspace.getActiveFile();
+    if (!(activeFile instanceof TFile)) {
+      new Notice("No active file.");
+      return;
+    }
+
+    if (!this.taskFilterService.fileMatchesTaskFilter(activeFile)) {
+      new Notice("Active file is not a concern.");
+      return;
+    }
+
+    this.createSubConcernForFile(activeFile);
+  }
+
+  private createSubConcernForFile(parentFile: TFile): void {
+    const modal = new TextInputModal(
+      this.app,
+      "Name for the new sub-concern:",
+      "Sub-concern name",
+      (name) => {
+        void this.doCreateSubConcern(parentFile, name);
+      }
+    );
+    modal.open();
+  }
+
+  private async doCreateSubConcern(parentFile: TFile, name: string): Promise<void> {
+    const parentName = parentFile.basename;
+    const parentDir = parentFile.parent?.path ?? "";
+    const propName = this.settings.propertyName.trim() || "type";
+    const propValue = this.settings.propertyValue.trim() || "concen";
+
+    const dir = parentDir ? `${parentDir}/` : "";
+    let fileName = name;
+    let newPath = normalizePath(`${dir}${fileName}.md`);
+
+    let counter = 1;
+    while (this.app.vault.getAbstractFileByPath(newPath)) {
+      fileName = `${name} ${counter}`;
+      newPath = normalizePath(`${dir}${fileName}.md`);
+      counter++;
+    }
+
+    const frontmatter = [
+      "---",
+      `${propName}: ${propValue}`,
+      `parent: "[[${parentName}]]"`,
+      "kind: tension",
+      "---",
+      ""
+    ].join("\n");
+
+    try {
+      await this.app.vault.create(newPath, frontmatter);
+      await this.openFile(newPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to create sub-concern: ${message}`);
+    }
+  }
+
+  private updateSubConcernHeaderButton(): void {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const activePath = activeView?.file?.path ?? null;
+    const isConcern = activePath != null
+      && activeView!.file != null
+      && this.taskFilterService.fileMatchesTaskFilter(activeView!.file);
+    const targetPath = isConcern ? activePath : null;
+
+    if (targetPath === this.subConcernActionFilePath) return;
+
+    this.subConcernActionEl?.remove();
+    this.subConcernActionEl = null;
+    this.subConcernActionFilePath = null;
+
+    if (!targetPath || !activeView?.file) return;
+
+    const actionsEl = activeView.containerEl.querySelector(".view-actions");
+    if (!actionsEl) return;
+
+    const file = activeView.file;
+    const btn = createEl("a", {
+      cls: "view-action clickable-icon",
+      attr: { "aria-label": "Create sub-concern" }
+    });
+    setIcon(btn, "plus-circle");
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.createSubConcernForFile(file);
+    });
+
+    actionsEl.prepend(btn);
+    this.subConcernActionEl = btn;
+    this.subConcernActionFilePath = targetPath;
+  }
+
   private async createConcernsKanbanBase(): Promise<void> {
     const basePath = "Concerns Kanban.base";
     let file = this.app.vault.getAbstractFileByPath(basePath);
@@ -1187,6 +1319,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private handleTaskStructureChange(): void {
     this.taskFilterService.invalidateCache();
+    this.treeStructureVersion++;
     this.recomputeMacOsTrayRecentConcerns();
     this.refreshTaskStructureViews();
   }

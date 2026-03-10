@@ -9,7 +9,7 @@ const context = await esbuild.context({
   format: "cjs",
   platform: "browser",
   target: "es2020",
-  external: ["obsidian"],
+  external: ["obsidian", "@codemirror/state", "@codemirror/view"],
   outfile: "main.js",
   sourcemap: production ? false : "inline",
   logLevel: "info"
