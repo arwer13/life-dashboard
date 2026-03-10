@@ -99,6 +99,26 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         afterSave: refreshFilters
       },
       {
+        name: "Kanban default column property",
+        description: "Frontmatter property used for kanban columns when creating a new board view.",
+        placeholder: "status",
+        getValue: () => this.plugin.settings.kanbanDefaultColumnProperty,
+        setValue: (value) => {
+          this.plugin.settings.kanbanDefaultColumnProperty = value;
+        },
+        transform: (value) => value.trim() || "status"
+      },
+      {
+        name: "Kanban default swimlane property",
+        description: "Frontmatter property used for kanban swimlanes when creating a new board view. Leave empty to disable swimlanes by default.",
+        placeholder: "priority",
+        getValue: () => this.plugin.settings.kanbanDefaultSwimlaneProperty,
+        setValue: (value) => {
+          this.plugin.settings.kanbanDefaultSwimlaneProperty = value;
+        },
+        transform: (value) => value.trim()
+      },
+      {
         name: "Minimum trackable time (minutes)",
         description: "Sessions shorter than this are discarded when pressing Stop.",
         placeholder: "2",

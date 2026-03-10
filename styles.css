@@ -1291,3 +1291,150 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   color: var(--color-orange, #e69138);
   font-weight: 600;
 }
+
+/* ── Kanban Bases View ─────────────────────────────────── */
+
+.fmo-kanban-board {
+  height: 100%;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.fmo-kanban-empty {
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Shared fixed column width for alignment */
+.fmo-kanban-column-header,
+.fmo-kanban-column {
+  flex: 0 0 220px;
+  width: 220px;
+}
+
+/* Header row (column headers) */
+.fmo-kanban-header-row {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fmo-kanban-swimlane-header-spacer {
+  flex: 0 0 120px;
+}
+
+.fmo-kanban-column-header {
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-right: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.fmo-kanban-column-header:last-child {
+  border-right: none;
+}
+
+/* Swimlane */
+.fmo-kanban-swimlane {
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fmo-kanban-swimlane:last-child {
+  border-bottom: none;
+}
+
+.fmo-kanban-swimlane-header {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  background: var(--background-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fmo-kanban-swimlane-columns {
+  display: flex;
+}
+
+/* Column (drop zone) */
+.fmo-kanban-column {
+  min-height: 80px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-right: 1px solid var(--background-modifier-border);
+  transition: background 0.15s ease;
+}
+
+.fmo-kanban-column:last-child {
+  border-right: none;
+}
+
+.fmo-kanban-column-dragover {
+  background: var(--background-modifier-hover);
+}
+
+/* Card */
+.fmo-kanban-card {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: grab;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.fmo-kanban-card:hover {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.fmo-kanban-card-dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.fmo-kanban-card-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-normal);
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.fmo-kanban-card-title:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.fmo-kanban-card-props {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fmo-kanban-card-prop {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.fmo-kanban-card-prop-label {
+  font-weight: 500;
+}
+
+.fmo-kanban-card-prop-value {
+  color: var(--text-normal);
+}

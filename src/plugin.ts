@@ -37,6 +37,7 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
 } from "./models/view-types";
+import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
 import { DISPLAY_VERSION } from "./version";
 
 export type OutlineTimeRange = OutlineTimeRangeType;
@@ -111,6 +112,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, (leaf) => new LifeDashboardTimeLogView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
+    this.registerBasesView(KANBAN_BASES_VIEW_ID, createKanbanViewRegistration(this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
@@ -221,6 +223,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Search list entries in current file",
       callback: () => {
         void this.openListEntrySearch();
+      }
+    });
+
+    this.addCommand({
+      id: "create-concerns-kanban",
+      name: "Create Concerns Kanban board",
+      callback: () => {
+        void this.createConcernsKanbanBase();
       }
     });
 
@@ -809,6 +819,37 @@ export default class LifeDashboardPlugin extends Plugin {
     if (!leaf) return;
 
     await leaf.openFile(file, { active: true });
+  }
+
+  private async createConcernsKanbanBase(): Promise<void> {
+    const basePath = "Concerns Kanban.base";
+    let file = this.app.vault.getAbstractFileByPath(basePath);
+
+    if (!file) {
+      const propName = this.settings.propertyName.trim() || "type";
+      const propValue = this.settings.propertyValue.trim() || "concen";
+
+      const yaml = [
+        "views:",
+        `  - type: ${KANBAN_BASES_VIEW_ID}`,
+        "    name: Kanban",
+        "    filters:",
+        "      and:",
+        `        - ${propName} == "${propValue}"`,
+        ""
+      ].join("\n");
+
+      try {
+        file = await this.app.vault.create(basePath, yaml);
+      } catch {
+        file = this.app.vault.getAbstractFileByPath(basePath);
+      }
+    }
+
+    if (file instanceof TFile) {
+      const leaf = this.app.workspace.getLeaf("tab");
+      await leaf.openFile(file, { active: true });
+    }
   }
 
   refreshView(): void {

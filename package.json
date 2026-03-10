@@ -1,6 +1,6 @@
 {
   "name": "life-dashboard",
-  "version": "0.1.134",
+  "version": "0.1.148",
   "private": true,
   "description": "Obsidian Life Dashboard plugin development helpers",
   "scripts": {

@@ -20,6 +20,8 @@ export interface LifeDashboardSettings {
   calendarPeriod: "today" | "week" | "previousWeek";
   calendarZoom: number;
   calendarTreePanelState: string;
+  kanbanDefaultColumnProperty: string;
+  kanbanDefaultSwimlaneProperty: string;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
@@ -46,5 +48,7 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   canvasDraftState: "",
   calendarPeriod: "today",
   calendarZoom: 1,
-  calendarTreePanelState: ""
+  calendarTreePanelState: "",
+  kanbanDefaultColumnProperty: "status",
+  kanbanDefaultSwimlaneProperty: "priority",
 };
