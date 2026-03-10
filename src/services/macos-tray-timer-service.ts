@@ -129,7 +129,7 @@ export class MacOsTrayTimerService {
     const recentConcerns = this.clampRecentConcerns(model.recentConcerns);
     const toolTip = this.buildToolTip(stateLabel, model, recentConcerns);
 
-    this.tray.setTitle?.(model.isTracking ? model.elapsedLabel : "--:--:--");
+    this.tray.setTitle?.(model.isTracking ? model.elapsedLabel : "-:-");
     this.tray.setToolTip?.(toolTip);
 
     if (!this.trayMenu) return;
