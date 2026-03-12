@@ -35,6 +35,7 @@ export type ConcernTreePanelConfig = {
   container: HTMLElement;
   state: ConcernTreePanelState;
   initialPreviewScrollTop?: number;
+  customWindow?: { startMs: number; endMs: number };
   hideControls?: {
     root?: boolean;
     range?: boolean;
@@ -68,6 +69,7 @@ export class ConcernTreePanel {
   private rerenderPreview: (() => void) | null = null;
   private statusEl: HTMLElement | null = null;
   private onHoverChange: ConcernTreePanelConfig["onHoverChange"];
+  private customWindow: ConcernTreePanelConfig["customWindow"];
   private pendingHoverTimer: number | null = null;
   private hoveredConcernPath: string | null = null;
   private initialPreviewScrollTop = 0;
@@ -78,6 +80,7 @@ export class ConcernTreePanel {
     this.state = { ...config.state, collapsedNodePaths: new Set(config.state.collapsedNodePaths) };
     this.initialPreviewScrollTop = Math.max(0, config.initialPreviewScrollTop ?? 0);
     this.hideControls = config.hideControls ?? {};
+    this.customWindow = config.customWindow;
     this.onChange = config.onChange;
     this.onHoverChange = config.onHoverChange;
     this.initializePriorityHotkeys();
@@ -486,10 +489,10 @@ export class ConcernTreePanel {
   private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
     const ownSecondsByPath = new Map<string, number>();
     for (const task of tasks) {
-      ownSecondsByPath.set(
-        task.file.path,
-        this.plugin.getTrackedSecondsForRange(task.file.path, range)
-      );
+      const seconds = this.customWindow
+        ? this.plugin.getTrackedSecondsForWindow(task.file.path, this.customWindow)
+        : this.plugin.getTrackedSecondsForRange(task.file.path, range);
+      ownSecondsByPath.set(task.file.path, seconds);
     }
     return ownSecondsByPath;
   }
@@ -500,7 +503,9 @@ export class ConcernTreePanel {
       const existing = cache.get(path);
       if (existing != null) return existing;
 
-      const latest = this.plugin.getLatestTrackedStartMsForRange(path, range);
+      const latest = this.customWindow
+        ? this.plugin.getLatestTrackedStartMsForWindow(path, this.customWindow)
+        : this.plugin.getLatestTrackedStartMsForRange(path, range);
       cache.set(path, latest);
       return latest;
     };

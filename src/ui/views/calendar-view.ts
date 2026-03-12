@@ -1,22 +1,32 @@
-import { Notice, type WorkspaceLeaf } from "obsidian";
-import type { TaskItem, TimeLogEntry } from "../../models/types";
+import { Notice } from "obsidian";
+import type { TimeLogEntry } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   type OutlineSortMode
 } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
-import type { OutlineTimeRange } from "../../plugin";
+import type { OutlineTimeRange, TimeWindow } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel, type ConcernTreePanelState } from "../concern-tree-panel";
 import { TaskSelectModal } from "../task-select-modal";
 
-type CalendarPeriod = "today" | "week" | "previousWeek";
+type CalendarPeriod = "today" | "week" | "month" | "year";
 
 type CalendarEntry = {
   path: string;
   basename: string;
   entry: TimeLogEntry;
 };
+
+type CalendarDayBucket = {
+  totalSeconds: number;
+  secondsByPath: Map<string, number>;
+};
+
+type CalendarYearSlot = {
+  date: Date;
+  key: string;
+} | null;
 
 type HourRange = { minHour: number; maxHour: number };
 
@@ -49,8 +59,14 @@ const BLOCK_LABEL_FONT_PX = 10;
 const RESIZE_SNAP_MS = 5 * 60 * 1000;
 const CALENDAR_PERIOD_OPTIONS: Array<{ value: CalendarPeriod; label: string }> = [
   { value: "today", label: "Today" },
-  { value: "week", label: "This Week" },
-  { value: "previousWeek", label: "Previous Week" }
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "year", label: "Year" }
+];
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
 ];
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
@@ -77,12 +93,31 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private get period(): CalendarPeriod {
     const value = this.plugin.settings.calendarPeriod;
-    return (value === "week" || value === "previousWeek") ? value : "today";
+    if (value === "week" || value === "month" || value === "year") return value;
+    // Migrate legacy "previousWeek" → "week" with offset -1
+    if (value === "previousWeek") {
+      this.plugin.settings.calendarPeriod = "week";
+      this.plugin.settings.calendarOffset = -1;
+      void this.plugin.saveSettings();
+      return "week";
+    }
+    return "today";
   }
 
   private set period(value: CalendarPeriod) {
     if (this.plugin.settings.calendarPeriod === value) return;
     this.plugin.settings.calendarPeriod = value;
+    this.plugin.settings.calendarOffset = 0;
+    void this.plugin.saveSettings();
+  }
+
+  private get offset(): number {
+    return this.plugin.settings.calendarOffset ?? 0;
+  }
+
+  private set offset(value: number) {
+    if (this.plugin.settings.calendarOffset === value) return;
+    this.plugin.settings.calendarOffset = value;
     void this.plugin.saveSettings();
   }
 
@@ -166,9 +201,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     contentEl.addClass("frontmatter-outline-view");
 
     this.loadTreePanelState();
-    // Sync range from calendar period
-    this.calendarTreeState.range = this.period;
     this.calendarTreeState.trackedOnly = true;
+
+    const calendarWindow = this.getCalendarWindow(new Date());
+    const calendarEntries = this.gatherCalendarEntries(calendarWindow);
+    this.calendarTreeState.range = this.getTreeRange();
 
     // Header with title and period toggle
     const header = contentEl.createEl("div", { cls: "fmo-header" });
@@ -191,6 +228,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       });
     }
 
+    // Navigation row (for week/month/year)
+    if (this.period !== "today") {
+      this.renderNavigation(header, calendarWindow);
+    }
+
     // Two-column layout
     const layout = contentEl.createEl("div", { cls: "fmo-calendar-layout" });
     const sidebar = layout.createEl("div", { cls: "fmo-calendar-sidebar" });
@@ -200,41 +242,49 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     this.attachSidebarResize(divider, sidebar);
 
     // Build stable color map from ALL concerns with entries in this period.
-    // Computed once per render() so colors don't shift on collapse/expand/filter.
-    this.calendarColorMap = this.buildColorMap(this.gatherCalendarEntries());
+    this.calendarColorMap = this.buildColorMap(calendarEntries);
 
     // Function to render the calendar main area with filtered entries
     const renderCalendarMain = (visiblePaths: Set<string> | null): void => {
       this.currentVisiblePaths = visiblePaths ? new Set(visiblePaths) : null;
       main.empty();
-      const allEntries = this.gatherCalendarEntries();
       let entries = visiblePaths
-        ? allEntries.filter((e) => visiblePaths.has(e.path))
-        : allEntries;
+        ? calendarEntries.filter((e) => visiblePaths.has(e.path))
+        : calendarEntries;
 
       entries = this.remapCollapsedEntries(entries);
       const highlightedDisplayPaths = this.remapPathsToDisplay(this.hoveredPaths);
 
-      if (entries.length === 0) {
-        main.createEl("p", {
-          cls: "fmo-empty",
-          text: "No tracked time in this period yet. Drag on the grid to add a segment."
-        });
+      switch (this.period) {
+        case "today":
+          if (entries.length === 0) {
+            main.createEl("p", { cls: "fmo-empty", text: "No tracked time today. Drag on the grid to add a segment." });
+          }
+          this.renderDayTimeline(main, entries, this.calendarColorMap, highlightedDisplayPaths);
+          break;
+        case "week":
+          if (entries.length === 0) {
+            main.createEl("p", { cls: "fmo-empty", text: "No tracked time this week. Drag on the grid to add a segment." });
+          }
+          this.renderWeekGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths);
+          break;
+        case "month":
+          this.renderMonthGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths, calendarWindow);
+          break;
+        case "year":
+          this.renderYearHeatmap(main, entries, calendarWindow);
+          break;
       }
 
-      if (this.period === "today") {
-        this.renderDayTimeline(main, entries, this.calendarColorMap, highlightedDisplayPaths);
-      } else {
-        this.renderWeekGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths);
+      // Drag handle to resize the grid vertically (only for day/week views)
+      if (this.period === "today" || this.period === "week") {
+        const gridEl = main.querySelector<HTMLElement>(".fmo-calendar-timeline, .fmo-calendar-week-wrapper");
+        if (gridEl) {
+          this.attachResizeHandle(main, gridEl);
+        }
       }
 
-      // Drag handle to resize the grid vertically
-      const gridEl = main.querySelector<HTMLElement>(".fmo-calendar-timeline, .fmo-calendar-week-wrapper");
-      if (gridEl) {
-        this.attachResizeHandle(main, gridEl);
-      }
-
-      const totalSeconds = entries.reduce((sum, e) => sum + e.entry.durationMinutes * 60, 0);
+      const totalSeconds = this.getEntryTotalSeconds(entries);
       this.calendarTreePanel?.setStatusText(`total: ${this.plugin.formatShortDuration(totalSeconds)}`);
     };
 
@@ -244,6 +294,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       container: sidebar,
       initialPreviewScrollTop: this.calendarTreePanelScrollTop,
       state: { ...this.calendarTreeState },
+      customWindow: calendarWindow,
       hideControls: { range: true, trackedOnly: true },
       onChange: (visiblePaths, newState) => {
         this.calendarTreeState = {
@@ -263,9 +314,165 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     renderCalendarMain(this.calendarTreePanel.getVisiblePaths());
   }
 
-  private gatherCalendarEntries(): CalendarEntry[] {
-    const now = new Date();
-    const window = this.getCalendarWindow(now);
+  private getTreeRange(): OutlineTimeRange {
+    switch (this.period) {
+      case "today":
+        return "today";
+      case "week":
+        if (this.offset === 0) return "week";
+        if (this.offset === -1) return "previousWeek";
+        break;
+      case "month":
+        if (this.offset === 0) return "month";
+        break;
+      case "year":
+        break;
+    }
+
+    // For custom offsets, fall back to "all"; customWindow handles actual filtering.
+    return "all";
+  }
+
+  private renderNavigation(
+    header: HTMLElement,
+    calendarWindow: TimeWindow
+  ): void {
+    const nav = header.createEl("div", { cls: "fmo-calendar-nav" });
+
+    const prevBtn = nav.createEl("button", {
+      cls: "fmo-calendar-nav-btn",
+      attr: { type: "button", "aria-label": "Previous" }
+    });
+    prevBtn.setText("\u2039");
+    prevBtn.addEventListener("click", () => {
+      this.offset = this.offset - 1;
+      void this.render();
+    });
+
+    const label = nav.createEl("button", {
+      cls: "fmo-calendar-nav-label",
+      attr: { type: "button", "aria-label": "Go to current" }
+    });
+    label.setText(this.getNavigationLabel(calendarWindow));
+    if (this.offset !== 0) label.addClass("fmo-calendar-nav-label-offset");
+    label.addEventListener("click", () => {
+      if (this.offset === 0) return;
+      this.offset = 0;
+      void this.render();
+    });
+
+    const nextBtn = nav.createEl("button", {
+      cls: "fmo-calendar-nav-btn",
+      attr: { type: "button", "aria-label": "Next" }
+    });
+    nextBtn.setText("\u203A");
+    nextBtn.disabled = this.offset >= 0;
+    nextBtn.addEventListener("click", () => {
+      if (this.offset >= 0) return;
+      this.offset = this.offset + 1;
+      void this.render();
+    });
+  }
+
+  private getNavigationLabel(window: TimeWindow): string {
+    const start = new Date(window.startMs);
+    if (this.period === "year") {
+      return `${start.getFullYear()}`;
+    }
+    if (this.period === "month") {
+      return `${MONTH_NAMES[start.getMonth()]} ${start.getFullYear()}`;
+    }
+    // week
+    const end = new Date(window.endMs - 1);
+    const startStr = `${MONTH_NAMES[start.getMonth()].slice(0, 3)} ${start.getDate()}`;
+    if (start.getMonth() === end.getMonth()) {
+      return `${startStr}\u2013${end.getDate()}, ${start.getFullYear()}`;
+    }
+    const endStr = `${MONTH_NAMES[end.getMonth()].slice(0, 3)} ${end.getDate()}`;
+    if (start.getFullYear() === end.getFullYear()) {
+      return `${startStr} \u2013 ${endStr}, ${start.getFullYear()}`;
+    }
+    return `${startStr}, ${start.getFullYear()} \u2013 ${endStr}, ${end.getFullYear()}`;
+  }
+
+  private getDateKey(date: Date): string {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+
+  private getWeekdayLabels(): string[] {
+    return this.plugin.settings.weekStartsOn === "sunday"
+      ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+      : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  }
+
+  private getEntryTotalSeconds(entries: CalendarEntry[]): number {
+    return entries.reduce((sum, entry) => sum + entry.entry.durationMinutes * 60, 0);
+  }
+
+  private getMaxBucketSeconds(dayBuckets: Map<string, CalendarDayBucket>): number {
+    let maxSeconds = 0;
+    for (const bucket of dayBuckets.values()) {
+      if (bucket.totalSeconds > maxSeconds) maxSeconds = bucket.totalSeconds;
+    }
+    return maxSeconds;
+  }
+
+  private getIntensityRatio(totalSeconds: number, maxSeconds: number): number {
+    if (totalSeconds <= 0 || maxSeconds <= 0) return 0;
+    return totalSeconds / maxSeconds;
+  }
+
+  private getYearHeatmapLevel(totalSeconds: number, maxSeconds: number): string {
+    const intensity = this.getIntensityRatio(totalSeconds, maxSeconds);
+    if (intensity > 0.75) return "4";
+    if (intensity > 0.5) return "3";
+    if (intensity > 0.25) return "2";
+    if (intensity > 0) return "1";
+    return "0";
+  }
+
+  private buildDayBuckets(
+    entries: CalendarEntry[],
+    window: TimeWindow
+  ): Map<string, CalendarDayBucket> {
+    const buckets = new Map<string, CalendarDayBucket>();
+
+    for (const entry of entries) {
+      const entryStartMs = Math.max(entry.entry.startMs, window.startMs);
+      const entryEndMs = Math.min(
+        entry.entry.startMs + entry.entry.durationMinutes * 60_000,
+        window.endMs
+      );
+      if (entryEndMs <= entryStartMs) continue;
+
+      let cursorMs = entryStartMs;
+      while (cursorMs < entryEndMs) {
+        const dayStart = this.plugin.getDayStart(new Date(cursorMs));
+        const nextDayStart = new Date(dayStart.getTime());
+        nextDayStart.setDate(nextDayStart.getDate() + 1);
+        const segmentEndMs = Math.min(entryEndMs, nextDayStart.getTime());
+        const segmentSeconds = Math.floor((segmentEndMs - cursorMs) / 1000);
+        if (segmentSeconds > 0) {
+          const key = this.getDateKey(dayStart);
+          let bucket = buckets.get(key);
+          if (!bucket) {
+            bucket = { totalSeconds: 0, secondsByPath: new Map() };
+            buckets.set(key, bucket);
+          }
+          bucket.totalSeconds += segmentSeconds;
+          bucket.secondsByPath.set(
+            entry.path,
+            (bucket.secondsByPath.get(entry.path) ?? 0) + segmentSeconds
+          );
+        }
+        cursorMs = segmentEndMs;
+      }
+    }
+
+    return buckets;
+  }
+
+  private gatherCalendarEntries(window: TimeWindow): CalendarEntry[] {
     const result: CalendarEntry[] = [];
 
     for (const task of this.plugin.getTaskTreeItems()) {
@@ -279,8 +486,29 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     return result.sort((a, b) => a.entry.startMs - b.entry.startMs);
   }
 
-  private getCalendarWindow(now: Date): { startMs: number; endMs: number } {
-    return this.plugin.getWindowForRange(this.period, now);
+  private getCalendarWindow(now: Date): TimeWindow {
+    switch (this.period) {
+      case "today":
+        return this.plugin.getWindowForRange("today", now);
+      case "week": {
+        const weekStart = this.plugin.getWeekStart(now);
+        weekStart.setDate(weekStart.getDate() + this.offset * 7);
+        const weekEnd = new Date(weekStart.getTime());
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        return { startMs: weekStart.getTime(), endMs: weekEnd.getTime() };
+      }
+      case "month": {
+        const start = new Date(now.getFullYear(), now.getMonth() + this.offset, 1, 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth() + this.offset + 1, 1, 0, 0, 0, 0);
+        return { startMs: start.getTime(), endMs: end.getTime() };
+      }
+      case "year": {
+        const year = now.getFullYear() + this.offset;
+        const start = new Date(year, 0, 1, 0, 0, 0, 0);
+        const end = new Date(year + 1, 0, 1, 0, 0, 0, 0);
+        return { startMs: start.getTime(), endMs: end.getTime() };
+      }
+    }
   }
 
   private attachDragResize(
@@ -553,9 +781,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const now = new Date();
     const weekWindow = this.getCalendarWindow(now);
     const weekStartMs = weekWindow.startMs;
-    const dayNames = this.plugin.settings.weekStartsOn === "sunday"
-      ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-      : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const dayNames = this.getWeekdayLabels();
 
     const dayEntries: CalendarEntry[][] = Array.from({ length: 7 }, () => []);
     for (const e of entries) {
@@ -569,9 +795,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const pxPerHour = this.pxPerHour;
     const hourRange = this.computeHourRange(entries);
     const gridHeight = (hourRange.maxHour - hourRange.minHour) * pxPerHour;
-    const todayMs = this.period === "week"
-      ? this.plugin.getDayStart(now).getTime()
-      : -1;
+    const todayMs = this.plugin.getDayStart(now).getTime();
+    const todayInRange = todayMs >= weekStartMs && todayMs < weekStartMs + 7 * DAY_MS;
 
     const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-week-wrapper" });
 
@@ -585,7 +810,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     for (let d = 0; d < 7; d++) {
       const dayMs = weekStartMs + d * DAY_MS;
-      const isToday = dayMs === todayMs;
+      const isToday = todayInRange && dayMs === todayMs;
 
       const col = grid.createEl("div", { cls: "fmo-calendar-week-col" });
 
@@ -594,7 +819,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         text: `${dayNames[d] ?? ""} ${pad2(new Date(dayMs).getDate())}`
       });
 
-      const total = dayEntries[d].reduce((s, e) => s + e.entry.durationMinutes * 60, 0);
+      const total = this.getEntryTotalSeconds(dayEntries[d]);
       const totalLabel = total > 0 ? this.plugin.formatShortDuration(total) : "";
       col.createEl("div", {
         cls: "fmo-calendar-day-total-top",
@@ -624,6 +849,200 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         cls: "fmo-calendar-day-total",
         text: totalLabel
       });
+    }
+  }
+
+  private renderMonthGrid(
+    containerEl: HTMLElement,
+    entries: CalendarEntry[],
+    colorMap: Map<string, string>,
+    highlightedPaths: Set<string> | null,
+    window: TimeWindow
+  ): void {
+    const now = new Date();
+    const monthStart = new Date(window.startMs);
+    const year = monthStart.getFullYear();
+    const month = monthStart.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const dayNames = this.getWeekdayLabels();
+
+    // First day of month's weekday offset
+    const firstDayDate = new Date(year, month, 1);
+    const firstWeekday = firstDayDate.getDay(); // 0=Sun
+    const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
+    const startOffset = (firstWeekday - weekStartsOn + 7) % 7;
+
+    const dayBuckets = this.buildDayBuckets(entries, window);
+    const maxSeconds = this.getMaxBucketSeconds(dayBuckets);
+
+    const todayMs = this.plugin.getDayStart(now).getTime();
+
+    const grid = containerEl.createEl("div", { cls: "fmo-calendar-month-grid" });
+
+    // Day name headers
+    for (const name of dayNames) {
+      grid.createEl("div", { cls: "fmo-calendar-month-header", text: name });
+    }
+
+    // Leading empty cells
+    for (let i = 0; i < startOffset; i++) {
+      grid.createEl("div", { cls: "fmo-calendar-month-cell fmo-calendar-month-cell-empty" });
+    }
+
+    // Day cells
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayMs = new Date(year, month, d, 0, 0, 0, 0).getTime();
+      const isToday = dayMs === todayMs;
+      const bucket = dayBuckets.get(this.getDateKey(new Date(dayMs)));
+      const totalSeconds = bucket?.totalSeconds ?? 0;
+      const intensity = this.getIntensityRatio(totalSeconds, maxSeconds);
+
+      const cell = grid.createEl("div", {
+        cls: isToday
+          ? "fmo-calendar-month-cell fmo-calendar-month-cell-today"
+          : "fmo-calendar-month-cell"
+      });
+
+      if (totalSeconds > 0) {
+        cell.style.backgroundColor = `color-mix(in srgb, var(--interactive-accent) ${Math.round(8 + intensity * 42)}%, transparent)`;
+      }
+
+      const dayLabel = cell.createEl("div", { cls: "fmo-calendar-month-day-num", text: `${d}` });
+      if (isToday) dayLabel.addClass("fmo-calendar-day-today");
+
+      if (totalSeconds > 0) {
+        cell.createEl("div", {
+          cls: "fmo-calendar-month-day-time",
+          text: this.plugin.formatShortDuration(totalSeconds)
+        });
+
+        // Colored concern bars
+        const bars = cell.createEl("div", { cls: "fmo-calendar-month-day-bars" });
+        const secondsByPath = bucket?.secondsByPath ?? new Map<string, number>();
+        for (const [path, secs] of [...secondsByPath.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) {
+          const bar = bars.createEl("div", { cls: "fmo-calendar-month-day-bar" });
+          const color = colorMap.get(path) ?? CALENDAR_COLORS[0];
+          bar.style.backgroundColor = color;
+          const ratio = totalSeconds > 0 ? secs / totalSeconds : 0;
+          bar.style.flex = `${ratio}`;
+          if (highlightedPaths) {
+            bar.style.opacity = highlightedPaths.has(path) ? "1" : "0.2";
+          }
+        }
+      }
+
+      cell.title = totalSeconds > 0
+        ? `${MONTH_NAMES[month]} ${d}: ${this.plugin.formatShortDuration(totalSeconds)}`
+        : `${MONTH_NAMES[month]} ${d}`;
+    }
+  }
+
+  private buildYearWeeks(year: number): CalendarYearSlot[][] {
+    const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
+    const weeks: CalendarYearSlot[][] = [];
+    let currentDate = new Date(year, 0, 1);
+    const yearEnd = new Date(year + 1, 0, 1);
+
+    const firstDayOfWeek = (currentDate.getDay() - weekStartsOn + 7) % 7;
+    let currentWeek: CalendarYearSlot[] = Array.from({ length: firstDayOfWeek }, () => null);
+
+    while (currentDate < yearEnd) {
+      const dayOfWeek = (currentDate.getDay() - weekStartsOn + 7) % 7;
+      if (dayOfWeek === 0 && currentWeek.length > 0) {
+        while (currentWeek.length < 7) currentWeek.push(null);
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+      currentWeek.push({ date: new Date(currentDate), key: this.getDateKey(currentDate) });
+      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 1);
+    }
+
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) currentWeek.push(null);
+      weeks.push(currentWeek);
+    }
+
+    return weeks;
+  }
+
+  private getMonthStartWeekByIndex(weeks: CalendarYearSlot[][]): Map<number, number> {
+    const monthStartWeekByIndex = new Map<number, number>();
+    for (let weekIndex = 0; weekIndex < weeks.length; weekIndex++) {
+      for (const slot of weeks[weekIndex]) {
+        if (slot && slot.date.getDate() === 1) {
+          monthStartWeekByIndex.set(slot.date.getMonth(), weekIndex);
+          break;
+        }
+      }
+    }
+    return monthStartWeekByIndex;
+  }
+
+  private renderYearHeatmap(
+    containerEl: HTMLElement,
+    entries: CalendarEntry[],
+    window: TimeWindow
+  ): void {
+    const now = new Date();
+    const yearStart = new Date(window.startMs);
+    const year = yearStart.getFullYear();
+    const dayBuckets = this.buildDayBuckets(entries, window);
+    const maxSeconds = this.getMaxBucketSeconds(dayBuckets);
+    const dayLabels = this.getWeekdayLabels();
+
+    const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-year-wrapper" });
+    const weeks = this.buildYearWeeks(year);
+
+    const monthLabelRow = wrapper.createEl("div", { cls: "fmo-calendar-year-month-row" });
+    monthLabelRow.createEl("div", { cls: "fmo-calendar-year-day-label-spacer" });
+    const monthTrack = monthLabelRow.createEl("div", { cls: "fmo-calendar-year-month-track" });
+    monthTrack.style.setProperty("--year-cols", `${weeks.length}`);
+    const monthStartWeekByIndex = this.getMonthStartWeekByIndex(weeks);
+    for (let monthIdx = 0; monthIdx < MONTH_NAMES.length; monthIdx++) {
+      const weekIndex = monthStartWeekByIndex.get(monthIdx);
+      if (weekIndex == null) continue;
+      const monthLabel = monthTrack.createEl("div", {
+        cls: "fmo-calendar-year-month-label",
+        text: MONTH_NAMES[monthIdx].slice(0, 3)
+      });
+      monthLabel.style.gridColumn = `${weekIndex + 1}`;
+    }
+
+    const todayKey = this.getDateKey(this.plugin.getDayStart(now));
+
+    const body = wrapper.createEl("div", { cls: "fmo-calendar-year-body" });
+    const dayLabelColumn = body.createEl("div", { cls: "fmo-calendar-year-day-labels" });
+    for (let row = 0; row < 7; row++) {
+      dayLabelColumn.createEl("div", {
+        cls: "fmo-calendar-year-day-label",
+        text: row % 2 === 0 ? dayLabels[row] : ""
+      });
+    }
+
+    const grid = body.createEl("div", { cls: "fmo-calendar-year-grid" });
+    for (let w = 0; w < weeks.length; w++) {
+      const weekEl = grid.createEl("div", { cls: "fmo-calendar-year-week" });
+      for (let row = 0; row < 7; row++) {
+        const slot = weeks[w][row];
+        const cell = weekEl.createEl("div", { cls: "fmo-calendar-year-cell" });
+
+        if (!slot) {
+          cell.addClass("fmo-calendar-year-cell-empty");
+          continue;
+        }
+
+        const totalSeconds = dayBuckets.get(slot.key)?.totalSeconds ?? 0;
+        cell.dataset.level = this.getYearHeatmapLevel(totalSeconds, maxSeconds);
+
+        if (slot.key === todayKey) {
+          cell.addClass("fmo-calendar-year-cell-today");
+        }
+
+        const d = slot.date;
+        const timeStr = totalSeconds > 0 ? ` (${this.plugin.formatShortDuration(totalSeconds)})` : "";
+        cell.title = `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}${timeStr}`;
+      }
     }
   }
 

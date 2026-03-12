@@ -17,7 +17,8 @@ export interface LifeDashboardSettings {
   timerNotificationRules: string;
   macOsTrayTimerEnabled: boolean;
   canvasDraftState: string;
-  calendarPeriod: "today" | "week" | "previousWeek";
+  calendarPeriod: "today" | "week" | "previousWeek" | "month" | "year";
+  calendarOffset: number;
   calendarZoom: number;
   calendarTreePanelState: string;
   kanbanDefaultColumnProperty: string;
@@ -47,6 +48,7 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   macOsTrayTimerEnabled: false,
   canvasDraftState: "",
   calendarPeriod: "today",
+  calendarOffset: 0,
   calendarZoom: 1,
   calendarTreePanelState: "",
   kanbanDefaultColumnProperty: "status",

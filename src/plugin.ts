@@ -1488,6 +1488,25 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.timeWindowService.getDayStart(value);
   }
 
+  getTrackedSecondsForWindow(path: string, window: TimeWindow): number {
+    const entries = this.getEntriesForPath(path);
+    if (entries.length === 0) return 0;
+    return this.sumSecondsInWindow(entries, window);
+  }
+
+  getLatestTrackedStartMsForWindow(path: string, window: TimeWindow): number {
+    const entries = this.getEntriesForPath(path);
+    if (entries.length === 0) return 0;
+    let latest = 0;
+    for (const entry of entries) {
+      const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, window);
+      if (overlapStartMs != null && overlapStartMs > latest) {
+        latest = overlapStartMs;
+      }
+    }
+    return latest;
+  }
+
   private sumSecondsInWindow(entries: TimeLogEntry[], window: TimeWindow): number {
     return entries.reduce((seconds, entry) => {
       return seconds + this.timeWindowService.getEntryOverlapSeconds(entry, window);

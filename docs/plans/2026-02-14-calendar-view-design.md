@@ -2,16 +2,18 @@
 
 ## Goal
 
-Add a new calendar view to the Life Dashboard plugin that shows time spent on concerns, with an adaptive layout based on the selected period (Today or This Week).
+Add a new calendar view to the Life Dashboard plugin that shows time spent on concerns, with adaptive layouts for Today, Week, Month, and Year.
 
 ## Approach
 
-Single adaptive view (`LifeDashboardCalendarView`) with a period toggle. Layout changes based on selection:
+Single adaptive view (`LifeDashboardCalendarView`) with a period toggle and previous/next navigation for non-day ranges. Layout changes based on selection:
 
 - **Today**: Vertical day timeline with colored blocks per entry
-- **This Week**: 7-column grid with stacked daily totals per concern
+- **Week**: 7-column grid with stacked daily totals per concern
+- **Month**: Month grid with per-day intensity based on tracked time
+- **Year**: GitHub-style heatmap with one square per day
 
-A summary table is always shown below the timeline/grid.
+The sidebar concern tree stays in sync with the active calendar window, including offset week/month/year navigation.
 
 ## Data
 
@@ -26,14 +28,11 @@ Reuses existing infrastructure, no new storage:
 
 ```
 ┌─────────────────────────────────────┐
-│  [Today] [This Week]                │
+│  [Today] [Week] [Month] [Year]      │
+│  [‹] Mar 2026 [›]                   │
 ├─────────────────────────────────────┤
-│  Timeline (Today) or Grid (Week)    │
-├─────────────────────────────────────┤
-│  Summary Table                      │
-│  ● Concern A .............. 2h 15m  │
-│  ● Concern B .............. 1h 30m  │
-│  Total ..................... 3h 45m  │
+│  Timeline / Week Grid / Month /     │
+│  Year Heatmap                       │
 └─────────────────────────────────────┘
 ```
 
@@ -41,15 +40,17 @@ Reuses existing infrastructure, no new storage:
 
 Vertical timeline with 24h axis cropped to active hours. Each time entry is a colored block positioned by start time, height proportional to duration. Concern name label inside or beside the block.
 
-### This Week Mode
+### Week Mode
 
 7 columns (respects `weekStartsOn` setting). Each column shows stacked colored segments proportional to time spent per concern that day. Day labels at top, total time at bottom.
 
-### Summary Table
+### Month Mode
 
-- Colored dot + concern basename (clickable, opens note) + formatted duration
-- Sorted by most time first
-- Total row at bottom
+Month grid with weekday headers, today highlighting, and background intensity based on total tracked time for that day. Small stacked color bars show which concerns contributed most to the day.
+
+### Year Mode
+
+GitHub-style contribution heatmap. Each day is a square and color intensity reflects total tracked time relative to the busiest day in the displayed year. Month labels align to the week columns and today is outlined.
 
 ## Registration
 
@@ -61,7 +62,7 @@ Vertical timeline with 24h axis cropped to active hours. Each time entry is a co
 
 ## Rendering
 
-Pure DOM manipulation, CSS classes for layout, inline styles for dynamic positioning/colors. Follows existing view patterns. Renders on open and on data changes.
+Pure DOM manipulation, CSS classes for layout, inline styles for dynamic positioning/colors. Follows existing view patterns. Renders on open, on calendar period navigation, and on data changes.
 
 ## Color Palette
 
