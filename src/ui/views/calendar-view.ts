@@ -4,6 +4,10 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   type OutlineSortMode
 } from "../../models/view-types";
+import type {
+  HealthTrackingDay,
+  HealthTrackingRangeSnapshot
+} from "../../services/health-tracking-service";
 import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange, TimeWindow } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
@@ -41,6 +45,14 @@ type CalendarGridSpec = {
   minHour: number;
   maxHour: number;
   pxPerHour: number;
+};
+
+type HealthOverviewMetric = {
+  label: string;
+  value: string;
+  sublabel: string;
+  dimmed?: boolean;
+  title?: string;
 };
 
 const CALENDAR_COLORS = [
@@ -203,8 +215,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     this.loadTreePanelState();
     this.calendarTreeState.trackedOnly = true;
 
-    const calendarWindow = this.getCalendarWindow(new Date());
+    const now = new Date();
+    const calendarWindow = this.getCalendarWindow(now);
     const calendarEntries = this.gatherCalendarEntries(calendarWindow);
+    await this.plugin.ensureHealthTrackingLoaded();
+    const healthRange = this.plugin.getHealthTrackingRangeSnapshot(calendarWindow, now);
     this.calendarTreeState.range = this.getTreeRange();
 
     // Header with title and period toggle
@@ -232,6 +247,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     if (this.period !== "today") {
       this.renderNavigation(header, calendarWindow);
     }
+    this.renderHealthOverview(header, healthRange);
 
     // Two-column layout
     const layout = contentEl.createEl("div", { cls: "fmo-calendar-layout" });
@@ -260,19 +276,19 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
           if (entries.length === 0) {
             main.createEl("p", { cls: "fmo-empty", text: "No tracked time today. Drag on the grid to add a segment." });
           }
-          this.renderDayTimeline(main, entries, this.calendarColorMap, highlightedDisplayPaths);
+          this.renderDayTimeline(main, entries, this.calendarColorMap, highlightedDisplayPaths, calendarWindow);
           break;
         case "week":
           if (entries.length === 0) {
             main.createEl("p", { cls: "fmo-empty", text: "No tracked time this week. Drag on the grid to add a segment." });
           }
-          this.renderWeekGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths);
+          this.renderWeekGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths, calendarWindow, healthRange);
           break;
         case "month":
-          this.renderMonthGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths, calendarWindow);
+          this.renderMonthGrid(main, entries, this.calendarColorMap, highlightedDisplayPaths, calendarWindow, healthRange);
           break;
         case "year":
-          this.renderYearHeatmap(main, entries, calendarWindow);
+          this.renderYearHeatmap(main, entries, calendarWindow, healthRange);
           break;
       }
 
@@ -397,6 +413,314 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private getDateKey(date: Date): string {
     return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+
+  private hasRenderableHealthData(healthRange: HealthTrackingRangeSnapshot): boolean {
+    return healthRange.daysByDateKey.size > 0
+      || healthRange.observability.sleepFiles.length > 0
+      || healthRange.observability.stepsFiles.length > 0
+      || healthRange.observability.parseErrors.length > 0;
+  }
+
+  private getHealthDay(
+    date: Date,
+    healthRange: HealthTrackingRangeSnapshot
+  ): HealthTrackingDay | null {
+    return healthRange.daysByDateKey.get(this.getDateKey(date)) ?? null;
+  }
+
+  private renderHealthOverview(
+    header: HTMLElement,
+    healthRange: HealthTrackingRangeSnapshot
+  ): void {
+    if (!this.hasRenderableHealthData(healthRange)) return;
+
+    const overview = header.createEl("div", { cls: "fmo-calendar-health-overview" });
+    const cards = overview.createEl("div", { cls: "fmo-calendar-health-cards" });
+
+    const summary = healthRange.summary;
+    const todayDay = this.period === "today"
+      ? this.getHealthDay(new Date(), healthRange)
+      : null;
+    const sleepValue = this.period === "today"
+      ? this.formatSleepDuration(todayDay?.sleepMinutes ?? null)
+      : this.formatSleepDuration(summary.averageSleepMinutes);
+    const sleepHrValue = this.period === "today"
+      ? this.formatSleepHr(todayDay?.avgSleepHr ?? null)
+      : this.formatSleepHr(summary.averageSleepHr);
+    const stepsValue = this.period === "today"
+      ? this.formatSteps(todayDay?.steps ?? null, false)
+      : this.formatSteps(summary.averageSteps, false);
+    const sleepMissing = this.period === "today"
+      ? todayDay?.sleepMinutes == null
+      : summary.averageSleepMinutes == null;
+    const sleepHrMissing = this.period === "today"
+      ? todayDay?.avgSleepHr == null
+      : summary.averageSleepHr == null;
+    const stepsMissing = this.period === "today"
+      ? todayDay?.steps == null
+      : summary.averageSteps == null;
+
+    const metrics: HealthOverviewMetric[] = [
+      {
+        label: "Sleep",
+        value: sleepValue,
+        sublabel: this.period === "today" ? "main sleep" : "avg in range",
+        dimmed: sleepMissing,
+        title: todayDay?.sleepWindowLabel ?? undefined,
+      },
+      {
+        label: "Sleep HR",
+        value: sleepHrValue,
+        sublabel: this.period === "today" ? "avg during sleep" : "range avg",
+        dimmed: sleepHrMissing,
+      },
+      {
+        label: "Steps",
+        value: stepsValue,
+        sublabel: this.period === "today" ? "today so far" : "avg in range",
+        dimmed: stepsMissing,
+      },
+      {
+        label: "Coverage",
+        value: this.getHealthCoverageLabel(healthRange),
+        sublabel: this.getHealthCoverageSublabel(healthRange),
+        title: this.getHealthCoverageTitle(healthRange),
+      },
+    ];
+
+    for (const metric of metrics) {
+      this.renderHealthOverviewCard(cards, metric);
+    }
+  }
+
+  private renderHealthOverviewCard(
+    container: HTMLElement,
+    metric: HealthOverviewMetric
+  ): void {
+    const card = container.createEl("div", {
+      cls: metric.dimmed
+        ? "fmo-calendar-health-card fmo-calendar-health-card-dimmed"
+        : "fmo-calendar-health-card",
+    });
+    if (metric.title) card.title = metric.title;
+
+    card.createEl("div", {
+      cls: "fmo-calendar-health-card-label",
+      text: metric.label
+    });
+    card.createEl("div", {
+      cls: "fmo-calendar-health-card-value",
+      text: metric.value
+    });
+    card.createEl("div", {
+      cls: "fmo-calendar-health-card-sub",
+      text: metric.sublabel
+    });
+  }
+
+  private renderMonthHealthSignals(
+    container: HTMLElement,
+    healthDay: HealthTrackingDay | null
+  ): void {
+    if (!healthDay || (healthDay.sleepMinutes == null && healthDay.steps == null)) return;
+
+    const signals = container.createEl("div", { cls: "fmo-calendar-month-signals" });
+
+    if (healthDay.sleepMinutes != null) {
+      this.renderMonthHealthChip(signals, {
+        label: "Sleep",
+        value: this.formatSleepDuration(healthDay.sleepMinutes),
+        sublabel: this.formatSleepHr(healthDay.avgSleepHr),
+        title: this.buildSleepChipTitle(healthDay),
+      });
+    }
+
+    if (healthDay.steps != null) {
+      this.renderMonthHealthChip(signals, {
+        label: "Steps",
+        value: this.formatSteps(healthDay.steps, true),
+        title: `Steps: ${this.formatSteps(healthDay.steps, false)}`,
+      });
+    }
+  }
+
+  private renderWeekHealthAxis(container: HTMLElement): void {
+    const axisHead = container.createEl("div", { cls: "fmo-calendar-week-axis-head" });
+    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-spacer" });
+    axisHead.createEl("div", {
+      cls: "fmo-calendar-week-axis-label",
+      text: "sleep"
+    });
+    axisHead.createEl("div", {
+      cls: "fmo-calendar-week-axis-label",
+      text: "steps"
+    });
+    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-total-spacer" });
+  }
+
+  private renderWeekHealthCells(
+    container: HTMLElement,
+    healthDay: HealthTrackingDay | null
+  ): void {
+    const stack = container.createEl("div", { cls: "fmo-calendar-week-health-stack" });
+
+    this.renderWeekHealthCell(
+      stack,
+      healthDay?.sleepMinutes != null ? this.formatSleepDuration(healthDay.sleepMinutes) : "\u2014",
+      healthDay?.avgSleepHr != null ? this.formatSleepHr(healthDay.avgSleepHr) : null,
+      healthDay ? this.buildSleepChipTitle(healthDay) : null,
+      healthDay?.sleepMinutes == null
+    );
+    this.renderWeekHealthCell(
+      stack,
+      healthDay?.steps != null ? this.formatSteps(healthDay.steps, true) : "\u2014",
+      null,
+      healthDay?.steps != null ? `Steps: ${this.formatSteps(healthDay.steps, false)}` : null,
+      healthDay?.steps == null
+    );
+  }
+
+  private renderWeekHealthCell(
+    container: HTMLElement,
+    value: string,
+    sublabel: string | null,
+    title: string | null,
+    dimmed: boolean
+  ): void {
+    const cell = container.createEl("div", {
+      cls: dimmed
+        ? "fmo-calendar-week-health-cell fmo-calendar-week-health-cell-dimmed"
+        : "fmo-calendar-week-health-cell"
+    });
+    if (title) cell.title = title;
+
+    cell.createEl("div", {
+      cls: "fmo-calendar-week-health-value",
+      text: value
+    });
+    if (sublabel) {
+      cell.createEl("div", {
+        cls: "fmo-calendar-week-health-sub",
+        text: sublabel
+      });
+    }
+  }
+
+  private renderMonthHealthChip(
+    container: HTMLElement,
+    options: {
+      label: string;
+      value: string;
+      sublabel?: string;
+      title?: string;
+    }
+  ): void {
+    const chip = container.createEl("div", {
+      cls: "fmo-calendar-health-chip fmo-calendar-health-chip-compact"
+    });
+    if (options.title) chip.title = options.title;
+
+    chip.createEl("span", {
+      cls: "fmo-calendar-health-chip-label",
+      text: options.label
+    });
+    chip.createEl("span", {
+      cls: "fmo-calendar-health-chip-value",
+      text: options.value
+    });
+    if (options.sublabel) {
+      chip.createEl("span", {
+        cls: "fmo-calendar-health-chip-sub",
+        text: options.sublabel
+      });
+    }
+  }
+
+  private buildSleepChipTitle(healthDay: HealthTrackingDay): string {
+    const parts = [`Sleep: ${this.formatSleepDuration(healthDay.sleepMinutes)}`];
+    if (healthDay.avgSleepHr != null) {
+      parts.push(`Avg sleep HR: ${this.formatSleepHr(healthDay.avgSleepHr)}`);
+    }
+    if (healthDay.sleepWindowLabel) {
+      parts.push(`Window: ${healthDay.sleepWindowLabel}`);
+    }
+    return parts.join(" | ");
+  }
+
+  private getHealthCoverageLabel(healthRange: HealthTrackingRangeSnapshot): string {
+    const total = Math.max(healthRange.summary.activeDayCount, 1);
+    return `sleep ${healthRange.summary.sleepDays}/${total} | steps ${healthRange.summary.stepsDays}/${total}`;
+  }
+
+  private getHealthCoverageSublabel(healthRange: HealthTrackingRangeSnapshot): string {
+    const issueCount = healthRange.observability.parseErrors.length;
+    if (issueCount <= 0) return "Me/Tracking";
+    return issueCount === 1 ? "Me/Tracking | 1 issue" : `Me/Tracking | ${issueCount} issues`;
+  }
+
+  private getHealthCoverageTitle(healthRange: HealthTrackingRangeSnapshot): string {
+    const parts = [
+      `Sleep files: ${healthRange.observability.sleepFiles.length > 0 ? healthRange.observability.sleepFiles.map((path) => path.split("/").pop() ?? path).join(", ") : "none"}`,
+      `Steps files: ${healthRange.observability.stepsFiles.length > 0 ? healthRange.observability.stepsFiles.map((path) => path.split("/").pop() ?? path).join(", ") : "none"}`,
+      `Rows loaded: sleep ${healthRange.observability.sleepRows}, steps ${healthRange.observability.stepsRows}`
+    ];
+
+    if (healthRange.observability.parseErrors.length > 0) {
+      parts.push(`Issues: ${healthRange.observability.parseErrors.join(" | ")}`);
+    }
+
+    return parts.join("\n");
+  }
+
+  private buildCalendarDayTitle(
+    year: number,
+    monthIndex: number,
+    dayOfMonth: number,
+    totalSeconds: number,
+    healthDay: HealthTrackingDay | null
+  ): string {
+    const parts = [`${MONTH_NAMES[monthIndex]} ${dayOfMonth}, ${year}`];
+    if (totalSeconds > 0) {
+      parts.push(`Tracked time: ${this.plugin.formatShortDuration(totalSeconds)}`);
+    }
+    if (healthDay?.sleepMinutes != null) {
+      parts.push(`Sleep: ${this.formatSleepDuration(healthDay.sleepMinutes)}`);
+    }
+    if (healthDay?.avgSleepHr != null) {
+      parts.push(`Avg sleep HR: ${this.formatSleepHr(healthDay.avgSleepHr)}`);
+    }
+    if (healthDay?.sleepWindowLabel) {
+      parts.push(`Sleep window: ${healthDay.sleepWindowLabel}`);
+    }
+    if (healthDay?.steps != null) {
+      parts.push(`Steps: ${this.formatSteps(healthDay.steps, false)}`);
+    }
+    return parts.join("\n");
+  }
+
+  private formatSleepDuration(minutes: number | null): string {
+    if (minutes == null || !Number.isFinite(minutes)) return "No data";
+    const rounded = Math.max(0, Math.round(minutes));
+    const hours = Math.floor(rounded / 60);
+    const mins = rounded % 60;
+    if (hours === 0) return `${mins}m`;
+    if (mins === 0) return `${hours}h`;
+    return `${hours}h ${mins}m`;
+  }
+
+  private formatSleepHr(value: number | null): string {
+    if (value == null || !Number.isFinite(value)) return "No data";
+    return `${Math.round(value)} bpm`;
+  }
+
+  private formatSteps(value: number | null, compact: boolean): string {
+    if (value == null || !Number.isFinite(value)) return "No data";
+    const rounded = Math.max(0, Math.round(value));
+    if (!compact) return rounded.toLocaleString();
+    if (rounded < 1000) return `${rounded}`;
+    const compactValue = (rounded / 1000).toFixed(1);
+    return `${compactValue.replace(/\.0$/, "")}k`;
   }
 
   private getWeekdayLabels(): string[] {
@@ -751,12 +1075,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     containerEl: HTMLElement,
     entries: CalendarEntry[],
     colorMap: Map<string, string>,
-    highlightedPaths: Set<string> | null
+    highlightedPaths: Set<string> | null,
+    window: TimeWindow
   ): void {
     const pxPerHour = this.pxPerHour;
     const hourRange = this.computeHourRange(entries);
     const gridHeight = (hourRange.maxHour - hourRange.minHour) * pxPerHour;
-    const dayStartMs = this.plugin.getDayStart(new Date()).getTime();
+    const dayStartMs = window.startMs;
 
     const timeline = containerEl.createEl("div", { cls: "fmo-calendar-timeline" });
     timeline.style.height = `${gridHeight}px`;
@@ -776,11 +1101,12 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     containerEl: HTMLElement,
     entries: CalendarEntry[],
     colorMap: Map<string, string>,
-    highlightedPaths: Set<string> | null
+    highlightedPaths: Set<string> | null,
+    window: TimeWindow,
+    healthRange: HealthTrackingRangeSnapshot
   ): void {
     const now = new Date();
-    const weekWindow = this.getCalendarWindow(now);
-    const weekStartMs = weekWindow.startMs;
+    const weekStartMs = window.startMs;
     const dayNames = this.getWeekdayLabels();
 
     const dayEntries: CalendarEntry[][] = Array.from({ length: 7 }, () => []);
@@ -802,8 +1128,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     // Hour axis
     const hourAxis = wrapper.createEl("div", { cls: "fmo-calendar-week-hour-axis" });
-    hourAxis.style.height = `${gridHeight}px`;
-    this.renderHourLabelsAndGridlines(hourAxis, hourRange, pxPerHour, "fmo-calendar-hour-label");
+    this.renderWeekHealthAxis(hourAxis);
+    const hourAxisBody = hourAxis.createEl("div", { cls: "fmo-calendar-week-hour-axis-body" });
+    hourAxisBody.style.height = `${gridHeight}px`;
+    this.renderHourLabelsAndGridlines(hourAxisBody, hourRange, pxPerHour, "fmo-calendar-hour-label");
 
     // Day columns
     const grid = wrapper.createEl("div", { cls: "fmo-calendar-week-grid" });
@@ -818,6 +1146,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         cls: isToday ? "fmo-calendar-day-label fmo-calendar-day-today" : "fmo-calendar-day-label",
         text: `${dayNames[d] ?? ""} ${pad2(new Date(dayMs).getDate())}`
       });
+
+      const dayDate = new Date(dayMs);
+      this.renderWeekHealthCells(col, this.getHealthDay(dayDate, healthRange));
 
       const total = this.getEntryTotalSeconds(dayEntries[d]);
       const totalLabel = total > 0 ? this.plugin.formatShortDuration(total) : "";
@@ -857,7 +1188,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     entries: CalendarEntry[],
     colorMap: Map<string, string>,
     highlightedPaths: Set<string> | null,
-    window: TimeWindow
+    window: TimeWindow,
+    healthRange: HealthTrackingRangeSnapshot
   ): void {
     const now = new Date();
     const monthStart = new Date(window.startMs);
@@ -894,7 +1226,10 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     for (let d = 1; d <= daysInMonth; d++) {
       const dayMs = new Date(year, month, d, 0, 0, 0, 0).getTime();
       const isToday = dayMs === todayMs;
-      const bucket = dayBuckets.get(this.getDateKey(new Date(dayMs)));
+      const dayDate = new Date(dayMs);
+      const dateKey = this.getDateKey(dayDate);
+      const bucket = dayBuckets.get(dateKey);
+      const healthDay = this.getHealthDay(dayDate, healthRange);
       const totalSeconds = bucket?.totalSeconds ?? 0;
       const intensity = this.getIntensityRatio(totalSeconds, maxSeconds);
 
@@ -916,7 +1251,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
           cls: "fmo-calendar-month-day-time",
           text: this.plugin.formatShortDuration(totalSeconds)
         });
+      }
 
+      this.renderMonthHealthSignals(cell, healthDay);
+
+      if (totalSeconds > 0) {
         // Colored concern bars
         const bars = cell.createEl("div", { cls: "fmo-calendar-month-day-bars" });
         const secondsByPath = bucket?.secondsByPath ?? new Map<string, number>();
@@ -932,9 +1271,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         }
       }
 
-      cell.title = totalSeconds > 0
-        ? `${MONTH_NAMES[month]} ${d}: ${this.plugin.formatShortDuration(totalSeconds)}`
-        : `${MONTH_NAMES[month]} ${d}`;
+      cell.title = this.buildCalendarDayTitle(year, month, d, totalSeconds, healthDay);
     }
   }
 
@@ -982,7 +1319,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private renderYearHeatmap(
     containerEl: HTMLElement,
     entries: CalendarEntry[],
-    window: TimeWindow
+    window: TimeWindow,
+    healthRange: HealthTrackingRangeSnapshot
   ): void {
     const now = new Date();
     const yearStart = new Date(window.startMs);
@@ -1040,8 +1378,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         }
 
         const d = slot.date;
-        const timeStr = totalSeconds > 0 ? ` (${this.plugin.formatShortDuration(totalSeconds)})` : "";
-        cell.title = `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}${timeStr}`;
+        cell.title = this.buildCalendarDayTitle(
+          d.getFullYear(),
+          d.getMonth(),
+          d.getDate(),
+          totalSeconds,
+          this.getHealthDay(d, healthRange)
+        );
       }
     }
   }

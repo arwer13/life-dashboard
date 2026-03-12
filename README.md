@@ -7,7 +7,7 @@ Track time on hierarchical task notes and visualize progress across six views: t
 - **Life Timer** - Large circular elapsed-time display with start/stop, today's entries, and task context chain
 - **Concerns Outline** - Collapsible tree of filtered concerns with time badges, priority sorting, and advanced filtering
 - **Concerns Canvas** - Infinite-scroll canvas with draggable, resizable tree cards
-- **Concerns Calendar** - Today/week timeline views plus month and GitHub-style year heatmaps with period navigation
+- **Concerns Calendar** - Today/week timeline views plus month and GitHub-style year heatmaps with period navigation and optional sleep/steps overlays from `Me/Tracking`
 - **Time Log** - Flat list of all raw time entries with inline editing
 - **Kanban Board** - Drag-and-drop board with configurable columns and swimlanes
 

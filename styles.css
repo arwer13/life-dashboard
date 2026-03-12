@@ -878,6 +878,61 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   padding: 0 8px;
 }
 
+.frontmatter-outline-view .fmo-calendar-health-overview {
+  margin: 8px 0 4px 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 80%, transparent);
+  border-radius: 12px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--background-secondary-alt) 90%, transparent),
+      color-mix(in srgb, var(--background-primary) 92%, var(--interactive-accent) 8%)
+    );
+}
+
+.frontmatter-outline-view .fmo-calendar-health-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.frontmatter-outline-view .fmo-calendar-health-card {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+  background: color-mix(in srgb, var(--background-primary-alt) 82%, transparent);
+}
+
+.frontmatter-outline-view .fmo-calendar-health-card-dimmed {
+  opacity: 0.68;
+}
+
+.frontmatter-outline-view .fmo-calendar-health-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-calendar-health-card-value {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-calendar-health-card-sub {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
 /* ── Calendar: Shared ───────────────────────────────────────── */
 
 .frontmatter-outline-view .fmo-calendar-gridline {
@@ -1009,13 +1064,44 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 }
 
 .frontmatter-outline-view .fmo-calendar-week-hour-axis {
-  position: relative;
-  width: 42px;
-  min-width: 42px;
-  margin-top: 22px;
+  width: 56px;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
 }
 
-.frontmatter-outline-view .fmo-calendar-week-hour-axis .fmo-calendar-hour-label {
+.frontmatter-outline-view .fmo-calendar-week-axis-head {
+  display: grid;
+  gap: 6px;
+  margin-right: 6px;
+  margin-bottom: 4px;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-axis-spacer {
+  min-height: 1.15em;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-axis-label {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-calendar-week-axis-total-spacer {
+  min-height: 1.2em;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-hour-axis-body {
+  position: relative;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-hour-axis-body .fmo-calendar-hour-label {
   right: 4px;
 }
 
@@ -1063,6 +1149,96 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   min-height: 1.2em;
   line-height: 1.2;
   margin-bottom: 4px;
+}
+
+.frontmatter-outline-view .fmo-calendar-month-signals {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-health-stack {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 6px 0;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-health-cell {
+  min-height: 46px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 90%, transparent);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-health-cell-dimmed {
+  opacity: 0.42;
+}
+
+.frontmatter-outline-view .fmo-calendar-week-health-value {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-calendar-week-health-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-calendar-month-signals {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.frontmatter-outline-view .fmo-calendar-health-chip {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.frontmatter-outline-view .fmo-calendar-health-chip-compact {
+  padding: 3px 5px;
+  gap: 2px 5px;
+}
+
+.frontmatter-outline-view .fmo-calendar-health-chip-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.frontmatter-outline-view .fmo-calendar-health-chip-value {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-normal);
+}
+
+.frontmatter-outline-view .fmo-calendar-health-chip-sub {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-muted);
 }
 
 .frontmatter-outline-view .fmo-calendar-day-bar {

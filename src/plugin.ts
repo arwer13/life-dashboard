@@ -17,6 +17,10 @@ import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type 
 import { TimerNotificationService } from "./services/timer-notification-service";
 import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
+import {
+  HealthTrackingService,
+  type HealthTrackingRangeSnapshot
+} from "./services/health-tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TextInputModal } from "./ui/text-input-modal";
@@ -84,6 +88,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private timeWindowService!: TimeWindowService;
   private timerNotificationService!: TimerNotificationService;
   private trackingService!: TrackingService;
+  private healthTrackingService!: HealthTrackingService;
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
@@ -270,6 +275,10 @@ export default class LifeDashboardPlugin extends Plugin {
       this.app.vault.on("modify", (file) => {
         if (this.isTimeLogPath(file.path)) {
           void this.reloadTotalsAndRefresh();
+          return;
+        }
+        if (this.isHealthTrackingPath(file.path)) {
+          void this.reloadHealthTrackingAndRefresh();
         }
       })
     );
@@ -599,6 +608,14 @@ export default class LifeDashboardPlugin extends Plugin {
     this.timeTotalsById = snapshot.totals;
     this.timeEntriesById = snapshot.entriesByNoteId;
     this.recomputeMacOsTrayRecentConcerns();
+  }
+
+  async ensureHealthTrackingLoaded(): Promise<void> {
+    await this.healthTrackingService.ensureLoaded();
+  }
+
+  getHealthTrackingRangeSnapshot(window: TimeWindow, now: Date): HealthTrackingRangeSnapshot {
+    return this.healthTrackingService.getRangeSnapshot(window, now);
   }
 
   async readTimeLog(): Promise<TimeLogByNoteId> {
@@ -1003,6 +1020,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.timeLogStore = new TimeLogStore(this.app, this.settings, () => this.saveSettings());
     this.timeWindowService = new TimeWindowService(() => this.settings.weekStartsOn);
     this.timerNotificationService = new TimerNotificationService();
+    this.healthTrackingService = new HealthTrackingService(this.app);
     this.macOsTrayTimerService = new MacOsTrayTimerService({
       openTimer: () => {
         void this.viewController.activateTimerView();
@@ -1331,6 +1349,11 @@ export default class LifeDashboardPlugin extends Plugin {
       return;
     }
 
+    if (this.isHealthTrackingPath(oldPath) || this.isHealthTrackingPath(file.path)) {
+      await this.reloadHealthTrackingAndRefresh();
+      return;
+    }
+
     let settingsChanged = false;
     const remappedSelected = this.remapPathPrefix(this.settings.selectedTaskPath, oldPath, file.path);
     if (remappedSelected !== this.settings.selectedTaskPath) {
@@ -1353,6 +1376,11 @@ export default class LifeDashboardPlugin extends Plugin {
     if (this.isTimeLogPath(file.path)) {
       this.rewireTimeLogWatcher();
       await this.reloadTotalsAndRefresh();
+      return;
+    }
+
+    if (this.isHealthTrackingPath(file.path)) {
+      await this.reloadHealthTrackingAndRefresh();
       return;
     }
 
@@ -1379,6 +1407,11 @@ export default class LifeDashboardPlugin extends Plugin {
       return;
     }
 
+    if (this.isHealthTrackingPath(file.path)) {
+      await this.reloadHealthTrackingAndRefresh();
+      return;
+    }
+
     this.handleTaskStructureChange();
   }
 
@@ -1401,6 +1434,15 @@ export default class LifeDashboardPlugin extends Plugin {
   private async reloadTotalsAndRefresh(): Promise<void> {
     await this.reloadTimeTotalsSafely();
     this.refreshTimeTrackingViews();
+  }
+
+  private isHealthTrackingPath(path: string): boolean {
+    return this.healthTrackingService.matchesTrackingPath(path);
+  }
+
+  private async reloadHealthTrackingAndRefresh(): Promise<void> {
+    await this.healthTrackingService.reload();
+    this.refreshView();
   }
 
   private scheduleOutlineFilterSave(): void {

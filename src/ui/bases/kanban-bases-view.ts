@@ -8,6 +8,7 @@ import {
   type BasesEntry,
   type QueryController,
   NullValue,
+  RenderContext,
   TFile,
   parsePropertyId
 } from "obsidian";
@@ -287,7 +288,7 @@ class KanbanBasesView extends BasesView {
         const label = displayNames.get(propId) ?? propId;
         propRow.createEl("span", { cls: "fmo-kanban-card-prop-label", text: `${label}: ` });
         const valSpan = propRow.createEl("span", { cls: "fmo-kanban-card-prop-value" });
-        val.renderTo(valSpan, { app: this.app, sourcePath: card.entry.file.path });
+        val.renderTo(valSpan, new RenderContext());
       }
     }
 
