@@ -265,8 +265,10 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const allAxisMs = new Set([...startDates, ...endDates]);
     const axisDates = [...allAxisMs].sort((a, b) => a - b);
 
-    const MIN_LABEL_GAP_PX = 16;
-    let lastLabelY = -Infinity;
+    const LABEL_HEIGHT = 14;
+    const LABEL_PAD = 2;
+    // Track visual bounds [top, bottom] of all rendered labels
+    const renderedBounds: Array<[number, number]> = [];
 
     for (const ms of axisDates) {
       const y = this.dateToY(ms, regions);
@@ -274,19 +276,37 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       const line = lanesEl.createEl("div", { cls: "fmo-timeline-grid-line" });
       line.style.top = `${y}px`;
 
-      if (y - lastLabelY >= MIN_LABEL_GAP_PX) {
-        const isStart = startDates.has(ms);
-        const isEnd = endDates.has(ms);
-        const alignCls = isStart && isEnd
-          ? "fmo-timeline-date-label-mid"
-          : isEnd
-            ? "fmo-timeline-date-label-end"
-            : "fmo-timeline-date-label-start";
+      const isStart = startDates.has(ms);
+      const isEnd = endDates.has(ms);
 
+      // Compute visual bounds based on alignment
+      let visualTop: number;
+      let visualBottom: number;
+      let alignCls: string;
+
+      if (isStart && isEnd) {
+        alignCls = "fmo-timeline-date-label-mid";
+        visualTop = y - LABEL_HEIGHT / 2;
+        visualBottom = y + LABEL_HEIGHT / 2;
+      } else if (isEnd) {
+        alignCls = "fmo-timeline-date-label-end";
+        visualTop = y - LABEL_HEIGHT;
+        visualBottom = y;
+      } else {
+        alignCls = "fmo-timeline-date-label-start";
+        visualTop = y;
+        visualBottom = y + LABEL_HEIGHT;
+      }
+
+      const overlaps = renderedBounds.some(
+        ([t, b]) => visualTop < b + LABEL_PAD && visualBottom > t - LABEL_PAD
+      );
+
+      if (!overlaps) {
         const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
         label.style.top = `${y}px`;
         label.textContent = this.formatShortDate(new Date(ms));
-        lastLabelY = y;
+        renderedBounds.push([visualTop, visualBottom]);
       }
     }
 
