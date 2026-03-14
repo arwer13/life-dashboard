@@ -1948,6 +1948,9 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 .fmo-timeline-scroll {
   overflow-y: auto;
+}
+
+.frontmatter-outline-view > .fmo-timeline-scroll {
   height: calc(100vh - 80px);
 }
 

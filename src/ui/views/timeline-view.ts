@@ -32,8 +32,6 @@ const BAR_BG_ALPHA = "22";
 // ── Standalone rendering (used by both view and code block processor) ──
 
 export function renderTimelineInto(container: HTMLElement, plugin: LifeDashboardPlugin): void {
-  container.addClass("frontmatter-outline-view");
-
   const entries = collectEntries(plugin);
   if (entries.length === 0) {
     container.createEl("p", { cls: "fmo-empty", text: "No project concerns with date ranges found." });
@@ -81,6 +79,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
 
   async render(): Promise<void> {
     this.contentEl.empty();
+    this.contentEl.addClass("frontmatter-outline-view");
     renderTimelineInto(this.contentEl, this.plugin);
   }
 }
