@@ -254,14 +254,16 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const lanesEl = body.createEl("div", { cls: "fmo-timeline-lanes" });
 
     // Axis labels and grid lines at event boundaries
-    const axisDateSet = new Set<number>();
+    const startDates = new Set<number>();
+    const endDates = new Set<number>();
     for (const entry of entries) {
       for (const seg of entry.segments) {
-        axisDateSet.add(seg.start.getTime());
-        axisDateSet.add(seg.end.getTime());
+        startDates.add(seg.start.getTime());
+        endDates.add(seg.end.getTime());
       }
     }
-    const axisDates = [...axisDateSet].sort((a, b) => a - b);
+    const allAxisMs = new Set([...startDates, ...endDates]);
+    const axisDates = [...allAxisMs].sort((a, b) => a - b);
 
     const MIN_LABEL_GAP_PX = 16;
     let lastLabelY = -Infinity;
@@ -273,7 +275,15 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       line.style.top = `${y}px`;
 
       if (y - lastLabelY >= MIN_LABEL_GAP_PX) {
-        const label = axis.createEl("div", { cls: "fmo-timeline-date-label" });
+        const isStart = startDates.has(ms);
+        const isEnd = endDates.has(ms);
+        const alignCls = isStart && isEnd
+          ? "fmo-timeline-date-label-mid"
+          : isEnd
+            ? "fmo-timeline-date-label-end"
+            : "fmo-timeline-date-label-start";
+
+        const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
         label.style.top = `${y}px`;
         label.textContent = this.formatShortDate(new Date(ms));
         lastLabelY = y;

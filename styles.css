@@ -1968,8 +1968,19 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   right: 6px;
   font-size: 10px;
   color: var(--text-muted);
-  transform: translateY(-50%);
   white-space: nowrap;
+}
+
+.fmo-timeline-date-label-start {
+  transform: translateY(0);
+}
+
+.fmo-timeline-date-label-end {
+  transform: translateY(-100%);
+}
+
+.fmo-timeline-date-label-mid {
+  transform: translateY(-50%);
 }
 
 .fmo-timeline-lanes {
