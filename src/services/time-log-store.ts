@@ -13,17 +13,35 @@ export interface ParsedIntervalToken {
   endMs: number;
 }
 
+const TIMESTAMP_RE = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function formatUTC(date: Date): string {
+  return `${date.getUTCFullYear()}.${pad2(date.getUTCMonth() + 1)}.${pad2(date.getUTCDate())}-${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;
+}
+
 function parseStartTimestamp(value: string): Date | null {
-  const m = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/.exec(value);
+  const m = TIMESTAMP_RE.exec(value);
   if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]) - 1;
-  const day = Number(m[3]);
-  const hours = Number(m[4]);
-  const minutes = Number(m[5]);
-  const date = new Date(year, month, day, hours, minutes, 0, 0);
+  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0));
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+export function formatTimestampLocal(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}-${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+export function localTimestampToUTC(value: string): string | null {
+  const m = TIMESTAMP_RE.exec(value);
+  if (!m) return null;
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatUTC(date);
 }
 
 export function parseIntervalToken(token: string): ParsedIntervalToken | null {
@@ -337,18 +355,8 @@ export class TimeLogStore {
     return noteId.trim();
   }
 
-  private formatTimestamp(date: Date): string {
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    const yyyy = date.getFullYear();
-    const mm = pad(date.getMonth() + 1);
-    const dd = pad(date.getDate());
-    const hh = pad(date.getHours());
-    const min = pad(date.getMinutes());
-    return `${yyyy}.${mm}.${dd}-${hh}:${min}`;
-  }
-
   private formatIntervalTokenFromMs(startMs: number, endMs: number): string {
-    const start = this.formatTimestamp(new Date(startMs));
+    const start = formatUTC(new Date(startMs));
     const durationMinutes = this.durationMinutesFromMs(startMs, endMs);
     return this.formatIntervalToken(start, durationMinutes);
   }

@@ -1,7 +1,7 @@
 import { Notice, TFile, type WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMELOG } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
-import { parseIntervalToken } from "../../services/time-log-store";
+import { formatTimestampLocal, localTimestampToUTC, parseIntervalToken } from "../../services/time-log-store";
 import { LifeDashboardBaseView } from "./base-view";
 import { TaskSelectModal } from "../task-select-modal";
 
@@ -85,13 +85,19 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
         modal.open();
       });
 
-      // Start time (editable)
-      const startStr = entry.start;
-      const startEl = row.createEl("span", { cls: "fmo-timelog-start", text: startStr });
+      // Start time (editable) — displayed in local timezone, stored as UTC
+      const startDisplay = formatTimestampLocal(entry.startMs);
+      const startEl = row.createEl("span", { cls: "fmo-timelog-start", text: startDisplay });
       startEl.setAttribute("tabindex", "0");
       startEl.addEventListener("click", () => {
-        this.makeEditable(startEl, startStr, (newVal) => {
-          this.updateEntry(data, entry.noteId, entry.token, newVal, entry.durationMinutes);
+        this.makeEditable(startEl, startDisplay, (newVal) => {
+          const utcStart = localTimestampToUTC(newVal);
+          if (!utcStart) {
+            new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time.");
+            void this.render();
+            return;
+          }
+          this.updateEntry(data, entry.noteId, entry.token, utcStart, entry.durationMinutes);
         });
       });
 
@@ -107,7 +113,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
             void this.render();
             return;
           }
-          this.updateEntry(data, entry.noteId, entry.token, startStr, newDur);
+          this.updateEntry(data, entry.noteId, entry.token, entry.start, newDur);
         });
       });
 
