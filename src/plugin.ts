@@ -37,6 +37,7 @@ import {
   LifeDashboardConcernCanvasView,
   LifeDashboardOutlineView,
   LifeDashboardTimeLogView,
+  LifeDashboardTimelineView,
   LifeDashboardTimerView
 } from "./ui/views";
 import {
@@ -45,6 +46,7 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
 } from "./models/view-types";
@@ -134,6 +136,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CANVAS, (leaf) => new LifeDashboardConcernCanvasView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, (leaf) => new LifeDashboardCalendarView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, (leaf) => new LifeDashboardTimeLogView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, (leaf) => new LifeDashboardTimelineView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
     this.registerBasesView(KANBAN_BASES_VIEW_ID, createKanbanViewRegistration(this));
@@ -161,6 +164,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addRibbonIcon("history", "Open Time Log", () => {
       void this.viewController.activateTimeLogView();
+    });
+
+    this.addRibbonIcon("gantt-chart", "Open Timeline", () => {
+      void this.viewController.activateTimelineView();
     });
 
     this.addCommand({
@@ -208,6 +215,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Open Time Log",
       callback: () => {
         void this.viewController.activateTimeLogView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-timeline",
+      name: "Open Timeline",
+      callback: () => {
+        void this.viewController.activateTimelineView();
       }
     });
 
