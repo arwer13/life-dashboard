@@ -324,7 +324,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
         bar.style.borderLeftColor = color;
         bar.style.backgroundColor = color + "22";
 
-        const days = Math.round((seg.end.getTime() - seg.start.getTime()) / DAY_MS);
+        const days = Math.round((seg.end.getTime() - seg.start.getTime()) / DAY_MS) + 1;
         bar.createEl("div", {
           cls: "fmo-timeline-bar-name",
           text: `[${days}d] ${entry.name}`
