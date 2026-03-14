@@ -1946,24 +1946,27 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
+.fmo-timeline-scroll {
+  overflow-y: auto;
+  height: calc(100vh - 80px);
+}
+
 .fmo-timeline-body {
   display: flex;
   position: relative;
-  min-height: 600px;
-  height: calc(100vh - 80px);
 }
 
 .fmo-timeline-axis {
   position: relative;
-  width: 44px;
+  width: 56px;
   flex-shrink: 0;
   border-right: 1px solid var(--background-modifier-border);
 }
 
-.fmo-timeline-month-label {
+.fmo-timeline-date-label {
   position: absolute;
   right: 6px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
   transform: translateY(-50%);
   white-space: nowrap;
@@ -1982,6 +1985,23 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   right: 0;
   border-top: 1px dashed var(--background-modifier-border);
   pointer-events: none;
+}
+
+.fmo-timeline-gap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 10px;
+  letter-spacing: 3px;
+  pointer-events: none;
+}
+
+.fmo-timeline-gap::after {
+  content: "···";
 }
 
 .fmo-timeline-bar {
