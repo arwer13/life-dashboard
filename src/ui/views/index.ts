@@ -4,3 +4,4 @@ export { LifeDashboardConcernCanvasView } from "./canvas-view";
 export { LifeDashboardCalendarView } from "./calendar-view";
 export { LifeDashboardTimeLogView } from "./time-log-view";
 export { LifeDashboardBeancountView } from "./beancount-view";
+export { LifeDashboardTimelineView } from "./timeline-view";
