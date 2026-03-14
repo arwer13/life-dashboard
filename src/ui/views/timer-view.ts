@@ -314,7 +314,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       }
     });
     button.addEventListener("click", () => {
-      this.plugin.openConcernPicker({
+      this.plugin.openConcernQuickSearch({
         onChoose: (file) => {
           void this.plugin.setSelectedTaskPath(file.path);
         }

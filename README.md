@@ -50,7 +50,7 @@ Copy `manifest.json`, `main.js`, `styles.css` to `<vault>/.obsidian/plugins/life
 | Open Concerns Canvas | Opens the canvas view |
 | Open Concerns Calendar | Opens the calendar view |
 | Open Time Log | Opens the time log list view |
-| Quick Open Concern | Fuzzy search and open a concern note |
+| Quick Open Concern | Fuzzy search concerns; defaults to non-done, non-archived, and `Tab` or the opening shortcut cycles modes, with done/archived items badged in the broad mode |
 | Start task timer | Starts the timer |
 | Stop task timer | Stops the timer |
 | Reset all concern priorities | Removes priority from all concerns |

@@ -222,6 +222,45 @@
   word-break: break-word;
 }
 
+.fmo-task-suggestion-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fmo-task-suggestion-label-dimmed {
+  color: var(--text-muted);
+}
+
+.fmo-task-suggestion-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fmo-task-suggestion-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.fmo-task-suggestion-badge-done {
+  color: var(--text-success, #4caf50);
+  border-color: var(--text-success, #4caf50);
+}
+
+.fmo-task-suggestion-badge-archived {
+  color: var(--text-faint, var(--text-muted));
+}
+
 .frontmatter-outline-view .fmo-header {
   background: var(--background-secondary);
   border-bottom: 1px solid var(--background-modifier-border);

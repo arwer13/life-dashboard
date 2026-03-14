@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
 import {
   DEFAULT_TIME_LOG_PATH,
@@ -24,7 +24,11 @@ import {
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TextInputModal } from "./ui/text-input-modal";
-import { TaskSelectModal } from "./ui/task-select-modal";
+import {
+  TaskSelectModal,
+  type TaskSelectModalSearchMode,
+  type TaskSelectModalSuggestionDecoration
+} from "./ui/task-select-modal";
 import {
   LifeDashboardBeancountView,
   LifeDashboardCalendarView,
@@ -71,6 +75,19 @@ type ConcernPickerOptions = {
   showPathInSuggestion?: boolean;
   emptyNotice?: string;
 };
+type QuickConcernSearchOptions = {
+  onChoose?: (file: TFile) => void;
+  onCloseWithoutChoice?: () => void;
+};
+type ConcernQuickOpenFrontmatterState = {
+  isDone: boolean;
+  isArchived: boolean;
+};
+type ConcernQuickOpenSearchData = {
+  allConcernFiles: TFile[];
+  openConcernFiles: TFile[];
+  suggestionDecorations: Record<string, TaskSelectModalSuggestionDecoration>;
+};
 type NoteTaskInfo = {
   path: string;
   label: string;
@@ -105,6 +122,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private watchedTimeLogHash: string | null = null;
   private macOsTrayTimerService!: MacOsTrayTimerService;
   private macOsTrayRecentConcerns: MacOsTrayRecentConcern[] = [];
+  private concernQuickSearchModal: TaskSelectModal | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -459,16 +477,246 @@ export default class LifeDashboardPlugin extends Plugin {
     this.refreshTaskStructureViews();
   }
 
-  private openConcernQuickSearch(): void {
-    const targetLeaf = this.getConcernQuickOpenTargetLeaf();
-    this.openConcernPicker({
-      onChoose: (file) => {
+  openConcernQuickSearch(options: QuickConcernSearchOptions = {}): void {
+    if (this.concernQuickSearchModal) {
+      this.concernQuickSearchModal.cycleSearchMode();
+      return;
+    }
+
+    const concernItems = this.getTaskTreeItems();
+    if (concernItems.length === 0) {
+      new Notice("No concerns available to open.");
+      return;
+    }
+
+    const onChoose =
+      options.onChoose ??
+      ((file: TFile) => {
+        const targetLeaf = this.getConcernQuickOpenTargetLeaf();
         void targetLeaf.openFile(file, { active: true });
+      });
+    const searchModes = this.buildConcernQuickOpenSearchModes(concernItems);
+    const modal = new TaskSelectModal(
+      this.app,
+      searchModes[0]?.tasks ?? [],
+      (file) => {
+        this.concernQuickSearchModal = null;
+        onChoose(file);
       },
-      placeholder: "Find concern note...",
-      showPathInSuggestion: false,
-      emptyNotice: "No concerns available to open."
-    });
+      options.onCloseWithoutChoice,
+      {
+        placeholder: "Find concern note...",
+        showPathInSuggestion: false,
+        searchModes,
+        cycleHotkeys: this.getConcernQuickSearchCycleHotkeys(),
+        onModalClose: () => {
+          if (this.concernQuickSearchModal === modal) {
+            this.concernQuickSearchModal = null;
+          }
+        }
+      }
+    );
+    this.concernQuickSearchModal = modal;
+    modal.open();
+  }
+
+  private buildConcernQuickOpenSearchModes(concernItems: TaskItem[]): TaskSelectModalSearchMode[] {
+    const { allConcernFiles, openConcernFiles, suggestionDecorations } =
+      this.collectConcernQuickOpenSearchData(concernItems);
+
+    return [
+      {
+        tasks: openConcernFiles,
+        instructions: [
+          { command: "Mode", purpose: `open only (${openConcernFiles.length}/${allConcernFiles.length})` },
+          { command: "Filter", purpose: "not done, not archived" },
+          { command: "Tab", purpose: "next mode" },
+          { command: "Again", purpose: "same shortcut also cycles" }
+        ],
+        emptyStateText: "No open concerns found. Run Quick Open Concern again to include done and archived."
+      },
+      {
+        tasks: allConcernFiles,
+        instructions: [
+          { command: "Mode", purpose: `all concerns (${allConcernFiles.length})` },
+          { command: "Includes", purpose: "done and archived" },
+          { command: "Tab", purpose: "next mode" },
+          { command: "Again", purpose: "same shortcut also cycles" }
+        ],
+        emptyStateText: "No concerns available to open.",
+        suggestionDecorations
+      }
+    ];
+  }
+
+  private collectConcernQuickOpenSearchData(
+    concernItems: TaskItem[]
+  ): ConcernQuickOpenSearchData {
+    const allConcernFiles: TFile[] = [];
+    const openConcernFiles: TFile[] = [];
+    const suggestionDecorations: Record<string, TaskSelectModalSuggestionDecoration> = {};
+
+    for (const item of concernItems) {
+      allConcernFiles.push(item.file);
+
+      const state = this.getConcernQuickOpenFrontmatterState(item.frontmatter);
+      if (!state.isDone && !state.isArchived) {
+        openConcernFiles.push(item.file);
+      }
+
+      const decoration = this.buildConcernQuickOpenSuggestionDecoration(state);
+      if (decoration) {
+        suggestionDecorations[item.file.path] = decoration;
+      }
+    }
+
+    return { allConcernFiles, openConcernFiles, suggestionDecorations };
+  }
+
+  private buildConcernQuickOpenSuggestionDecoration(
+    state: ConcernQuickOpenFrontmatterState
+  ): TaskSelectModalSuggestionDecoration | null {
+    const { isDone, isArchived } = state;
+    if (!isDone && !isArchived) {
+      return null;
+    }
+
+    return {
+      dimmed: true,
+      badges: [
+        ...(isDone ? [{ label: "done", tone: "done" as const }] : []),
+        ...(isArchived ? [{ label: "archived", tone: "archived" as const }] : [])
+      ]
+    };
+  }
+
+  private getConcernQuickOpenFrontmatterState(
+    frontmatter: FrontMatterCache | undefined
+  ): ConcernQuickOpenFrontmatterState {
+    return {
+      isDone: this.frontmatterHasValue(frontmatter, "status", "done"),
+      isArchived: this.frontmatterFlagEnabled(frontmatter, "archived")
+    };
+  }
+
+  private frontmatterHasValue(
+    frontmatter: FrontMatterCache | undefined,
+    key: string,
+    expected: string
+  ): boolean {
+    if (!frontmatter || !(key in frontmatter)) {
+      return false;
+    }
+
+    const expectedLower = expected.trim().toLowerCase();
+    return this.flattenFrontmatterValues(frontmatter[key]).some((value) => value.toLowerCase() === expectedLower);
+  }
+
+  private frontmatterFlagEnabled(frontmatter: FrontMatterCache | undefined, key: string): boolean {
+    if (!frontmatter || !(key in frontmatter)) {
+      return false;
+    }
+
+    return this.frontmatterValueIsEnabled(frontmatter[key]);
+  }
+
+  private frontmatterValueIsEnabled(value: unknown): boolean {
+    if (Array.isArray(value)) {
+      return value.some((entry) => this.frontmatterValueIsEnabled(entry));
+    }
+
+    if (value == null) {
+      return false;
+    }
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) {
+        return false;
+      }
+      return !["false", "0", "no", "off", "null", "undefined"].includes(normalized);
+    }
+
+    return true;
+  }
+
+  private flattenFrontmatterValues(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
+    }
+
+    if (value == null) {
+      return [""];
+    }
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return [String(value).trim()];
+    }
+
+    try {
+      return [JSON.stringify(value)];
+    } catch {
+      return [String(value)];
+    }
+  }
+
+  private getConcernQuickSearchCycleHotkeys(): Hotkey[] {
+    const hotkey = this.getLastKeyboardEventHotkey();
+    const normalizedHotkey = hotkey ? this.normalizeHotkey(hotkey) : null;
+    return normalizedHotkey ? [normalizedHotkey] : [];
+  }
+
+  private getLastKeyboardEventHotkey(): Hotkey | null {
+    const event = this.app.lastEvent;
+    if (!event || !("key" in event) || typeof event.key !== "string") {
+      return null;
+    }
+
+    const key = this.normalizeHotkeyKey(event.key);
+    if (!key) {
+      return null;
+    }
+
+    const modifiers: Hotkey["modifiers"] = [];
+    if (event.ctrlKey) modifiers.push("Ctrl");
+    if (event.metaKey) modifiers.push("Meta");
+    if (event.altKey) modifiers.push("Alt");
+    if (event.shiftKey) modifiers.push("Shift");
+    return { modifiers, key };
+  }
+
+  private normalizeHotkeyKey(key: string): string | null {
+    const trimmed = key.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (["shift", "control", "ctrl", "meta", "alt", "mod"].includes(lower)) {
+      return null;
+    }
+
+    return trimmed.length === 1 ? lower : trimmed;
+  }
+
+  private normalizeHotkey(hotkey: Hotkey): Hotkey | null {
+    const key = hotkey.key?.trim();
+    if (!key) {
+      return null;
+    }
+
+    return {
+      modifiers: [...hotkey.modifiers].sort() as Hotkey["modifiers"],
+      key: this.normalizeHotkeyKey(key) ?? key
+    };
   }
 
   private async openListEntrySearch(): Promise<void> {
