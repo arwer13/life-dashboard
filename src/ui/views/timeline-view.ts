@@ -159,11 +159,11 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       bands.push({ startMs: bStart, endMs: bEnd, active });
     }
 
-    // Merge consecutive bands of same type
+    // Merge only consecutive INACTIVE bands; keep active bands fine-grained
     const merged: Band[] = [];
     for (const band of bands) {
       const last = merged[merged.length - 1];
-      if (last && last.active === band.active) {
+      if (last && !last.active && !band.active) {
         last.endMs = band.endMs;
       } else {
         merged.push({ ...band });
@@ -174,14 +174,9 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     let y = PADDING_PX;
     for (const m of merged) {
       const days = (m.endMs - m.startMs) / DAY_MS;
-      let heightPx: number;
-      if (m.active) {
-        const datesInRegion = sorted.filter(ts => ts >= m.startMs && ts <= m.endMs);
-        const minForLabels = datesInRegion.length * LABEL_HEIGHT_PX;
-        heightPx = Math.max(minForLabels, PX_PER_SQRT_DAY * Math.sqrt(days));
-      } else {
-        heightPx = GAP_HEIGHT_PX;
-      }
+      const heightPx = m.active
+        ? Math.max(LABEL_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
+        : GAP_HEIGHT_PX;
       regions.push({ startMs: m.startMs, endMs: m.endMs, active: m.active, heightPx, yPx: y });
       y += heightPx;
     }
@@ -274,6 +269,9 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const laneCount = Math.max(...lanes) + 1;
     const lanesWidthPx = laneCount * (BAR_WIDTH_PX + BAR_GAP_PX);
 
+    let lastShownMonth = -1;
+    let lastShownYear = -1;
+
     for (const ms of axisDates) {
       const y = this.dateToY(ms, regions);
 
@@ -281,17 +279,26 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       line.style.top = `${y}px`;
       line.style.width = `${lanesWidthPx}px`;
 
-      const isStart = startDates.has(ms);
-      const isEnd = endDates.has(ms);
-      const alignCls = isStart && isEnd
-        ? "fmo-timeline-date-label-mid"
-        : isEnd
-          ? "fmo-timeline-date-label-end"
-          : "fmo-timeline-date-label-start";
+      const d = new Date(ms);
+      const month = d.getMonth();
+      const year = d.getFullYear();
 
-      const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
-      label.style.top = `${y}px`;
-      label.textContent = this.formatShortDate(new Date(ms));
+      // Only show label when month changes from the previously shown label
+      if (month !== lastShownMonth || year !== lastShownYear) {
+        const isStart = startDates.has(ms);
+        const isEnd = endDates.has(ms);
+        const alignCls = isStart && isEnd
+          ? "fmo-timeline-date-label-mid"
+          : isEnd
+            ? "fmo-timeline-date-label-end"
+            : "fmo-timeline-date-label-start";
+
+        const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
+        label.style.top = `${y}px`;
+        label.textContent = this.formatShortDate(d);
+        lastShownMonth = month;
+        lastShownYear = year;
+      }
     }
 
     // Gap indicators on axis
