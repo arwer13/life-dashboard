@@ -1935,3 +1935,88 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   color: var(--text-normal);
   background: var(--background-modifier-hover);
 }
+
+/* ── Timeline View ───────────────────────────────── */
+
+.fmo-timeline-header {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.fmo-timeline-body {
+  display: flex;
+  position: relative;
+  min-height: 600px;
+  height: calc(100vh - 80px);
+}
+
+.fmo-timeline-axis {
+  position: relative;
+  width: 44px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--background-modifier-border);
+}
+
+.fmo-timeline-month-label {
+  position: absolute;
+  right: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.fmo-timeline-lanes {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.fmo-timeline-grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--background-modifier-border);
+  pointer-events: none;
+}
+
+.fmo-timeline-bar {
+  position: absolute;
+  border-left: 3px solid;
+  border-radius: 3px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  transition: filter 0.1s;
+}
+
+.fmo-timeline-bar:hover {
+  filter: brightness(1.2);
+}
+
+.fmo-timeline-bar-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fmo-timeline-bar-date {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.fmo-timeline-bar-date-end {
+  margin-top: auto;
+}
