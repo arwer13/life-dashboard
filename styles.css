@@ -2011,6 +2011,16 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   pointer-events: none;
 }
 
+.fmo-timeline-gap-label {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 11px;
+  pointer-events: none;
+}
 
 .fmo-timeline-bar {
   position: absolute;

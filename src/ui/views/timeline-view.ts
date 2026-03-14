@@ -17,7 +17,8 @@ type Region = {
 };
 
 const PX_PER_SQRT_DAY = 15;
-const GAP_HEIGHT_PX = 72;
+const GAP_MIN_HEIGHT_PX = 40;
+const GAP_MAX_HEIGHT_PX = GAP_MIN_HEIGHT_PX * 3;
 const MIN_BAR_HEIGHT_PX = 32;
 const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
@@ -162,13 +163,23 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       }
     }
 
+    // Compute proportional gap heights
+    const gapDays = merged.filter(m => !m.active).map(m => (m.endMs - m.startMs) / DAY_MS);
+    const minGapDays = gapDays.length > 0 ? Math.min(...gapDays) : 0;
+    const maxGapDays = gapDays.length > 0 ? Math.max(...gapDays) : 0;
+    const gapDaysRange = maxGapDays - minGapDays;
+
     const regions: Region[] = [];
     let y = PADDING_PX;
     for (const m of merged) {
       const days = (m.endMs - m.startMs) / DAY_MS;
-      const heightPx = m.active
-        ? Math.max(LABEL_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
-        : GAP_HEIGHT_PX;
+      let heightPx: number;
+      if (m.active) {
+        heightPx = Math.max(LABEL_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days));
+      } else {
+        const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
+        heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
+      }
       regions.push({ startMs: m.startMs, endMs: m.endMs, active: m.active, heightPx, yPx: y });
       y += heightPx;
     }
@@ -294,14 +305,21 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       }
     }
 
-    // Gap indicators on axis
+    // Gap indicators — "..." on axis, day count in lanes area
     for (const region of regions) {
       if (!region.active) {
         const skippedDays = Math.round((region.endMs - region.startMs) / DAY_MS);
-        const gap = axis.createEl("div", { cls: "fmo-timeline-gap" });
-        gap.style.top = `${region.yPx}px`;
-        gap.style.height = `${region.heightPx}px`;
-        gap.textContent = `··· ${skippedDays}d ···`;
+
+        const axisGap = axis.createEl("div", { cls: "fmo-timeline-gap" });
+        axisGap.style.top = `${region.yPx}px`;
+        axisGap.style.height = `${region.heightPx}px`;
+        axisGap.textContent = "···";
+
+        const laneGap = lanesEl.createEl("div", { cls: "fmo-timeline-gap-label" });
+        laneGap.style.top = `${region.yPx}px`;
+        laneGap.style.height = `${region.heightPx}px`;
+        laneGap.style.width = `${lanesWidthPx}px`;
+        laneGap.textContent = `${skippedDays}d`;
       }
     }
 
