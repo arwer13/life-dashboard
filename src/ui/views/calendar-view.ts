@@ -304,6 +304,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       this.calendarTreePanel?.setStatusText(`total: ${this.plugin.formatShortDuration(totalSeconds)}`);
     };
 
+    // Lightweight highlight update that toggles CSS classes without rebuilding DOM
+    const updateHighlights = (hoveredPaths: Set<string> | null): void => {
+      this.hoveredPaths = hoveredPaths ? new Set(hoveredPaths) : null;
+      const highlightedDisplayPaths = this.remapPathsToDisplay(this.hoveredPaths);
+      this.applyHighlights(main, highlightedDisplayPaths);
+    };
+
     // Create tree panel in sidebar
     this.calendarTreePanel = new ConcernTreePanel({
       plugin: this.plugin,
@@ -321,8 +328,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         renderCalendarMain(visiblePaths);
       },
       onHoverChange: (hoveredPaths) => {
-        this.hoveredPaths = hoveredPaths ? new Set(hoveredPaths) : null;
-        renderCalendarMain(this.currentVisiblePaths);
+        updateHighlights(hoveredPaths);
       },
     });
 
@@ -701,12 +707,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private formatSleepDuration(minutes: number | null): string {
     if (minutes == null || !Number.isFinite(minutes)) return "No data";
-    const rounded = Math.max(0, Math.round(minutes));
-    const hours = Math.floor(rounded / 60);
-    const mins = rounded % 60;
-    if (hours === 0) return `${mins}m`;
-    if (mins === 0) return `${hours}h`;
-    return `${hours}h ${mins}m`;
+    return this.plugin.formatShortDuration(Math.max(0, Math.round(minutes)) * 60);
   }
 
   private formatSleepHr(value: number | null): string {
@@ -932,6 +933,24 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     return remapped;
   }
 
+  private applyHighlights(container: HTMLElement, highlightedPaths: Set<string> | null): void {
+    // Toggle highlight/dim classes on calendar blocks without rebuilding DOM
+    for (const block of container.querySelectorAll<HTMLElement>(".fmo-calendar-block[data-path]")) {
+      block.removeClass("fmo-calendar-block-highlighted", "fmo-calendar-block-dimmed");
+      if (highlightedPaths) {
+        block.addClass(highlightedPaths.has(block.dataset.path!) ? "fmo-calendar-block-highlighted" : "fmo-calendar-block-dimmed");
+      }
+    }
+    // Toggle opacity on month day bars
+    for (const bar of container.querySelectorAll<HTMLElement>(".fmo-calendar-month-day-bar[data-path]")) {
+      if (highlightedPaths) {
+        bar.style.opacity = highlightedPaths.has(bar.dataset.path!) ? "1" : "0.2";
+      } else {
+        bar.style.opacity = "";
+      }
+    }
+  }
+
   private buildColorMap(entries: CalendarEntry[]): Map<string, string> {
     // Include every concern so colors are stable regardless of filtering/collapsing.
     const pathBasenames = this.getBasenameByPath();
@@ -1005,6 +1024,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const tooltip = `${e.basename} ${timeLabel} (${durationLabel})`;
 
     const block = container.createEl("div", { cls: "fmo-calendar-block" });
+    block.dataset.path = e.path;
     if (ctx.highlightedPaths) {
       block.addClass(ctx.highlightedPaths.has(e.path) ? "fmo-calendar-block-highlighted" : "fmo-calendar-block-dimmed");
     }
@@ -1261,6 +1281,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         const secondsByPath = bucket?.secondsByPath ?? new Map<string, number>();
         for (const [path, secs] of [...secondsByPath.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) {
           const bar = bars.createEl("div", { cls: "fmo-calendar-month-day-bar" });
+          bar.dataset.path = path;
           const color = colorMap.get(path) ?? CALENDAR_COLORS[0];
           bar.style.backgroundColor = color;
           const ratio = totalSeconds > 0 ? secs / totalSeconds : 0;

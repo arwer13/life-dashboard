@@ -17,6 +17,7 @@ import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type 
 import { TimerNotificationService } from "./services/timer-notification-service";
 import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
+import { matchesFrontmatterFilter } from "./services/outline-filter";
 import {
   HealthTrackingService,
   type HealthTrackingRangeSnapshot
@@ -604,12 +605,7 @@ export default class LifeDashboardPlugin extends Plugin {
     key: string,
     expected: string
   ): boolean {
-    if (!frontmatter || !(key in frontmatter)) {
-      return false;
-    }
-
-    const expectedLower = expected.trim().toLowerCase();
-    return this.flattenFrontmatterValues(frontmatter[key]).some((value) => value.toLowerCase() === expectedLower);
+    return matchesFrontmatterFilter(frontmatter, key, expected);
   }
 
   private frontmatterFlagEnabled(frontmatter: FrontMatterCache | undefined, key: string): boolean {
@@ -648,25 +644,6 @@ export default class LifeDashboardPlugin extends Plugin {
     return true;
   }
 
-  private flattenFrontmatterValues(value: unknown): string[] {
-    if (Array.isArray(value)) {
-      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
-    }
-
-    if (value == null) {
-      return [""];
-    }
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return [String(value).trim()];
-    }
-
-    try {
-      return [JSON.stringify(value)];
-    } catch {
-      return [String(value)];
-    }
-  }
 
   private getConcernQuickSearchCycleHotkeys(): Hotkey[] {
     const hotkey = this.getLastKeyboardEventHotkey();
@@ -1693,26 +1670,23 @@ export default class LifeDashboardPlugin extends Plugin {
     this.refreshView();
   }
 
-  private scheduleOutlineFilterSave(): void {
-    if (this.outlineFilterSaveTimer !== null) {
-      window.clearTimeout(this.outlineFilterSaveTimer);
+  private scheduleDebouncedSave(timerField: "outlineFilterSaveTimer" | "canvasDraftSaveTimer"): void {
+    if (this[timerField] !== null) {
+      window.clearTimeout(this[timerField]);
     }
 
-    this.outlineFilterSaveTimer = window.setTimeout(() => {
-      this.outlineFilterSaveTimer = null;
+    this[timerField] = window.setTimeout(() => {
+      this[timerField] = null;
       void this.saveSettings();
     }, 300);
   }
 
-  private scheduleCanvasDraftSave(): void {
-    if (this.canvasDraftSaveTimer !== null) {
-      window.clearTimeout(this.canvasDraftSaveTimer);
-    }
+  private scheduleOutlineFilterSave(): void {
+    this.scheduleDebouncedSave("outlineFilterSaveTimer");
+  }
 
-    this.canvasDraftSaveTimer = window.setTimeout(() => {
-      this.canvasDraftSaveTimer = null;
-      void this.saveSettings();
-    }, 300);
+  private scheduleCanvasDraftSave(): void {
+    this.scheduleDebouncedSave("canvasDraftSaveTimer");
   }
 
   private scheduleStartupTotalsLoad(): void {

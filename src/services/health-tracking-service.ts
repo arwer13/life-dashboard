@@ -198,10 +198,19 @@ export class HealthTrackingService {
     snapshot.observability.sleepFiles = sleepFiles.map((file) => file.path);
     snapshot.observability.stepsFiles = stepsFiles.map((file) => file.path);
 
+    const [sleepResults, stepsResults] = await Promise.all([
+      Promise.all(sleepFiles.map(async (file) => {
+        const content = await this.app.vault.cachedRead(file);
+        return this.parseSleepCsv(content, file.path);
+      })),
+      Promise.all(stepsFiles.map(async (file) => {
+        const content = await this.app.vault.cachedRead(file);
+        return this.parseStepsCsv(content, file.path);
+      })),
+    ]);
+
     const sleepByDateKey = new Map<string, SleepRecord>();
-    for (const file of sleepFiles) {
-      const content = await this.app.vault.cachedRead(file);
-      const parsed = this.parseSleepCsv(content, file.path);
+    for (const parsed of sleepResults) {
       snapshot.observability.sleepRows += parsed.rowCount;
       snapshot.observability.parseErrors.push(...parsed.errors);
 
@@ -222,9 +231,7 @@ export class HealthTrackingService {
       day.sleepSourcePath = record.sourcePath;
     }
 
-    for (const file of stepsFiles) {
-      const content = await this.app.vault.cachedRead(file);
-      const parsed = this.parseStepsCsv(content, file.path);
+    for (const parsed of stepsResults) {
       snapshot.observability.stepsRows += parsed.rowCount;
       snapshot.observability.parseErrors.push(...parsed.errors);
 
@@ -448,12 +455,7 @@ export class HealthTrackingService {
     const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) return null;
 
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
-
-    return new Date(year, month - 1, day, 0, 0, 0, 0);
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0, 0);
   }
 
   private parseLocalDateTime(value: string | undefined): Date | null {
@@ -461,22 +463,7 @@ export class HealthTrackingService {
     const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
     if (!match) return null;
 
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const hours = Number(match[4]);
-    const minutes = Number(match[5]);
-    if (
-      !Number.isInteger(year)
-      || !Number.isInteger(month)
-      || !Number.isInteger(day)
-      || !Number.isInteger(hours)
-      || !Number.isInteger(minutes)
-    ) {
-      return null;
-    }
-
-    return new Date(year, month - 1, day, hours, minutes, 0, 0);
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), 0, 0);
   }
 
   private buildSleepWindowLabel(start: Date | null, end: Date | null): string | null {

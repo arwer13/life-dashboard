@@ -407,9 +407,9 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     ];
 
     const now = new Date();
-    const todayStart = this.getDayStart(now).getTime();
+    const todayStart = this.plugin.getDayStart(now).getTime();
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = this.getWeekStart(now).getTime();
+    const weekStart = this.plugin.getWeekStart(now).getTime();
 
     for (const item of matched) {
       const latest = latestMatchedStartByPath.get(item.file.path) ?? 0;
@@ -427,18 +427,6 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     return groups;
   }
 
-  private getWeekStart(now: Date): Date {
-    const start = this.getDayStart(now);
-    const day = start.getDay();
-    const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
-    const offset = (day - weekStartsOn + 7) % 7;
-    start.setDate(start.getDate() - offset);
-    return start;
-  }
-
-  private getDayStart(value: Date): Date {
-    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0);
-  }
 
   private getExpandAllTooltip(): string {
     return this.outlineExpandAll ? "Collapse all concerns" : "Expand all concerns";

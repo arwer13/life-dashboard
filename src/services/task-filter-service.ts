@@ -1,6 +1,7 @@
 import { TFile, type App, type FrontMatterCache } from "obsidian";
 import type { TaskItem } from "../models/types";
 import type { LifeDashboardSettings } from "../settings";
+import { flattenFrontmatterValues } from "./outline-filter";
 
 export class TaskFilterService {
   private readonly app: App;
@@ -70,32 +71,12 @@ export class TaskFilterService {
     if (!expected || expected.trim().length === 0) return true;
 
     const expectedValue = this.settings.caseSensitive ? expected : expected.toLowerCase();
-    const values = this.flattenFrontmatterValues(actual);
+    const values = flattenFrontmatterValues(actual);
 
     return values.some((value) => {
       const normalized = this.settings.caseSensitive ? value : value.toLowerCase();
       return normalized === expectedValue;
     });
-  }
-
-  private flattenFrontmatterValues(value: unknown): string[] {
-    if (Array.isArray(value)) {
-      return value.flatMap((entry) => this.flattenFrontmatterValues(entry));
-    }
-
-    if (value == null) {
-      return [""];
-    }
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return [String(value).trim()];
-    }
-
-    try {
-      return [JSON.stringify(value)];
-    } catch {
-      return [String(value)];
-    }
   }
 
   private buildCacheKey(): string {
