@@ -1048,11 +1048,13 @@ export default class LifeDashboardPlugin extends Plugin {
       counter++;
     }
 
+    const id = this.generateConcernId();
     const frontmatter = [
       "---",
       `${propName}: ${propValue}`,
       `parent: "[[${parentName}]]"`,
       "kind: tension",
+      `id: "${id}"`,
       "---",
       ""
     ].join("\n");
@@ -1702,23 +1704,15 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.getTaskIdFromFrontmatter(cache?.frontmatter);
   }
 
-  private generateUuid(): string {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-      return crypto.randomUUID();
-    }
-
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
-      const r = (Math.random() * 16) | 0;
-      const v = ch === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+  private generateConcernId(): string {
+    return new Date().toISOString();
   }
 
   private async ensureTaskIdForFile(file: TFile): Promise<string> {
     const existing = this.getTaskIdForFile(file);
     if (existing) return existing;
 
-    const generated = this.generateUuid();
+    const generated = this.generateConcernId();
 
     try {
       await this.app.fileManager.processFrontMatter(file, (fm) => {
