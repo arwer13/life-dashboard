@@ -23,7 +23,10 @@ const MIN_BAR_HEIGHT_PX = 32;
 const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
 const LABEL_HEIGHT_PX = 16;
+const LABEL_OVERLAP_PAD_PX = 2;
+const MIN_BAND_HEIGHT_PX = 2 * LABEL_HEIGHT_PX + LABEL_OVERLAP_PAD_PX * 2;
 const PADDING_PX = 20;
+const BAR_BG_ALPHA = "22";
 
 export class LifeDashboardTimelineView extends LifeDashboardBaseView {
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
@@ -163,10 +166,17 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       }
     }
 
-    // Compute proportional gap heights
-    const gapDays = merged.filter(m => !m.active).map(m => (m.endMs - m.startMs) / DAY_MS);
-    const minGapDays = gapDays.length > 0 ? Math.min(...gapDays) : 0;
-    const maxGapDays = gapDays.length > 0 ? Math.max(...gapDays) : 0;
+    // Compute proportional gap heights in a single pass
+    let minGapDays = Infinity;
+    let maxGapDays = -Infinity;
+    for (const m of merged) {
+      if (m.active) continue;
+      const d = (m.endMs - m.startMs) / DAY_MS;
+      if (d < minGapDays) minGapDays = d;
+      if (d > maxGapDays) maxGapDays = d;
+    }
+    if (!isFinite(minGapDays)) minGapDays = 0;
+    if (!isFinite(maxGapDays)) maxGapDays = 0;
     const gapDaysRange = maxGapDays - minGapDays;
 
     const regions: Region[] = [];
@@ -175,7 +185,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       const days = (m.endMs - m.startMs) / DAY_MS;
       let heightPx: number;
       if (m.active) {
-        heightPx = Math.max(2 * LABEL_HEIGHT_PX + 4, PX_PER_SQRT_DAY * Math.sqrt(days));
+        heightPx = Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days));
       } else {
         const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
         heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
@@ -304,7 +314,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       }
 
       const overlaps = renderedBounds.some(
-        ([t, b]) => visualTop < b + 2 && visualBottom > t - 2
+        ([t, b]) => visualTop < b + LABEL_OVERLAP_PAD_PX && visualBottom > t - LABEL_OVERLAP_PAD_PX
       );
       if (!overlaps) {
         const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
@@ -349,7 +359,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
         bar.style.left = `${lane * (BAR_WIDTH_PX + BAR_GAP_PX)}px`;
         bar.style.width = `${BAR_WIDTH_PX}px`;
         bar.style.borderLeftColor = color;
-        bar.style.backgroundColor = color + "22";
+        bar.style.backgroundColor = color + BAR_BG_ALPHA;
 
         const days = Math.round((seg.end.getTime() - seg.start.getTime()) / DAY_MS) + 1;
         bar.createEl("div", {
