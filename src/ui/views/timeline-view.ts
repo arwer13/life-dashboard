@@ -25,7 +25,7 @@ const TIMELINE_COLORS = [
 
 const MIN_REGION_HEIGHT_PX = 40;
 const PX_PER_SQRT_DAY = 15;
-const GAP_HEIGHT_PX = 24;
+const GAP_HEIGHT_PX = 72;
 const MIN_BAR_HEIGHT_PX = 32;
 const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
@@ -263,15 +263,21 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     }
     const axisDates = [...axisDateSet].sort((a, b) => a - b);
 
+    const MIN_LABEL_GAP_PX = 16;
+    let lastLabelY = -Infinity;
+
     for (const ms of axisDates) {
       const y = this.dateToY(ms, regions);
 
-      const label = axis.createEl("div", { cls: "fmo-timeline-date-label" });
-      label.style.top = `${y}px`;
-      label.textContent = this.formatShortDate(new Date(ms));
-
       const line = lanesEl.createEl("div", { cls: "fmo-timeline-grid-line" });
       line.style.top = `${y}px`;
+
+      if (y - lastLabelY >= MIN_LABEL_GAP_PX) {
+        const label = axis.createEl("div", { cls: "fmo-timeline-date-label" });
+        label.style.top = `${y}px`;
+        label.textContent = this.formatShortDate(new Date(ms));
+        lastLabelY = y;
+      }
     }
 
     // Gap indicators on axis

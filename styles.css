@@ -2024,7 +2024,7 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 .fmo-timeline-bar-name {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--text-normal);
   overflow: hidden;
   text-overflow: ellipsis;
