@@ -40,6 +40,7 @@ import {
   LifeDashboardTimelineView,
   LifeDashboardTimerView
 } from "./ui/views";
+import { renderTimelineInto } from "./ui/views/timeline-view";
 import {
   LIFE_DASHBOARD_VIEW_TYPES,
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
@@ -139,6 +140,9 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, (leaf) => new LifeDashboardTimelineView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
+    this.registerMarkdownCodeBlockProcessor("life-dashboard-timeline", (_source, el) => {
+      renderTimelineInto(el, this);
+    });
     this.registerBasesView(KANBAN_BASES_VIEW_ID, createKanbanViewRegistration(this));
     this.registerEditorExtension(createSubConcernsExtension(this));
 
