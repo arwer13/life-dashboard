@@ -271,11 +271,15 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const allAxisMs = new Set([...startDates, ...endDates]);
     const axisDates = [...allAxisMs].sort((a, b) => a - b);
 
+    const laneCount = Math.max(...lanes) + 1;
+    const lanesWidthPx = laneCount * (BAR_WIDTH_PX + BAR_GAP_PX);
+
     for (const ms of axisDates) {
       const y = this.dateToY(ms, regions);
 
       const line = lanesEl.createEl("div", { cls: "fmo-timeline-grid-line" });
       line.style.top = `${y}px`;
+      line.style.width = `${lanesWidthPx}px`;
 
       const isStart = startDates.has(ms);
       const isEnd = endDates.has(ms);

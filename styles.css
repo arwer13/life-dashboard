@@ -1993,7 +1993,7 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 .fmo-timeline-grid-line {
   position: absolute;
   left: 0;
-  right: 0;
+  width: 0;
   border-top: 1px dashed var(--background-modifier-border);
   pointer-events: none;
 }
