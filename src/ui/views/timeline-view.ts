@@ -46,12 +46,16 @@ export function renderTimelineInto(container: HTMLElement, plugin: LifeDashboard
     minStarts.get(a)! - minStarts.get(b)! || a.file.basename.localeCompare(b.file.basename)
   );
 
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const todayMs = now.getTime();
+
   const allSegments = entries.flatMap(e => e.segments);
-  const regions = buildRegions(allSegments);
+  const regions = buildRegions(allSegments, todayMs);
   if (regions.length === 0) return;
 
   const lanes = packLanes(entries);
-  renderTimelineDOM(container, entries, lanes, regions, plugin.app);
+  renderTimelineDOM(container, entries, lanes, regions, plugin.app, todayMs);
 }
 
 // ── View class (thin wrapper) ──
@@ -146,8 +150,9 @@ function parseSingleDate(raw: unknown): Date | null {
 
 // ── Layout computation ──
 
-function buildRegions(segments: Array<{ start: Date; end: Date }>): Region[] {
+function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: number): Region[] {
   const tsSet = new Set<number>();
+  tsSet.add(todayMs);
   for (const s of segments) {
     tsSet.add(s.start.getTime());
     tsSet.add(s.end.getTime());
@@ -256,29 +261,27 @@ function renderTimelineDOM(
   entries: TimelineEntry[],
   lanes: number[],
   regions: Region[],
-  app: App
+  app: App,
+  todayMs: number
 ): void {
   const lastRegion = regions[regions.length - 1];
   const totalHeight = lastRegion.yPx + lastRegion.heightPx + PADDING_PX;
 
   const startDates = new Set<number>();
   const endDates = new Set<number>();
-  let minMs = Infinity;
+  startDates.add(todayMs);
   let maxMs = -Infinity;
   for (const entry of entries) {
     for (const seg of entry.segments) {
-      const sMs = seg.start.getTime();
-      const eMs = seg.end.getTime();
-      startDates.add(sMs);
-      endDates.add(eMs);
-      if (sMs < minMs) minMs = sMs;
-      if (eMs > maxMs) maxMs = eMs;
+      startDates.add(seg.start.getTime());
+      endDates.add(seg.end.getTime());
+      if (seg.end.getTime() > maxMs) maxMs = seg.end.getTime();
     }
   }
 
   const header = container.createEl("div", { cls: "fmo-timeline-header" });
   header.createEl("span", {
-    text: `${formatMonthYear(new Date(minMs))} – ${formatMonthYear(new Date(maxMs))}`
+    text: `${formatMonthYear(new Date(todayMs))} – ${formatMonthYear(new Date(maxMs))}`
   });
 
   const scroll = container.createEl("div", { cls: "fmo-timeline-scroll" });
@@ -297,7 +300,10 @@ function renderTimelineDOM(
   for (const ms of axisDates) {
     const y = dateToY(ms, regions);
 
-    const line = lanesEl.createEl("div", { cls: "fmo-timeline-grid-line" });
+    const isToday = ms === todayMs;
+    const line = lanesEl.createEl("div", {
+      cls: isToday ? "fmo-timeline-today-line" : "fmo-timeline-grid-line"
+    });
     line.style.top = `${y}px`;
     line.style.width = `${lanesWidthPx}px`;
 
@@ -327,7 +333,7 @@ function renderTimelineDOM(
     if (!overlaps) {
       const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
       label.style.top = `${y}px`;
-      label.textContent = formatShortDate(new Date(ms));
+      label.textContent = isToday ? `Today` : formatShortDate(new Date(ms));
       renderedBounds.push([visualTop, visualBottom]);
     }
   }
