@@ -1,4 +1,5 @@
 import { FuzzySuggestModal, type App, type FuzzyMatch, type Hotkey, type Instruction, type TFile } from "obsidian";
+import { transliterateLayout } from "../services/keyboard-layout";
 
 export type TaskSelectModalSuggestionBadge = {
   label: string;
@@ -73,17 +74,18 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
   }
 
   getItemText(file: TFile): string {
-    return `${file.basename} ${file.path}`;
+    const text = `${file.basename} ${file.path}`;
+    return `${text} ${transliterateLayout(text)}`;
   }
 
   renderSuggestion(value: FuzzyMatch<TFile>, el: HTMLElement): void {
     const file = value.item;
     const decoration = this.getSuggestionDecoration(file);
     const titleRow = el.createDiv({ cls: "fmo-task-suggestion-title" });
-    titleRow.createSpan({
-      text: file.basename,
-      cls: decoration?.dimmed ? "fmo-task-suggestion-label fmo-task-suggestion-label-dimmed" : "fmo-task-suggestion-label"
-    });
+    const labelCls = decoration?.dimmed ? "fmo-task-suggestion-label fmo-task-suggestion-label-dimmed" : "fmo-task-suggestion-label";
+    const labelEl = titleRow.createSpan({ cls: labelCls });
+    const highlights = this.getBasenameHighlights(file, value.match?.matches);
+    this.renderHighlightedText(labelEl, file.basename, highlights);
     if (decoration?.badges?.length) {
       const badgesEl = titleRow.createDiv({ cls: "fmo-task-suggestion-badges" });
       for (const badge of decoration.badges) {
@@ -137,6 +139,45 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
 
   private getCurrentSearchMode(): TaskSelectModalSearchMode {
     return this.searchModes[this.searchModeIndex] ?? this.searchModes[0] ?? { tasks: [] };
+  }
+
+  /** Map fuzzy match ranges back to basename char indices, accounting for transliterated portion. */
+  private getBasenameHighlights(file: TFile, matches: [number, number][] | undefined): Set<number> {
+    const highlights = new Set<number>();
+    if (!matches?.length) return highlights;
+
+    // Must mirror getItemText layout: "basename path transliterated(basename path)"
+    const basenameLen = file.basename.length;
+    const transOffset = basenameLen + 1 + file.path.length + 1;
+
+    for (const [start, end] of matches) {
+      for (let i = start; i < end; i++) {
+        if (i < basenameLen) {
+          highlights.add(i);
+        } else if (i >= transOffset && i < transOffset + basenameLen) {
+          highlights.add(i - transOffset);
+        }
+      }
+    }
+    return highlights;
+  }
+
+  private renderHighlightedText(container: HTMLElement, text: string, highlights: Set<number>): void {
+    if (highlights.size === 0) {
+      container.textContent = text;
+      return;
+    }
+    let pos = 0;
+    while (pos < text.length) {
+      const isHl = highlights.has(pos);
+      let end = pos + 1;
+      while (end < text.length && highlights.has(end) === isHl) end++;
+      container.createSpan({
+        text: text.slice(pos, end),
+        cls: isHl ? "suggestion-highlight" : undefined
+      });
+      pos = end;
+    }
   }
 
   private registerCycleHotkeys(): void {

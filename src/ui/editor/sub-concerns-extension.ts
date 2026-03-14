@@ -85,7 +85,8 @@ export function createSubConcernsExtension(plugin: LifeDashboardPlugin): Extensi
 
         if (treeChanged || fileChanged) {
           this.sync(update.state);
-          update.view.dispatch({ effects: rebuildEffect.of(null) });
+          const view = update.view;
+          requestAnimationFrame(() => view.dispatch({ effects: rebuildEffect.of(null) }));
         }
       }
 
