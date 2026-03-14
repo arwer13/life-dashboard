@@ -2013,7 +2013,7 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   overflow: hidden;
   transition: filter 0.1s;
 }
@@ -2026,17 +2026,9 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   font-size: 12px;
   font-weight: 500;
   color: var(--text-normal);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.fmo-timeline-bar-date {
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.fmo-timeline-bar-date-end {
-  margin-top: auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }

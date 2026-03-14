@@ -27,6 +27,8 @@ const MIN_REGION_HEIGHT_PX = 40;
 const PX_PER_SQRT_DAY = 15;
 const GAP_HEIGHT_PX = 24;
 const MIN_BAR_HEIGHT_PX = 32;
+const BAR_WIDTH_PX = 180;
+const BAR_GAP_PX = 6;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class LifeDashboardTimelineView extends LifeDashboardBaseView {
@@ -232,7 +234,6 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
   ): void {
     const lastRegion = regions[regions.length - 1];
     const totalHeight = lastRegion.yPx + lastRegion.heightPx;
-    const laneCount = Math.max(...lanes) + 1;
 
     // Header
     const allDates = entries.flatMap(e => e.segments.flatMap(s => [s.start, s.end]));
@@ -273,18 +274,16 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       line.style.top = `${y}px`;
     }
 
-    // Gap indicators
+    // Gap indicators on axis
     for (const region of regions) {
       if (!region.active) {
-        const gap = lanesEl.createEl("div", { cls: "fmo-timeline-gap" });
+        const gap = axis.createEl("div", { cls: "fmo-timeline-gap" });
         gap.style.top = `${region.yPx}px`;
         gap.style.height = `${region.heightPx}px`;
       }
     }
 
     // Bars
-    const laneWidthPct = 100 / laneCount;
-
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const lane = lanes[i];
@@ -298,22 +297,14 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
         const bar = lanesEl.createEl("div", { cls: "fmo-timeline-bar" });
         bar.style.top = `${yStart}px`;
         bar.style.height = `${barHeight}px`;
-        bar.style.left = `${lane * laneWidthPct}%`;
-        bar.style.width = `${laneWidthPct}%`;
+        bar.style.left = `${lane * (BAR_WIDTH_PX + BAR_GAP_PX)}px`;
+        bar.style.width = `${BAR_WIDTH_PX}px`;
         bar.style.borderLeftColor = color;
         bar.style.backgroundColor = color + "22";
 
         bar.createEl("div", {
-          cls: "fmo-timeline-bar-date",
-          text: this.formatDate(seg.start)
-        });
-        bar.createEl("div", {
           cls: "fmo-timeline-bar-name",
           text: entry.name
-        });
-        bar.createEl("div", {
-          cls: "fmo-timeline-bar-date fmo-timeline-bar-date-end",
-          text: this.formatDate(seg.end)
         });
 
         bar.addEventListener("click", () => {
@@ -333,9 +324,4 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     return `${month} ${day}`;
   }
 
-  private formatDate(d: Date): string {
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${d.getFullYear()}-${m}-${day}`;
-  }
 }
