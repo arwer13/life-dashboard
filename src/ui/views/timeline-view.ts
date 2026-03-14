@@ -202,7 +202,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       });
 
       bar.addEventListener("click", () => {
-        void this.app.workspace.getLeaf().openFile(entry.file);
+        void this.app.workspace.getLeaf("tab").openFile(entry.file);
       });
     }
   }
