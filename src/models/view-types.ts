@@ -43,6 +43,14 @@ export const LIFE_DASHBOARD_VIEW_TYPES = [
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE
 ] as const;
 
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const DASHBOARD_COLORS = [
+  "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
+  "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
+  "#9c755f", "#bab0ac"
+];
+
 export const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
 
 export const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [

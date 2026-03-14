@@ -1,11 +1,10 @@
 import type { TFile, WorkspaceLeaf } from "obsidian";
-import { VIEW_TYPE_LIFE_DASHBOARD_TIMELINE } from "../../models/view-types";
+import { VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, DASHBOARD_COLORS, DAY_MS } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 
 type TimelineEntry = {
   file: TFile;
-  name: string;
   segments: Array<{ start: Date; end: Date }>;
 };
 
@@ -17,12 +16,6 @@ type Region = {
   yPx: number;
 };
 
-const TIMELINE_COLORS = [
-  "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
-  "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
-  "#9c755f", "#bab0ac"
-];
-
 const PX_PER_SQRT_DAY = 15;
 const GAP_HEIGHT_PX = 72;
 const MIN_BAR_HEIGHT_PX = 32;
@@ -30,7 +23,6 @@ const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
 const LABEL_HEIGHT_PX = 16;
 const PADDING_PX = 20;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class LifeDashboardTimelineView extends LifeDashboardBaseView {
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
@@ -64,18 +56,18 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       return;
     }
 
-    entries.sort((a, b) => {
-      const aMin = Math.min(...a.segments.map(s => s.start.getTime()));
-      const bMin = Math.min(...b.segments.map(s => s.start.getTime()));
-      return aMin - bMin || a.name.localeCompare(b.name);
-    });
+    // Precompute sort keys
+    const minStarts = new Map<TimelineEntry, number>();
+    for (const e of entries) {
+      minStarts.set(e, Math.min(...e.segments.map(s => s.start.getTime())));
+    }
+    entries.sort((a, b) =>
+      minStarts.get(a)! - minStarts.get(b)! || a.file.basename.localeCompare(b.file.basename)
+    );
 
     const allSegments = entries.flatMap(e => e.segments);
     const regions = this.buildRegions(allSegments);
-    if (regions.length === 0) {
-      contentEl.createEl("p", { cls: "fmo-empty", text: "No project concerns with date ranges found." });
-      return;
-    }
+    if (regions.length === 0) return;
 
     const lanes = this.packLanes(entries);
     this.renderTimeline(contentEl, entries, lanes, regions);
@@ -107,7 +99,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       }
       if (segments.length === 0) continue;
 
-      results.push({ file: task.file, name: task.file.basename, segments });
+      results.push({ file: task.file, segments });
     }
 
     return results;
@@ -236,14 +228,26 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const lastRegion = regions[regions.length - 1];
     const totalHeight = lastRegion.yPx + lastRegion.heightPx + PADDING_PX;
 
-    // Header
-    const allDates = entries.flatMap(e => e.segments.flatMap(s => [s.start, s.end]));
-    const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
-    const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+    // Single pass: collect min/max dates and start/end sets
+    const startDates = new Set<number>();
+    const endDates = new Set<number>();
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+    for (const entry of entries) {
+      for (const seg of entry.segments) {
+        const sMs = seg.start.getTime();
+        const eMs = seg.end.getTime();
+        startDates.add(sMs);
+        endDates.add(eMs);
+        if (sMs < minMs) minMs = sMs;
+        if (eMs > maxMs) maxMs = eMs;
+      }
+    }
 
+    // Header
     const header = container.createEl("div", { cls: "fmo-timeline-header" });
     header.createEl("span", {
-      text: `${this.formatMonthYear(minDate)} – ${this.formatMonthYear(maxDate)}`
+      text: `${this.formatMonthYear(new Date(minMs))} – ${this.formatMonthYear(new Date(maxMs))}`
     });
 
     // Scrollable wrapper
@@ -254,18 +258,8 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const axis = body.createEl("div", { cls: "fmo-timeline-axis" });
     const lanesEl = body.createEl("div", { cls: "fmo-timeline-lanes" });
 
-    // Axis labels and grid lines at event boundaries
-    const startDates = new Set<number>();
-    const endDates = new Set<number>();
-    for (const entry of entries) {
-      for (const seg of entry.segments) {
-        startDates.add(seg.start.getTime());
-        endDates.add(seg.end.getTime());
-      }
-    }
-    const allAxisMs = new Set([...startDates, ...endDates]);
-    const axisDates = [...allAxisMs].sort((a, b) => a - b);
-
+    // Axis labels and grid lines
+    const axisDates = [...new Set([...startDates, ...endDates])].sort((a, b) => a - b);
     const laneCount = Math.max(...lanes) + 1;
     const lanesWidthPx = laneCount * (BAR_WIDTH_PX + BAR_GAP_PX);
 
@@ -283,7 +277,6 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       const month = d.getMonth();
       const year = d.getFullYear();
 
-      // Only show label when month changes from the previously shown label
       if (month !== lastShownMonth || year !== lastShownYear) {
         const isStart = startDates.has(ms);
         const isEnd = endDates.has(ms);
@@ -316,7 +309,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       const lane = lanes[i];
-      const color = TIMELINE_COLORS[i % TIMELINE_COLORS.length];
+      const color = DASHBOARD_COLORS[i % DASHBOARD_COLORS.length];
 
       for (const seg of entry.segments) {
         const yStart = this.dateToY(seg.start.getTime(), regions);
@@ -334,7 +327,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
         const days = Math.round((seg.end.getTime() - seg.start.getTime()) / DAY_MS) + 1;
         bar.createEl("div", {
           cls: "fmo-timeline-bar-name",
-          text: `[${days}d] ${entry.name}`
+          text: `[${days}d] ${entry.file.basename}`
         });
 
         bar.addEventListener("click", () => {
@@ -353,5 +346,4 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const day = String(d.getDate()).padStart(2, "0");
     return `${month} ${day}`;
   }
-
 }

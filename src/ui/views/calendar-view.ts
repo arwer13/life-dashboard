@@ -2,6 +2,8 @@ import { Notice } from "obsidian";
 import type { TimeLogEntry } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+  DASHBOARD_COLORS,
+  DAY_MS,
   type OutlineSortMode
 } from "../../models/view-types";
 import type {
@@ -55,17 +57,12 @@ type HealthOverviewMetric = {
   title?: string;
 };
 
-const CALENDAR_COLORS = [
-  "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
-  "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
-  "#9c755f", "#bab0ac"
-];
+const CALENDAR_COLORS = DASHBOARD_COLORS;
 
 const BASE_DAY_PX_PER_HOUR = 60;
 const BASE_WEEK_PX_PER_HOUR = 40;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
-const DAY_MS = 24 * 60 * 60 * 1000;
 const BLOCK_MIN_HEIGHT_PX = 3;
 const BLOCK_LABEL_FONT_PX = 10;
 const RESIZE_SNAP_MS = 5 * 60 * 1000;
