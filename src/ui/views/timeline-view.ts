@@ -23,12 +23,12 @@ const TIMELINE_COLORS = [
   "#9c755f", "#bab0ac"
 ];
 
-const MIN_REGION_HEIGHT_PX = 40;
 const PX_PER_SQRT_DAY = 15;
 const GAP_HEIGHT_PX = 72;
 const MIN_BAR_HEIGHT_PX = 32;
 const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
+const LABEL_HEIGHT_PX = 16;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class LifeDashboardTimelineView extends LifeDashboardBaseView {
@@ -173,9 +173,15 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     let y = 0;
     for (const m of merged) {
       const days = (m.endMs - m.startMs) / DAY_MS;
-      const heightPx = m.active
-        ? Math.max(MIN_REGION_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
-        : GAP_HEIGHT_PX;
+      let heightPx: number;
+      if (m.active) {
+        // Count how many unique dates fall within this region (inclusive)
+        const datesInRegion = sorted.filter(ts => ts >= m.startMs && ts <= m.endMs);
+        const minForLabels = datesInRegion.length * LABEL_HEIGHT_PX;
+        heightPx = Math.max(minForLabels, PX_PER_SQRT_DAY * Math.sqrt(days));
+      } else {
+        heightPx = GAP_HEIGHT_PX;
+      }
       regions.push({ startMs: m.startMs, endMs: m.endMs, active: m.active, heightPx, yPx: y });
       y += heightPx;
     }
@@ -265,11 +271,6 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     const allAxisMs = new Set([...startDates, ...endDates]);
     const axisDates = [...allAxisMs].sort((a, b) => a - b);
 
-    const LABEL_HEIGHT = 14;
-    const LABEL_PAD = 2;
-    // Track visual bounds [top, bottom] of all rendered labels
-    const renderedBounds: Array<[number, number]> = [];
-
     for (const ms of axisDates) {
       const y = this.dateToY(ms, regions);
 
@@ -278,36 +279,15 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
 
       const isStart = startDates.has(ms);
       const isEnd = endDates.has(ms);
+      const alignCls = isStart && isEnd
+        ? "fmo-timeline-date-label-mid"
+        : isEnd
+          ? "fmo-timeline-date-label-end"
+          : "fmo-timeline-date-label-start";
 
-      // Compute visual bounds based on alignment
-      let visualTop: number;
-      let visualBottom: number;
-      let alignCls: string;
-
-      if (isStart && isEnd) {
-        alignCls = "fmo-timeline-date-label-mid";
-        visualTop = y - LABEL_HEIGHT / 2;
-        visualBottom = y + LABEL_HEIGHT / 2;
-      } else if (isEnd) {
-        alignCls = "fmo-timeline-date-label-end";
-        visualTop = y - LABEL_HEIGHT;
-        visualBottom = y;
-      } else {
-        alignCls = "fmo-timeline-date-label-start";
-        visualTop = y;
-        visualBottom = y + LABEL_HEIGHT;
-      }
-
-      const overlaps = renderedBounds.some(
-        ([t, b]) => visualTop < b + LABEL_PAD && visualBottom > t - LABEL_PAD
-      );
-
-      if (!overlaps) {
-        const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
-        label.style.top = `${y}px`;
-        label.textContent = this.formatShortDate(new Date(ms));
-        renderedBounds.push([visualTop, visualBottom]);
-      }
+      const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
+      label.style.top = `${y}px`;
+      label.textContent = this.formatShortDate(new Date(ms));
     }
 
     // Gap indicators on axis
