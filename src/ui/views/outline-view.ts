@@ -301,7 +301,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
           "aria-pressed": String(this.outlineTimeRange === option.value)
         }
       });
-      setTooltip(button, this.plugin.getTimeRangeDescription(option.value));
+      setTooltip(button, this.plugin.timeData.getTimeRangeDescription(option.value));
 
       button.addEventListener("click", () => {
         if (this.outlineTimeRange === option.value) return;
@@ -316,7 +316,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     for (const item of tasks) {
       ownSecondsByPath.set(
         item.file.path,
-        this.plugin.getTrackedSecondsForRange(item.file.path, range)
+        this.plugin.timeData.getTrackedSecondsForRange(item.file.path, range)
       );
     }
     return ownSecondsByPath;
@@ -358,7 +358,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       const existing = cached.get(path);
       if (existing != null) return existing;
 
-      const latest = this.plugin.getLatestTrackedStartMsForRange(path, range);
+      const latest = this.plugin.timeData.getLatestTrackedStartMsForRange(path, range);
       cached.set(path, latest);
       return latest;
     };
@@ -407,9 +407,9 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     ];
 
     const now = new Date();
-    const todayStart = this.plugin.getDayStart(now).getTime();
+    const todayStart = this.plugin.timeData.getDayStart(now).getTime();
     const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
-    const weekStart = this.plugin.getWeekStart(now).getTime();
+    const weekStart = this.plugin.timeData.getWeekStart(now).getTime();
 
     for (const item of matched) {
       const latest = latestMatchedStartByPath.get(item.file.path) ?? 0;
@@ -546,9 +546,9 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
     row.createEl("span", {
       cls: "fmo-time-badge",
-      text: this.plugin.formatShortDuration(total),
+      text: this.plugin.timeData.formatShortDuration(total),
       attr: {
-        title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+        title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
       }
     });
 

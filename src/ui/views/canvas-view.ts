@@ -349,7 +349,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
     let bestPath = "";
     let bestSeconds = -1;
     for (const task of tasks) {
-      const seconds = this.plugin.getTrackedSeconds(task.file.path);
+      const seconds = this.plugin.timeData.getTrackedSeconds(task.file.path);
       if (seconds > bestSeconds) {
         bestSeconds = seconds;
         bestPath = task.file.path;

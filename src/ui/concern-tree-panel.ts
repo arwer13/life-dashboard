@@ -470,9 +470,9 @@ export class ConcernTreePanel {
     const own = ctx.state.ownSeconds.get(node.path) ?? 0;
     row.createEl("span", {
       cls: "fmo-time-badge",
-      text: this.plugin.formatShortDuration(total),
+      text: this.plugin.timeData.formatShortDuration(total),
       attr: {
-        title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+        title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
       }
     });
 
@@ -490,8 +490,8 @@ export class ConcernTreePanel {
     const ownSecondsByPath = new Map<string, number>();
     for (const task of tasks) {
       const seconds = this.customWindow
-        ? this.plugin.getTrackedSecondsForWindow(task.file.path, this.customWindow)
-        : this.plugin.getTrackedSecondsForRange(task.file.path, range);
+        ? this.plugin.timeData.getTrackedSecondsForWindow(task.file.path, this.customWindow)
+        : this.plugin.timeData.getTrackedSecondsForRange(task.file.path, range);
       ownSecondsByPath.set(task.file.path, seconds);
     }
     return ownSecondsByPath;
@@ -504,8 +504,8 @@ export class ConcernTreePanel {
       if (existing != null) return existing;
 
       const latest = this.customWindow
-        ? this.plugin.getLatestTrackedStartMsForWindow(path, this.customWindow)
-        : this.plugin.getLatestTrackedStartMsForRange(path, range);
+        ? this.plugin.timeData.getLatestTrackedStartMsForWindow(path, this.customWindow)
+        : this.plugin.timeData.getLatestTrackedStartMsForRange(path, range);
       cache.set(path, latest);
       return latest;
     };

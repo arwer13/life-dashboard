@@ -301,7 +301,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       }
 
       const totalSeconds = this.getEntryTotalSeconds(entries);
-      this.calendarTreePanel?.setStatusText(`total: ${this.plugin.formatShortDuration(totalSeconds)}`);
+      this.calendarTreePanel?.setStatusText(`total: ${this.plugin.timeData.formatShortDuration(totalSeconds)}`);
     };
 
     // Lightweight highlight update that toggles CSS classes without rebuilding DOM
@@ -688,7 +688,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   ): string {
     const parts = [`${MONTH_NAMES[monthIndex]} ${dayOfMonth}, ${year}`];
     if (totalSeconds > 0) {
-      parts.push(`Tracked time: ${this.plugin.formatShortDuration(totalSeconds)}`);
+      parts.push(`Tracked time: ${this.plugin.timeData.formatShortDuration(totalSeconds)}`);
     }
     if (healthDay?.sleepMinutes != null) {
       parts.push(`Sleep: ${this.formatSleepDuration(healthDay.sleepMinutes)}`);
@@ -707,7 +707,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private formatSleepDuration(minutes: number | null): string {
     if (minutes == null || !Number.isFinite(minutes)) return "No data";
-    return this.plugin.formatShortDuration(Math.max(0, Math.round(minutes)) * 60);
+    return this.plugin.timeData.formatShortDuration(Math.max(0, Math.round(minutes)) * 60);
   }
 
   private formatSleepHr(value: number | null): string {
@@ -772,7 +772,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
       let cursorMs = entryStartMs;
       while (cursorMs < entryEndMs) {
-        const dayStart = this.plugin.getDayStart(new Date(cursorMs));
+        const dayStart = this.plugin.timeData.getDayStart(new Date(cursorMs));
         const nextDayStart = new Date(dayStart.getTime());
         nextDayStart.setDate(nextDayStart.getDate() + 1);
         const segmentEndMs = Math.min(entryEndMs, nextDayStart.getTime());
@@ -801,7 +801,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const result: CalendarEntry[] = [];
 
     for (const task of this.plugin.getTaskTreeItems()) {
-      for (const entry of this.plugin.getEntriesForPath(task.file.path)) {
+      for (const entry of this.plugin.timeData.getEntriesForPath(task.file.path)) {
         if (entry.startMs >= window.startMs && entry.startMs < window.endMs) {
           result.push({ path: task.file.path, basename: task.file.basename, entry });
         }
@@ -814,9 +814,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private getCalendarWindow(now: Date): TimeWindow {
     switch (this.period) {
       case "today":
-        return this.plugin.getWindowForRange("today", now);
+        return this.plugin.timeData.getWindowForRange("today", now);
       case "week": {
-        const weekStart = this.plugin.getWeekStart(now);
+        const weekStart = this.plugin.timeData.getWeekStart(now);
         weekStart.setDate(weekStart.getDate() + this.offset * 7);
         const weekEnd = new Date(weekStart.getTime());
         weekEnd.setDate(weekEnd.getDate() + 7);
@@ -1020,7 +1020,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     const startDate = new Date(e.entry.startMs);
     const timeLabel = `${pad2(startDate.getHours())}:${pad2(startDate.getMinutes())}`;
-    const durationLabel = this.plugin.formatShortDuration(e.entry.durationMinutes * 60);
+    const durationLabel = this.plugin.timeData.formatShortDuration(e.entry.durationMinutes * 60);
     const tooltip = `${e.basename} ${timeLabel} (${durationLabel})`;
 
     const block = container.createEl("div", { cls: "fmo-calendar-block" });
@@ -1132,7 +1132,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const dayEntries: CalendarEntry[][] = Array.from({ length: 7 }, () => []);
     for (const e of entries) {
       const dayIndex = Math.floor(
-        (this.plugin.getDayStart(new Date(e.entry.startMs)).getTime() - weekStartMs) /
+        (this.plugin.timeData.getDayStart(new Date(e.entry.startMs)).getTime() - weekStartMs) /
         DAY_MS
       );
       if (dayIndex >= 0 && dayIndex < 7) dayEntries[dayIndex].push(e);
@@ -1141,7 +1141,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const pxPerHour = this.pxPerHour;
     const hourRange = this.computeHourRange(entries);
     const gridHeight = (hourRange.maxHour - hourRange.minHour) * pxPerHour;
-    const todayMs = this.plugin.getDayStart(now).getTime();
+    const todayMs = this.plugin.timeData.getDayStart(now).getTime();
     const todayInRange = todayMs >= weekStartMs && todayMs < weekStartMs + 7 * DAY_MS;
 
     const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-week-wrapper" });
@@ -1171,7 +1171,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       this.renderWeekHealthCells(col, this.getHealthDay(dayDate, healthRange));
 
       const total = this.getEntryTotalSeconds(dayEntries[d]);
-      const totalLabel = total > 0 ? this.plugin.formatShortDuration(total) : "";
+      const totalLabel = total > 0 ? this.plugin.timeData.formatShortDuration(total) : "";
       col.createEl("div", {
         cls: "fmo-calendar-day-total-top",
         text: totalLabel
@@ -1228,7 +1228,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const dayBuckets = this.buildDayBuckets(entries, window);
     const maxSeconds = this.getMaxBucketSeconds(dayBuckets);
 
-    const todayMs = this.plugin.getDayStart(now).getTime();
+    const todayMs = this.plugin.timeData.getDayStart(now).getTime();
 
     const grid = containerEl.createEl("div", { cls: "fmo-calendar-month-grid" });
 
@@ -1269,7 +1269,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       if (totalSeconds > 0) {
         cell.createEl("div", {
           cls: "fmo-calendar-month-day-time",
-          text: this.plugin.formatShortDuration(totalSeconds)
+          text: this.plugin.timeData.formatShortDuration(totalSeconds)
         });
       }
 
@@ -1368,7 +1368,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       monthLabel.style.gridColumn = `${weekIndex + 1}`;
     }
 
-    const todayKey = this.getDateKey(this.plugin.getDayStart(now));
+    const todayKey = this.getDateKey(this.plugin.timeData.getDayStart(now));
 
     const body = wrapper.createEl("div", { cls: "fmo-calendar-year-body" });
     const dayLabelColumn = body.createEl("div", { cls: "fmo-calendar-year-day-labels" });

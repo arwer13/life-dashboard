@@ -31,7 +31,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
   updateLiveTimer(): void {
     if (!this.liveTimerEl) return;
-    this.liveTimerEl.setText(this.plugin.formatClockDuration(this.plugin.getCurrentElapsedSeconds()));
+    this.liveTimerEl.setText(this.plugin.timeData.formatClockDuration(this.plugin.getCurrentElapsedSeconds()));
   }
 
   async render(): Promise<void> {
@@ -56,7 +56,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
     this.liveTimerEl = timerRing.createEl("div", {
       cls: "fmo-timer-value",
-      text: this.plugin.formatClockDuration(this.plugin.getCurrentElapsedSeconds())
+      text: this.plugin.timeData.formatClockDuration(this.plugin.getCurrentElapsedSeconds())
     });
 
     const toggleBtn = timerRing.createEl("button", {
@@ -114,7 +114,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
   }
 
   private renderConcernPeriodSummary(containerEl: HTMLElement, taskPath: string): void {
-    const summary = this.plugin.getConcernPeriodSummary(taskPath);
+    const summary = this.plugin.timeData.getConcernPeriodSummary(taskPath);
     const box = containerEl.createEl("div", { cls: "fmo-today-entries" });
 
     const totals = box.createEl("div", { cls: "fmo-period-totals" });
@@ -123,9 +123,9 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
 
     const todayTitle = box.createEl("div", {
       cls: "fmo-today-entries-title",
-      text: `Today (${this.plugin.formatShortDuration(summary.todaySeconds)}):`
+      text: `Today (${this.plugin.timeData.formatShortDuration(summary.todaySeconds)}):`
     });
-    setTooltip(todayTitle, this.plugin.getTimeRangeDescription("today"));
+    setTooltip(todayTitle, this.plugin.timeData.getTimeRangeDescription("today"));
 
     if (summary.todayEntries.length > 0) {
       const list = box.createEl("div", { cls: "fmo-today-entries-list" });
@@ -152,9 +152,9 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
     row.createEl("span", { cls: "fmo-period-row-label", text: `${label}:` });
     row.createEl("span", {
       cls: "fmo-period-row-value",
-      text: this.plugin.formatShortDuration(seconds)
+      text: this.plugin.timeData.formatShortDuration(seconds)
     });
-    setTooltip(row, this.plugin.getTimeRangeDescription(range));
+    setTooltip(row, this.plugin.timeData.getTimeRangeDescription(range));
   }
 
   private renderTrackedContext(panel: HTMLElement, tasks: TaskItem[], tree: TaskTreeData): void {
@@ -245,9 +245,9 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       const own = tree.ownSeconds.get(node.path) ?? 0;
       row.createEl("span", {
         cls: "fmo-time-badge fmo-context-time-badge",
-        text: this.plugin.formatShortDuration(total),
+        text: this.plugin.timeData.formatShortDuration(total),
         attr: {
-          title: `Own: ${this.plugin.formatShortDuration(own)} | Total (with children): ${this.plugin.formatShortDuration(total)}`
+          title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
         }
       });
     }

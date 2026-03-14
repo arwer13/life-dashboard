@@ -1,5 +1,5 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
-import type { ListEntry, TaskItem, TimeLogByNoteId, TimeLogEntry } from "./models/types";
+import type { ListEntry, TaskItem, TimeLogByNoteId } from "./models/types";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -13,7 +13,8 @@ import {
 } from "./services/macos-tray-timer-service";
 import { TaskFilterService } from "./services/task-filter-service";
 import { TimeLogStore } from "./services/time-log-store";
-import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type PeriodTooltipRange as PeriodTooltipRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
+import { TimeDataFacade } from "./services/time-data-facade";
+import { TimeWindowService, type OutlineTimeRange as OutlineTimeRangeType, type TimeWindow as TimeWindowType } from "./services/time-window-service";
 import { TimerNotificationService } from "./services/timer-notification-service";
 import { TrackingService } from "./services/tracking-service";
 import { normalizePriorityValue } from "./services/priority-utils";
@@ -51,7 +52,6 @@ import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/k
 import { createSubConcernsExtension } from "./ui/editor/sub-concerns-extension";
 
 export type OutlineTimeRange = OutlineTimeRangeType;
-type PeriodTooltipRange = PeriodTooltipRangeType;
 export type TimeWindow = TimeWindowType;
 type PowerMonitorEvent = "suspend" | "lock-screen";
 const AUTO_STOP_POWER_EVENTS: PowerMonitorEvent[] = ["suspend", "lock-screen"];
@@ -96,8 +96,7 @@ type NoteTaskInfo = {
 
 export default class LifeDashboardPlugin extends Plugin {
   settings!: LifeDashboardSettings;
-  timeTotalsById: Map<string, number> = new Map();
-  timeEntriesById: Map<string, TimeLogEntry[]> = new Map();
+  timeData!: TimeDataFacade;
   highlightedTimeLogStartMs: number | null = null;
   treeStructureVersion = 0;
 
@@ -449,7 +448,7 @@ export default class LifeDashboardPlugin extends Plugin {
     const start = this.getActiveTrackingStartMs();
     if (start == null) return 0;
 
-    const latestEndMs = this.getLatestTrackedEndMs();
+    const latestEndMs = this.timeData.getLatestTrackedEndMs();
     return Math.max(0, Math.floor((start - latestEndMs) / 1000));
   }
 
@@ -830,8 +829,8 @@ export default class LifeDashboardPlugin extends Plugin {
 
   async reloadTimeTotals(): Promise<void> {
     const snapshot = await this.timeLogStore.loadSnapshot();
-    this.timeTotalsById = snapshot.totals;
-    this.timeEntriesById = snapshot.entriesByNoteId;
+    this.timeData.timeTotalsById = snapshot.totals;
+    this.timeData.timeEntriesById = snapshot.entriesByNoteId;
     this.recomputeMacOsTrayRecentConcerns();
   }
 
@@ -979,105 +978,6 @@ export default class LifeDashboardPlugin extends Plugin {
     return map;
   }
 
-  getTrackedSeconds(path: string): number {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) return 0;
-    const noteId = this.getTaskIdForFile(file);
-    if (!noteId) return 0;
-    return this.timeTotalsById.get(noteId) ?? 0;
-  }
-
-  getTrackedSecondsForRange(path: string, range: OutlineTimeRange): number {
-    if (range === "all") {
-      return this.getTrackedSeconds(path);
-    }
-
-    const entries = this.getEntriesForPath(path);
-    if (entries.length === 0) return 0;
-
-    const window = this.getWindowForRange(range, new Date());
-    return this.sumSecondsInWindow(entries, window);
-  }
-
-  getLatestTrackedStartMsForRange(path: string, range: OutlineTimeRange): number {
-    const entries = this.getEntriesForPath(path);
-    if (entries.length === 0) return 0;
-
-    if (range === "all") {
-      return entries.reduce((latest, entry) => Math.max(latest, entry.startMs), 0);
-    }
-
-    const window = this.getWindowForRange(range, new Date());
-    let latest = 0;
-    for (const entry of entries) {
-      const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, window);
-      if (overlapStartMs != null && overlapStartMs > latest) {
-        latest = overlapStartMs;
-      }
-    }
-    return latest;
-  }
-
-  getConcernPeriodSummary(path: string): {
-    todayEntries: Array<{ label: string; startMs: number }>;
-    todaySeconds: number;
-    yesterdaySeconds: number;
-    weekSeconds: number;
-  } {
-    const entries = this.getEntriesForPath(path);
-    if (entries.length === 0) {
-      return {
-        todayEntries: [],
-        todaySeconds: 0,
-        yesterdaySeconds: 0,
-        weekSeconds: 0
-      };
-    }
-
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    const now = new Date();
-    const todayWindow = this.getWindowForRange("today", now);
-    const yesterdayWindow = {
-      startMs: todayWindow.startMs - 24 * 60 * 60 * 1000,
-      endMs: todayWindow.startMs
-    };
-    const weekWindow = this.getWindowForRange("week", now);
-
-    const todayEntries = entries
-      .map((entry) => {
-        const overlapSeconds = this.timeWindowService.getEntryOverlapSeconds(entry, todayWindow);
-        const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, todayWindow);
-        return { entry, overlapSeconds, overlapStartMs };
-      })
-      .filter(
-        (item): item is { entry: TimeLogEntry; overlapSeconds: number; overlapStartMs: number } =>
-          item.overlapSeconds > 0 && item.overlapStartMs != null
-      )
-      .sort((a, b) => a.overlapStartMs - b.overlapStartMs)
-      .map(({ entry, overlapSeconds, overlapStartMs }) => {
-        const start = new Date(overlapStartMs);
-        const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
-        const label = `${hhmm} ${this.formatShortDuration(overlapSeconds)}`;
-        return { label, startMs: entry.startMs };
-      });
-    const todaySeconds = this.sumSecondsInWindow(entries, todayWindow);
-    const yesterdaySeconds = this.sumSecondsInWindow(entries, yesterdayWindow);
-    const weekSeconds = this.sumSecondsInWindow(entries, weekWindow);
-
-    return { todayEntries, todaySeconds, yesterdaySeconds, weekSeconds };
-  }
-
-  getTimeRangeDescription(range: PeriodTooltipRange): string {
-    return this.timeWindowService.getTimeRangeDescription(range, new Date());
-  }
-
-  formatClockDuration(totalSeconds: number): string {
-    return this.timeWindowService.formatClockDuration(totalSeconds);
-  }
-
-  formatShortDuration(totalSeconds: number): string {
-    return this.timeWindowService.formatShortDuration(totalSeconds);
-  }
 
   async openFile(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
@@ -1244,6 +1144,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.taskFilterService = new TaskFilterService(this.app, this.settings);
     this.timeLogStore = new TimeLogStore(this.app, this.settings, () => this.saveSettings());
     this.timeWindowService = new TimeWindowService(() => this.settings.weekStartsOn);
+    this.timeData = new TimeDataFacade(this.app, this.timeWindowService);
     this.timerNotificationService = new TimerNotificationService();
     this.healthTrackingService = new HealthTrackingService(this.app);
     this.macOsTrayTimerService = new MacOsTrayTimerService({
@@ -1355,7 +1256,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.macOsTrayTimerService.update({
       enabled: this.settings.macOsTrayTimerEnabled,
       isTracking,
-      elapsedLabel: this.formatClockDuration(elapsedSeconds),
+      elapsedLabel: this.timeData.formatClockDuration(elapsedSeconds),
       taskLabel: this.getMacOsTrayTaskLabel(),
       recentConcerns
     });
@@ -1390,14 +1291,18 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   private recomputeMacOsTrayRecentConcerns(): void {
-    if (this.timeEntriesById.size === 0) {
+    if (this.timeData.timeEntriesById.size === 0) {
       this.macOsTrayRecentConcerns = [];
       return;
     }
 
     const latestEndMsByNoteId = new Map<string, number>();
-    for (const [noteId, entries] of this.timeEntriesById.entries()) {
-      const latestEndMs = this.getLatestTrackedEndMsForEntries(entries);
+    for (const [noteId, entries] of this.timeData.timeEntriesById.entries()) {
+      let latestEndMs = 0;
+      for (const entry of entries) {
+        const endMs = entry.startMs + entry.durationMinutes * 60_000;
+        if (endMs > latestEndMs) latestEndMs = endMs;
+      }
       if (latestEndMs > 0) {
         latestEndMsByNoteId.set(noteId, latestEndMs);
       }
@@ -1702,80 +1607,12 @@ export default class LifeDashboardPlugin extends Plugin {
     try {
       await this.reloadTimeTotals();
     } catch (error) {
-      this.timeTotalsById = new Map();
-      this.timeEntriesById = new Map();
+      this.timeData.clear();
       this.recomputeMacOsTrayRecentConcerns();
       console.error("[life-dashboard] Failed to read time totals:", error);
     }
   }
 
-  getEntriesForPath(path: string): TimeLogEntry[] {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) return [];
-
-    const noteId = this.getTaskIdForFile(file);
-    if (!noteId) return [];
-    return this.timeEntriesById.get(noteId) ?? [];
-  }
-
-  private getLatestTrackedEndMs(): number {
-    let latestEndMs = 0;
-    for (const entries of this.timeEntriesById.values()) {
-      const entryLatestEndMs = this.getLatestTrackedEndMsForEntries(entries);
-      if (entryLatestEndMs > latestEndMs) {
-        latestEndMs = entryLatestEndMs;
-      }
-    }
-    return latestEndMs;
-  }
-
-  private getLatestTrackedEndMsForEntries(entries: TimeLogEntry[]): number {
-    let latestEndMs = 0;
-    for (const entry of entries) {
-      const endMs = entry.startMs + entry.durationMinutes * 60_000;
-      if (endMs > latestEndMs) {
-        latestEndMs = endMs;
-      }
-    }
-    return latestEndMs;
-  }
-
-  getWindowForRange(range: Exclude<OutlineTimeRange, "all">, now: Date): TimeWindow {
-    return this.timeWindowService.getWindowForRange(range, now);
-  }
-
-  getWeekStart(now: Date): Date {
-    return this.timeWindowService.getWeekStart(now);
-  }
-
-  getDayStart(value: Date): Date {
-    return this.timeWindowService.getDayStart(value);
-  }
-
-  getTrackedSecondsForWindow(path: string, window: TimeWindow): number {
-    const entries = this.getEntriesForPath(path);
-    if (entries.length === 0) return 0;
-    return this.sumSecondsInWindow(entries, window);
-  }
-
-  getLatestTrackedStartMsForWindow(path: string, window: TimeWindow): number {
-    const entries = this.getEntriesForPath(path);
-    if (entries.length === 0) return 0;
-    let latest = 0;
-    for (const entry of entries) {
-      const overlapStartMs = this.timeWindowService.getEntryOverlapStartMs(entry, window);
-      if (overlapStartMs != null && overlapStartMs > latest) {
-        latest = overlapStartMs;
-      }
-    }
-    return latest;
-  }
-
-  private sumSecondsInWindow(entries: TimeLogEntry[], window: TimeWindow): number {
-    return entries.reduce((seconds, entry) => {
-      return seconds + this.timeWindowService.getEntryOverlapSeconds(entry, window);
-    }, 0);
-  }
 
   private handleTimerNotifications(): void {
     this.timerNotificationService.handleTick(
