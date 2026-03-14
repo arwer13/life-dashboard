@@ -1972,13 +1972,6 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   font-size: 10px;
   color: var(--text-muted);
   white-space: nowrap;
-}
-
-.fmo-timeline-date-label-end {
-  transform: translateY(-100%);
-}
-
-.fmo-timeline-date-label-mid {
   transform: translateY(-50%);
 }
 

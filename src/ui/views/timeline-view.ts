@@ -264,15 +264,14 @@ function renderTimelineDOM(
   const lastRegion = regions[regions.length - 1];
   const totalHeight = lastRegion.yPx + lastRegion.heightPx + PADDING_PX;
 
-  const startDates = new Set<number>();
-  const endDates = new Set<number>();
-  startDates.add(todayMs);
+  const allDateMs = new Set<number>();
+  allDateMs.add(todayMs);
   let maxMs = -Infinity;
   for (const entry of entries) {
     for (const seg of entry.segments) {
       const endMs = seg.end.getTime();
-      startDates.add(seg.start.getTime());
-      endDates.add(endMs);
+      allDateMs.add(seg.start.getTime());
+      allDateMs.add(endMs);
       if (endMs > maxMs) maxMs = endMs;
     }
   }
@@ -289,7 +288,7 @@ function renderTimelineDOM(
   const axis = body.createEl("div", { cls: "fmo-timeline-axis" });
   const lanesEl = body.createEl("div", { cls: "fmo-timeline-lanes" });
 
-  const axisDates = [...new Set([...startDates, ...endDates])].sort((a, b) => a - b);
+  const axisDates = [...allDateMs].sort((a, b) => a - b);
   const laneCount = Math.max(...lanes) + 1;
   const lanesWidthPx = laneCount * (BAR_WIDTH_PX + BAR_GAP_PX);
 
@@ -305,31 +304,14 @@ function renderTimelineDOM(
     line.style.top = `${y}px`;
     line.style.width = `${lanesWidthPx}px`;
 
-    const isStart = startDates.has(ms);
-    const isEnd = endDates.has(ms);
-
-    let visualTop: number;
-    let visualBottom: number;
-    let alignCls: string;
-    if (isStart && isEnd) {
-      alignCls = "fmo-timeline-date-label-mid";
-      visualTop = y - LABEL_HEIGHT_PX / 2;
-      visualBottom = y + LABEL_HEIGHT_PX / 2;
-    } else if (isEnd) {
-      alignCls = "fmo-timeline-date-label-end";
-      visualTop = y - LABEL_HEIGHT_PX;
-      visualBottom = y;
-    } else {
-      alignCls = "fmo-timeline-date-label-start";
-      visualTop = y;
-      visualBottom = y + LABEL_HEIGHT_PX;
-    }
+    const visualTop = y - LABEL_HEIGHT_PX / 2;
+    const visualBottom = y + LABEL_HEIGHT_PX / 2;
 
     const overlaps = renderedBounds.some(
       ([t, b]) => visualTop < b + LABEL_OVERLAP_PAD_PX && visualBottom > t - LABEL_OVERLAP_PAD_PX
     );
     if (!overlaps) {
-      const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
+      const label = axis.createEl("div", { cls: "fmo-timeline-date-label" });
       label.style.top = `${y}px`;
       label.textContent = isToday ? "Today" : formatShortDate(new Date(ms));
       renderedBounds.push([visualTop, visualBottom]);
