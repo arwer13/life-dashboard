@@ -175,7 +175,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
       const days = (m.endMs - m.startMs) / DAY_MS;
       let heightPx: number;
       if (m.active) {
-        heightPx = Math.max(LABEL_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days));
+        heightPx = Math.max(2 * LABEL_HEIGHT_PX + 4, PX_PER_SQRT_DAY * Math.sqrt(days));
       } else {
         const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
         heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
