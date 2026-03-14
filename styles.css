@@ -2011,9 +2011,6 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   pointer-events: none;
 }
 
-.fmo-timeline-gap::after {
-  content: "···";
-}
 
 .fmo-timeline-bar {
   position: absolute;

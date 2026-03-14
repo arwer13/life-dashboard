@@ -29,6 +29,7 @@ const MIN_BAR_HEIGHT_PX = 32;
 const BAR_WIDTH_PX = 180;
 const BAR_GAP_PX = 6;
 const LABEL_HEIGHT_PX = 16;
+const PADDING_PX = 20;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export class LifeDashboardTimelineView extends LifeDashboardBaseView {
@@ -170,12 +171,11 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     }
 
     const regions: Region[] = [];
-    let y = 0;
+    let y = PADDING_PX;
     for (const m of merged) {
       const days = (m.endMs - m.startMs) / DAY_MS;
       let heightPx: number;
       if (m.active) {
-        // Count how many unique dates fall within this region (inclusive)
         const datesInRegion = sorted.filter(ts => ts >= m.startMs && ts <= m.endMs);
         const minForLabels = datesInRegion.length * LABEL_HEIGHT_PX;
         heightPx = Math.max(minForLabels, PX_PER_SQRT_DAY * Math.sqrt(days));
@@ -239,7 +239,7 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     regions: Region[]
   ): void {
     const lastRegion = regions[regions.length - 1];
-    const totalHeight = lastRegion.yPx + lastRegion.heightPx;
+    const totalHeight = lastRegion.yPx + lastRegion.heightPx + PADDING_PX;
 
     // Header
     const allDates = entries.flatMap(e => e.segments.flatMap(s => [s.start, s.end]));
@@ -293,9 +293,11 @@ export class LifeDashboardTimelineView extends LifeDashboardBaseView {
     // Gap indicators on axis
     for (const region of regions) {
       if (!region.active) {
+        const skippedDays = Math.round((region.endMs - region.startMs) / DAY_MS);
         const gap = axis.createEl("div", { cls: "fmo-timeline-gap" });
         gap.style.top = `${region.yPx}px`;
         gap.style.height = `${region.heightPx}px`;
+        gap.textContent = `··· ${skippedDays}d ···`;
       }
     }
 
