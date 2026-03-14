@@ -123,16 +123,13 @@ function collectEntries(plugin: LifeDashboardPlugin): TimelineEntry[] {
 }
 
 function parseDates(raw: unknown): Date[] {
-  if (Array.isArray(raw)) {
-    const results: Date[] = [];
-    for (const item of raw) {
-      const d = parseSingleDate(item);
-      if (d) results.push(d);
-    }
-    return results;
+  const items = Array.isArray(raw) ? raw : [raw];
+  const results: Date[] = [];
+  for (const item of items) {
+    const d = parseSingleDate(item);
+    if (d) results.push(d);
   }
-  const d = parseSingleDate(raw);
-  return d ? [d] : [];
+  return results;
 }
 
 function parseSingleDate(raw: unknown): Date | null {
@@ -273,9 +270,10 @@ function renderTimelineDOM(
   let maxMs = -Infinity;
   for (const entry of entries) {
     for (const seg of entry.segments) {
+      const endMs = seg.end.getTime();
       startDates.add(seg.start.getTime());
-      endDates.add(seg.end.getTime());
-      if (seg.end.getTime() > maxMs) maxMs = seg.end.getTime();
+      endDates.add(endMs);
+      if (endMs > maxMs) maxMs = endMs;
     }
   }
 
@@ -333,26 +331,27 @@ function renderTimelineDOM(
     if (!overlaps) {
       const label = axis.createEl("div", { cls: `fmo-timeline-date-label ${alignCls}` });
       label.style.top = `${y}px`;
-      label.textContent = isToday ? `Today` : formatShortDate(new Date(ms));
+      label.textContent = isToday ? "Today" : formatShortDate(new Date(ms));
       renderedBounds.push([visualTop, visualBottom]);
     }
   }
 
   for (const region of regions) {
-    if (!region.active) {
-      const skippedDays = Math.round((region.endMs - region.startMs) / DAY_MS);
+    if (region.active) continue;
+    const topPx = `${region.yPx}px`;
+    const heightPx = `${region.heightPx}px`;
+    const skippedDays = Math.round((region.endMs - region.startMs) / DAY_MS);
 
-      const axisGap = axis.createEl("div", { cls: "fmo-timeline-gap" });
-      axisGap.style.top = `${region.yPx}px`;
-      axisGap.style.height = `${region.heightPx}px`;
-      axisGap.textContent = "···";
+    const axisGap = axis.createEl("div", { cls: "fmo-timeline-gap" });
+    axisGap.style.top = topPx;
+    axisGap.style.height = heightPx;
+    axisGap.textContent = "···";
 
-      const laneGap = lanesEl.createEl("div", { cls: "fmo-timeline-gap-label" });
-      laneGap.style.top = `${region.yPx}px`;
-      laneGap.style.height = `${region.heightPx}px`;
-      laneGap.style.width = `${lanesWidthPx}px`;
-      laneGap.textContent = `${skippedDays}d`;
-    }
+    const laneGap = lanesEl.createEl("div", { cls: "fmo-timeline-gap-label" });
+    laneGap.style.top = topPx;
+    laneGap.style.height = heightPx;
+    laneGap.style.width = `${lanesWidthPx}px`;
+    laneGap.textContent = `${skippedDays}d`;
   }
 
   for (let i = 0; i < entries.length; i++) {

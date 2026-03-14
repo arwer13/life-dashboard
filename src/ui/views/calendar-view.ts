@@ -57,8 +57,6 @@ type HealthOverviewMetric = {
   title?: string;
 };
 
-const CALENDAR_COLORS = DASHBOARD_COLORS;
-
 const BASE_DAY_PX_PER_HOUR = 60;
 const BASE_WEEK_PX_PER_HOUR = 40;
 const MIN_ZOOM = 0.5;
@@ -961,7 +959,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     const colorMap = new Map<string, string>();
     for (let i = 0; i < sorted.length; i++) {
-      colorMap.set(sorted[i][0], CALENDAR_COLORS[i % CALENDAR_COLORS.length]);
+      colorMap.set(sorted[i][0], DASHBOARD_COLORS[i % DASHBOARD_COLORS.length]);
     }
     return colorMap;
   }
@@ -1028,7 +1026,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     block.style.top = `${top}px`;
     block.style.height = `${height}px`;
     block.style.fontSize = `${BLOCK_LABEL_FONT_PX}px`;
-    block.style.backgroundColor = ctx.colorMap.get(e.path) ?? CALENDAR_COLORS[0];
+    block.style.backgroundColor = ctx.colorMap.get(e.path) ?? DASHBOARD_COLORS[0];
     block.title = tooltip;
     if (height >= 12) block.setText(e.basename);
 
@@ -1279,7 +1277,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         for (const [path, secs] of [...secondsByPath.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) {
           const bar = bars.createEl("div", { cls: "fmo-calendar-month-day-bar" });
           bar.dataset.path = path;
-          const color = colorMap.get(path) ?? CALENDAR_COLORS[0];
+          const color = colorMap.get(path) ?? DASHBOARD_COLORS[0];
           bar.style.backgroundColor = color;
           const ratio = totalSeconds > 0 ? secs / totalSeconds : 0;
           bar.style.flex = `${ratio}`;
