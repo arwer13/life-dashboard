@@ -203,7 +203,13 @@ function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: numb
     const days = (m.endMs - m.startMs) / DAY_MS;
     let heightPx: number;
     if (m.active) {
-      heightPx = Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days));
+      // Check if any segment actually covers this band (not just a bridging gap)
+      const hasContent = segments.some(
+        s => s.start.getTime() < m.endMs && s.end.getTime() > m.startMs
+      );
+      heightPx = hasContent
+        ? Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
+        : Math.max(4, PX_PER_SQRT_DAY * Math.sqrt(days));
     } else {
       const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
       heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
