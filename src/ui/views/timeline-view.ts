@@ -209,7 +209,7 @@ function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: numb
       );
       heightPx = hasContent
         ? Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
-        : Math.max(4, PX_PER_SQRT_DAY * Math.sqrt(days));
+        : Math.max(LABEL_HEIGHT_PX + LABEL_OVERLAP_PAD_PX * 2, PX_PER_SQRT_DAY * Math.sqrt(days));
     } else {
       const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
       heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
