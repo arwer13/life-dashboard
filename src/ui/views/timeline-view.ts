@@ -26,6 +26,7 @@ const BAR_GAP_PX = 6;
 const LABEL_HEIGHT_PX = 16;
 const LABEL_OVERLAP_PAD_PX = 2;
 const MIN_BAND_HEIGHT_PX = 2 * LABEL_HEIGHT_PX + LABEL_OVERLAP_PAD_PX * 2;
+const BRIDGE_MIN_HEIGHT_PX = Math.round(MIN_BAND_HEIGHT_PX * 0.4);
 const PADDING_PX = 20;
 const BAR_BG_ALPHA = "22";
 
@@ -157,22 +158,17 @@ function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: numb
   const sorted = [...tsSet].sort((a, b) => a - b);
   if (sorted.length < 2) return [];
 
-  type Band = { startMs: number; endMs: number; active: boolean };
+  type Band = { startMs: number; endMs: number; active: boolean; bridge: boolean };
   const bands: Band[] = [];
   for (let i = 0; i < sorted.length - 1; i++) {
     const bStart = sorted[i];
     const bEnd = sorted[i + 1];
-    const active = segments.some(
+    const hasContent = segments.some(
       s => s.start.getTime() < bEnd && s.end.getTime() > bStart
     );
-    bands.push({ startMs: bStart, endMs: bEnd, active });
-  }
-
-  // Treat gaps of <=1 day as active (adjacent events, not a real skip)
-  for (const band of bands) {
-    if (!band.active && (band.endMs - band.startMs) <= DAY_MS) {
-      band.active = true;
-    }
+    // Gaps of <=1 day are promoted to active bridges (no "···" indicator)
+    const bridge = !hasContent && (bEnd - bStart) <= DAY_MS;
+    bands.push({ startMs: bStart, endMs: bEnd, active: hasContent || bridge, bridge });
   }
 
   const merged: Band[] = [];
@@ -203,13 +199,9 @@ function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: numb
     const days = (m.endMs - m.startMs) / DAY_MS;
     let heightPx: number;
     if (m.active) {
-      // Check if any segment actually covers this band (not just a bridging gap)
-      const hasContent = segments.some(
-        s => s.start.getTime() < m.endMs && s.end.getTime() > m.startMs
-      );
-      heightPx = hasContent
-        ? Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
-        : Math.max(Math.round((LABEL_HEIGHT_PX + LABEL_OVERLAP_PAD_PX * 2) * 0.7), PX_PER_SQRT_DAY * Math.sqrt(days));
+      heightPx = m.bridge
+        ? Math.max(BRIDGE_MIN_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days))
+        : Math.max(MIN_BAND_HEIGHT_PX, PX_PER_SQRT_DAY * Math.sqrt(days));
     } else {
       const t = gapDaysRange > 0 ? (days - minGapDays) / gapDaysRange : 0;
       heightPx = GAP_MIN_HEIGHT_PX + t * (GAP_MAX_HEIGHT_PX - GAP_MIN_HEIGHT_PX);
