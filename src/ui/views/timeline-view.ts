@@ -168,6 +168,13 @@ function buildRegions(segments: Array<{ start: Date; end: Date }>, todayMs: numb
     bands.push({ startMs: bStart, endMs: bEnd, active });
   }
 
+  // Treat gaps of <=1 day as active (adjacent events, not a real skip)
+  for (const band of bands) {
+    if (!band.active && (band.endMs - band.startMs) <= DAY_MS) {
+      band.active = true;
+    }
+  }
+
   const merged: Band[] = [];
   for (const band of bands) {
     const last = merged[merged.length - 1];
