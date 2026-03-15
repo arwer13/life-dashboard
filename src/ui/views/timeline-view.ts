@@ -278,14 +278,18 @@ function renderTimelineDOM(
   const totalHeight = lastRegion.yPx + lastRegion.heightPx + PADDING_PX;
 
   const allDateMs = new Set<number>();
+  const segmentStartMs = new Set<number>();
   allDateMs.add(todayMs);
+  segmentStartMs.add(todayMs);
   let maxMs = -Infinity;
   for (const entry of entries) {
     for (const seg of entry.segments) {
-      const endMs = seg.end.getTime();
-      allDateMs.add(seg.start.getTime());
-      allDateMs.add(endMs);
-      if (endMs > maxMs) maxMs = endMs;
+      const sMs = seg.start.getTime();
+      const eMs = seg.end.getTime();
+      allDateMs.add(sMs);
+      allDateMs.add(eMs);
+      segmentStartMs.add(sMs);
+      if (eMs > maxMs) maxMs = eMs;
     }
   }
 
@@ -320,7 +324,9 @@ function renderTimelineDOM(
     const visualTop = y - LABEL_HEIGHT_PX / 2;
     const visualBottom = y + LABEL_HEIGHT_PX / 2;
 
-    const overlaps = renderedBounds.some(
+    // Segment start dates always render; others skip if they'd overlap
+    const isSegStart = segmentStartMs.has(ms);
+    const overlaps = !isSegStart && renderedBounds.some(
       ([t, b]) => visualTop < b + LABEL_OVERLAP_PAD_PX && visualBottom > t - LABEL_OVERLAP_PAD_PX
     );
     if (!overlaps) {
