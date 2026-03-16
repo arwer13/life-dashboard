@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, PRIORITY_EMOJI_PATTERN } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -130,6 +130,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private macOsTrayRecentConcerns: MacOsTrayRecentConcern[] = [];
   private concernQuickSearchModal: TaskSelectModal | null = null;
   private cachedInlineItems: InlineTaskItem[] = [];
+  private inlineTaskCacheGeneration = 0;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -399,10 +400,14 @@ export default class LifeDashboardPlugin extends Plugin {
     return [...this.taskFilterService.getTaskTreeItems(), ...this.cachedInlineItems];
   }
 
+  isConcernFile(file: TFile): boolean {
+    return this.taskFilterService.fileMatchesTaskFilter(file);
+  }
+
   async postFilterSettingsChanged(): Promise<void> {
     this.taskFilterService.invalidateCache();
     await this.maybeAutoSelectFromActive();
-    this.refreshTaskStructureViews();
+    void this.refreshInlineTaskCache();
   }
 
   async onTimeLogPathSettingChanged(): Promise<void> {
@@ -1043,6 +1048,17 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   private async doCreateSubConcern(parentFile: TFile, name: string): Promise<void> {
+    const result = await this.createConcernFile(parentFile, name, "tension");
+    if (result) {
+      await this.openFile(result.path);
+    }
+  }
+
+  private async createConcernFile(
+    parentFile: TFile,
+    name: string,
+    kind: string
+  ): Promise<{ path: string; fileName: string } | null> {
     const parentName = parentFile.basename;
     const parentDir = parentFile.parent?.path ?? "";
     const propName = this.settings.propertyName.trim() || "type";
@@ -1064,7 +1080,7 @@ export default class LifeDashboardPlugin extends Plugin {
       "---",
       `${propName}: ${propValue}`,
       `parent: "[[${parentName}]]"`,
-      "kind: tension",
+      `kind: ${kind}`,
       `id: "${id}"`,
       "---",
       ""
@@ -1072,10 +1088,11 @@ export default class LifeDashboardPlugin extends Plugin {
 
     try {
       await this.app.vault.create(newPath, frontmatter);
-      await this.openFile(newPath);
+      return { path: newPath, fileName };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to create sub-concern: ${message}`);
+      new Notice(`Failed to create concern: ${message}`);
+      return null;
     }
   }
 
@@ -1097,13 +1114,13 @@ export default class LifeDashboardPlugin extends Plugin {
     const lineText = lines[line];
     if (!lineText) return;
 
-    const match = /^(\s*)- \[ \]\s+(.+)$/.exec(lineText);
+    const match = /^(\s*)[-*] \[ \]\s+(.+)$/.exec(lineText);
     if (!match) return;
 
     const indent = match[1];
     const rawText = match[2].trim();
     // Strip priority emojis for the name
-    const cleanText = rawText.replace(/[\u{1F53A}\u23EB\u{1F53C}\u{1F53D}\u23EC]/gu, "").trim();
+    const cleanText = rawText.replace(PRIORITY_EMOJI_PATTERN, "").trim();
     const safeName = this.sanitizeFileName(cleanText);
 
     this.openConcernPicker({
@@ -1121,53 +1138,21 @@ export default class LifeDashboardPlugin extends Plugin {
     safeName: string,
     parentFile: TFile
   ): Promise<void> {
-    const parentName = parentFile.basename;
-    const parentDir = parentFile.parent?.path ?? "";
-    const propName = this.settings.propertyName.trim() || "type";
-    const propValue = this.settings.propertyValue.trim() || "concen";
-
-    const dir = parentDir ? `${parentDir}/` : "";
-    let fileName = safeName;
-    let newPath = normalizePath(`${dir}${fileName}.md`);
-
-    let counter = 1;
-    while (this.app.vault.getAbstractFileByPath(newPath)) {
-      fileName = `${safeName} ${counter}`;
-      newPath = normalizePath(`${dir}${fileName}.md`);
-      counter++;
-    }
-
-    const id = this.generateConcernId();
-    const frontmatter = [
-      "---",
-      `${propName}: ${propValue}`,
-      `parent: "[[${parentName}]]"`,
-      "kind: task",
-      `id: "${id}"`,
-      "---",
-      ""
-    ].join("\n");
-
-    try {
-      await this.app.vault.create(newPath, frontmatter);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      new Notice(`Failed to create concern: ${message}`);
-      return;
-    }
+    const result = await this.createConcernFile(parentFile, safeName, "task");
+    if (!result) return;
 
     // Replace the checkbox line with a wikilink
     const content = await this.app.vault.read(sourceFile);
     const lines = content.split("\n");
     const currentLine = lines[line];
-    if (!currentLine || !/^\s*- \[ \]\s+/.test(currentLine)) {
+    if (!currentLine || !/^\s*[-*] \[ \]\s+/.test(currentLine)) {
       new Notice("The checkbox line appears to have changed. Promotion aborted.");
       return;
     }
-    lines[line] = `${indent}- [[${fileName}]]`;
+    lines[line] = `${indent}- [[${result.fileName}]]`;
     await this.app.vault.modify(sourceFile, lines.join("\n"));
 
-    await this.openFile(newPath);
+    await this.openFile(result.path);
   }
 
   private updateSubConcernHeaderButton(): void {
@@ -1585,18 +1570,20 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   private async refreshInlineTaskCache(): Promise<void> {
+    const gen = ++this.inlineTaskCacheGeneration;
     const fileItems = this.taskFilterService.getTaskTreeItems();
-    this.cachedInlineItems = [];
-    for (const item of fileItems) {
-      if (!isFileItem(item)) continue;
-      try {
-        const content = await this.app.vault.cachedRead(item.file);
-        const parsed = parseInlineTasksForFile(item.file.path, content);
-        this.cachedInlineItems.push(...parsed);
-      } catch {
-        // File may have been deleted between filter and read
-      }
-    }
+    const results: InlineTaskItem[][] = await Promise.all(
+      fileItems.filter(isFileItem).map(async (item) => {
+        try {
+          const content = await this.app.vault.cachedRead(item.file);
+          return parseInlineTasksForFile(item.file.path, content);
+        } catch {
+          return [];
+        }
+      })
+    );
+    if (gen !== this.inlineTaskCacheGeneration) return; // superseded by newer request
+    this.cachedInlineItems = results.flat();
     this.treeStructureVersion++;
     this.refreshTaskStructureViews();
   }

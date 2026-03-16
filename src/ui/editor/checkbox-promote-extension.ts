@@ -1,7 +1,6 @@
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
-import { editorInfoField } from "obsidian";
-import { isFileItem } from "../../models/types";
+import { TFile, editorInfoField } from "obsidian";
 import type LifeDashboardPlugin from "../../plugin";
 
 class PromoteButtonWidget extends WidgetType {
@@ -143,11 +142,7 @@ function buildDecorations(state: EditorState, plugin: LifeDashboardPlugin): Deco
 }
 
 function isConcernFile(plugin: LifeDashboardPlugin, filePath: string): boolean {
-  const items = plugin.getTaskTreeItems();
-  for (const item of items) {
-    if (isFileItem(item) && item.file.path === filePath) {
-      return true;
-    }
-  }
-  return false;
+  const file = plugin.app.vault.getAbstractFileByPath(filePath);
+  if (!(file instanceof TFile)) return false;
+  return plugin.isConcernFile(file);
 }

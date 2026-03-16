@@ -16,7 +16,11 @@ const PRIORITY_EMOJI_MAP = new Map<string, number>([
   ["\u23EC", 4],    // ⏬ lowest
 ]);
 
-const PRIORITY_EMOJI_PATTERN = /[\u{1F53A}\u{1F53C}\u{1F53D}\u23EB\u23EC]/gu;
+/** Regex matching any Tasks-plugin priority emoji. Exported for reuse. */
+export const PRIORITY_EMOJI_PATTERN = /[\u{1F53A}\u{1F53C}\u{1F53D}\u23EB\u23EC]/gu;
+
+/** Synthetic path separator for inline checkbox items. */
+export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
 
 const TASKS_HEADING_RE = /^(#{1,2})\s+tasks\s*$/i;
 const ANY_HEADING_RE = /^(#{1,6})\s/;
@@ -70,7 +74,7 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
 
     items.push({
       kind: "inline",
-      path: `${parentPath}#checkbox:${i}`,
+      path: `${parentPath}${INLINE_CHECKBOX_PATH_SEP}${i}`,
       basename: displayText,
       parentPath,
       text: rawText,
