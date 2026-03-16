@@ -39,7 +39,7 @@ export abstract class LifeDashboardBaseView extends ItemView {
   }
 
   protected matchesFrontmatterFilter(
-    frontmatter: TaskItem["frontmatter"],
+    frontmatter: import("obsidian").FrontMatterCache | undefined,
     key: string,
     expectedValue: string | null
   ): boolean {
