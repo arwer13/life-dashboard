@@ -596,13 +596,18 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
       const isPriorityDigit = isPriorityDigitKey(event.key);
       const isPriorityClear = event.key === "-";
-      if (!isPriorityDigit && !isPriorityClear) return;
+      const isReparent = event.key === "§" || event.key === ">";
+      if (!isPriorityDigit && !isPriorityClear && !isReparent) return;
 
       const hoveredPath = this.hoveredConcernPath;
       if (!hoveredPath) return;
 
       event.preventDefault();
       event.stopPropagation();
+      if (isReparent) {
+        this.plugin.reparentConcernInteractive(hoveredPath);
+        return;
+      }
       if (isPriorityClear) {
         void this.clearHoveredPriority(hoveredPath);
         return;

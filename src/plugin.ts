@@ -964,6 +964,31 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.clearConcernPriority(path);
   }
 
+  reparentConcernInteractive(concernPath: string): void {
+    if (concernPath.includes(INLINE_CHECKBOX_PATH_SEP)) return;
+
+    const file = this.app.vault.getAbstractFileByPath(concernPath);
+    if (!(file instanceof TFile)) return;
+
+    this.openConcernPicker({
+      placeholder: "Select new parent...",
+      onChoose: (parentFile: TFile) => {
+        if (parentFile.path === concernPath) return;
+        void this.updateConcernFrontmatter(
+          concernPath,
+          (fm) => {
+            const newParent = `[[${parentFile.basename}]]`;
+            const current = fm.parent;
+            if (typeof current === "string" && current === newParent) return false;
+            fm.parent = newParent;
+            return true;
+          },
+          "Could not update parent"
+        );
+      }
+    });
+  }
+
   private async modifyInlineTaskLine(
     inlinePath: string,
     transform: (text: string) => string

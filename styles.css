@@ -2050,23 +2050,11 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 /* ── Inline checkbox subtasks in tree ─────────────────────────── */
 
-.fmo-tree-row-inline {
-  opacity: 0.7;
-}
-
-.fmo-tree-row-inline:hover {
-  opacity: 1;
-}
-
 .fmo-inline-task-checkbox {
   margin-inline-end: 4px;
   font-size: 11px;
   color: var(--text-muted);
   user-select: none;
-}
-
-.fmo-note-link-inline {
-  font-style: italic;
 }
 
 /* ── Promote button (editor decoration) ──────────────────────── */

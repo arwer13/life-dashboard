@@ -780,13 +780,18 @@ export class ConcernTreePanel {
 
       const isPriorityDigit = isPriorityDigitKey(event.key);
       const isPriorityClear = event.key === "-";
-      if (!isPriorityDigit && !isPriorityClear) return;
+      const isReparent = event.key === "§" || event.key === ">";
+      if (!isPriorityDigit && !isPriorityClear && !isReparent) return;
 
       const path = this.hoveredConcernPath;
       if (!path) return;
 
       event.preventDefault();
       event.stopPropagation();
+      if (isReparent) {
+        this.plugin.reparentConcernInteractive(path);
+        return;
+      }
       if (isPriorityClear) {
         void this.applyHoveredPriorityClear(path);
         return;
