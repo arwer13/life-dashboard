@@ -31,6 +31,15 @@ export function stripPriorityEmojis(text: string): string {
 /** Synthetic path separator for inline checkbox items. */
 export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
 
+/** Parse a synthetic inline checkbox path back into file path + line number. */
+export function parseInlinePath(inlinePath: string): { filePath: string; line: number } | null {
+  const sepIdx = inlinePath.indexOf(INLINE_CHECKBOX_PATH_SEP);
+  if (sepIdx < 0) return null;
+  const line = Number.parseInt(inlinePath.slice(sepIdx + INLINE_CHECKBOX_PATH_SEP.length), 10);
+  if (!Number.isFinite(line)) return null;
+  return { filePath: inlinePath.slice(0, sepIdx), line };
+}
+
 const TASKS_HEADING_RE = /^(#{1,2})\s+tasks\s*$/i;
 const ANY_HEADING_RE = /^(#{1,6})\s/;
 const UNCHECKED_CHECKBOX_RE = /^[-*]\s+\[ \]\s+(.+)$/;

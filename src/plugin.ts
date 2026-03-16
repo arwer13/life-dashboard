@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, stripPriorityEmojis, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -965,13 +965,9 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   reparentConcernInteractive(concernPath: string): void {
-    if (concernPath.includes(INLINE_CHECKBOX_PATH_SEP)) {
-      const sepIdx = concernPath.indexOf(INLINE_CHECKBOX_PATH_SEP);
-      const filePath = concernPath.slice(0, sepIdx);
-      const lineNum = Number.parseInt(concernPath.slice(sepIdx + INLINE_CHECKBOX_PATH_SEP.length), 10);
-      if (Number.isFinite(lineNum)) {
-        void this.promoteCheckboxToConcern(filePath, lineNum);
-      }
+    const parsed = parseInlinePath(concernPath);
+    if (parsed) {
+      void this.promoteCheckboxToConcern(parsed.filePath, parsed.line);
       return;
     }
 
@@ -1001,14 +997,12 @@ export default class LifeDashboardPlugin extends Plugin {
     inlinePath: string,
     transform: (text: string) => string
   ): Promise<boolean> {
-    const sepIdx = inlinePath.indexOf(INLINE_CHECKBOX_PATH_SEP);
-    if (sepIdx < 0) return false;
-    const filePath = inlinePath.slice(0, sepIdx);
-    const lineNum = Number.parseInt(inlinePath.slice(sepIdx + INLINE_CHECKBOX_PATH_SEP.length), 10);
-    if (!Number.isFinite(lineNum)) return false;
+    const parsed = parseInlinePath(inlinePath);
+    if (!parsed) return false;
 
-    const file = this.app.vault.getAbstractFileByPath(filePath);
+    const file = this.app.vault.getAbstractFileByPath(parsed.filePath);
     if (!(file instanceof TFile)) return false;
+    const lineNum = parsed.line;
 
     let changed = false;
     await this.app.vault.process(file, (content) => {

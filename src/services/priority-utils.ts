@@ -34,6 +34,11 @@ export function isPriorityDigitKey(key: string): key is PriorityDigit {
   return key === "0" || key === "1" || key === "2" || key === "3" || key === "4";
 }
 
+/** Keys that trigger the reparent/promote action (§ on en layout, > on ru layout — same physical key). */
+export function isReparentKey(key: string): boolean {
+  return key === "§" || key === ">";
+}
+
 export function shouldIgnorePriorityHotkeyTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;

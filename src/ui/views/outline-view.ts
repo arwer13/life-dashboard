@@ -22,6 +22,7 @@ import {
   formatPriorityBadgeText,
   getItemPriorityBadge,
   isPriorityDigitKey,
+  isReparentKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../../services/priority-utils";
 import {
@@ -497,8 +498,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const isParentOnly = !state.matchedPaths.has(node.path);
     const rowCls = [
       "fmo-tree-row",
-      isParentOnly ? "fmo-tree-row-parent" : "",
-      isInline ? "fmo-tree-row-inline" : ""
+      isParentOnly ? "fmo-tree-row-parent" : ""
     ].filter(Boolean).join(" ");
     const row = li.createEl("div", { cls: rowCls });
     row.addEventListener("mouseenter", () => {
@@ -544,8 +544,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
     const linkCls = [
       "fmo-note-link",
-      isParentOnly ? "fmo-note-link-parent" : "",
-      isInline ? "fmo-note-link-inline" : ""
+      isParentOnly ? "fmo-note-link-parent" : ""
     ].filter(Boolean).join(" ");
     const link = row.createEl("a", {
       cls: linkCls,
@@ -591,12 +590,15 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     this.keydownRegistered = true;
     this.registerDomEvent(document, "keydown", (event) => {
       if (!this.hoveredConcernPath) return;
-      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.repeat) return;
       if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
+
+      const isReparent = isReparentKey(event.key);
+      if (event.shiftKey && !isReparent) return;
+
       const isPriorityDigit = isPriorityDigitKey(event.key);
       const isPriorityClear = event.key === "-";
-      const isReparent = event.key === "§" || event.key === ">";
       if (!isPriorityDigit && !isPriorityClear && !isReparent) return;
 
       const hoveredPath = this.hoveredConcernPath;
