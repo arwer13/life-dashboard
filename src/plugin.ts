@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, PRIORITY_EMOJI_PATTERN, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, stripPriorityEmojis, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -947,19 +947,20 @@ export default class LifeDashboardPlugin extends Plugin {
     );
   }
 
-  async setInlineTaskPriority(inlinePath: string, digit: string): Promise<boolean> {
-    const emoji = PRIORITY_DIGIT_TO_EMOJI.get(digit);
-    if (!emoji) return false;
-    return this.modifyInlineTaskLine(inlinePath, (text) => {
-      const stripped = text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
-      return `${stripped} ${emoji}`;
-    });
+  async setPriorityForPath(path: string, digit: string): Promise<boolean> {
+    if (path.includes(INLINE_CHECKBOX_PATH_SEP)) {
+      const emoji = PRIORITY_DIGIT_TO_EMOJI.get(digit);
+      if (!emoji) return false;
+      return this.modifyInlineTaskLine(path, (text) => `${stripPriorityEmojis(text)} ${emoji}`);
+    }
+    return this.setConcernPriority(path, digit);
   }
 
-  async clearInlineTaskPriority(inlinePath: string): Promise<boolean> {
-    return this.modifyInlineTaskLine(inlinePath, (text) => {
-      return text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
-    });
+  async clearPriorityForPath(path: string): Promise<boolean> {
+    if (path.includes(INLINE_CHECKBOX_PATH_SEP)) {
+      return this.modifyInlineTaskLine(path, stripPriorityEmojis);
+    }
+    return this.clearConcernPriority(path);
   }
 
   private async modifyInlineTaskLine(
@@ -975,22 +976,23 @@ export default class LifeDashboardPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) return false;
 
-    const content = await this.app.vault.read(file);
-    const lines = content.split("\n");
-    const line = lines[lineNum];
-    if (!line) return false;
+    let changed = false;
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split("\n");
+      const line = lines[lineNum];
+      if (!line) return content;
 
-    const match = /^(\s*[-*]\s+\[ \]\s+)(.+)$/.exec(line);
-    if (!match) return false;
+      const match = /^(\s*[-*]\s+\[ \]\s+)(.+)$/.exec(line);
+      if (!match) return content;
 
-    const prefix = match[1];
-    const oldText = match[2];
-    const newText = transform(oldText);
-    if (newText === oldText) return false;
+      const newText = transform(match[2]);
+      if (newText === match[2]) return content;
 
-    lines[lineNum] = `${prefix}${newText}`;
-    await this.app.vault.modify(file, lines.join("\n"));
-    return true;
+      lines[lineNum] = `${match[1]}${newText}`;
+      changed = true;
+      return lines.join("\n");
+    });
+    return changed;
   }
 
   async resetAllConcernPriorities(): Promise<void> {
@@ -1165,8 +1167,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     const indent = match[1];
     const rawText = match[2].trim();
-    // Strip priority emojis for the name
-    const cleanText = rawText.replace(PRIORITY_EMOJI_PATTERN, "").trim();
+    const cleanText = stripPriorityEmojis(rawText);
     const safeName = this.sanitizeFileName(cleanText);
 
     this.openConcernPicker({

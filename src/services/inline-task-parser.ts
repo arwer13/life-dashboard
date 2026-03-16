@@ -16,17 +16,17 @@ const PRIORITY_EMOJI_MAP = new Map<string, number>([
   ["\u23EC", 4],    // ⏬ lowest
 ]);
 
-/** Regex matching any Tasks-plugin priority emoji. Exported for reuse. */
-export const PRIORITY_EMOJI_PATTERN = /[\u{1F53A}\u{1F53C}\u{1F53D}\u23EB\u23EC]/gu;
+const PRIORITY_EMOJI_PATTERN = /[\u{1F53A}\u{1F53C}\u{1F53D}\u23EB\u23EC]/gu;
 
 /** Digit (0-4) → priority emoji for writing back to checkbox lines. */
-export const PRIORITY_DIGIT_TO_EMOJI = new Map<string, string>([
-  ["0", "\u{1F53A}"], // 🔺 highest
-  ["1", "\u23EB"],    // ⏫ high
-  ["2", "\u{1F53C}"], // 🔼 medium
-  ["3", "\u{1F53D}"], // 🔽 low
-  ["4", "\u23EC"],    // ⏬ lowest
-]);
+export const PRIORITY_DIGIT_TO_EMOJI = new Map<string, string>(
+  [...PRIORITY_EMOJI_MAP].map(([emoji, rank]) => [String(rank), emoji])
+);
+
+/** Strip all Tasks-plugin priority emojis from text, collapsing leftover whitespace. */
+export function stripPriorityEmojis(text: string): string {
+  return text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
 
 /** Synthetic path separator for inline checkbox items. */
 export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
@@ -78,8 +78,16 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
     if (!checkboxMatch) continue;
 
     const rawText = checkboxMatch[1]!.trim();
-    const { displayText, priority } = extractPriority(rawText);
+    const displayText = stripPriorityEmojis(rawText);
     if (!displayText) continue;
+
+    let priority: number | null = null;
+    for (const [emoji, rank] of PRIORITY_EMOJI_MAP) {
+      if (rawText.includes(emoji)) {
+        priority = rank;
+        break;
+      }
+    }
 
     items.push({
       kind: "inline",
@@ -93,21 +101,4 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
   }
 
   return items;
-}
-
-function extractPriority(text: string): { displayText: string; priority: number | null } {
-  let priority: number | null = null;
-
-  // Find the first priority emoji
-  for (const [emoji, rank] of PRIORITY_EMOJI_MAP) {
-    if (text.includes(emoji)) {
-      priority = rank;
-      break;
-    }
-  }
-
-  // Strip all priority emojis from display text
-  const displayText = text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
-
-  return { displayText, priority };
 }

@@ -14,7 +14,6 @@ import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
 import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder";
 import { filterTasksByQuery } from "../services/outline-filter";
-import { INLINE_CHECKBOX_PATH_SEP } from "../services/inline-task-parser";
 import {
   formatPriorityBadgeText,
   getItemPriorityBadge,
@@ -762,17 +761,13 @@ export class ConcernTreePanel {
   }
 
   private async applyHoveredPriorityValue(path: string, digit: string): Promise<void> {
-    const changed = path.includes(INLINE_CHECKBOX_PATH_SEP)
-      ? await this.plugin.setInlineTaskPriority(path, digit)
-      : await this.plugin.setConcernPriority(path, digit);
+    const changed = await this.plugin.setPriorityForPath(path, digit);
     if (!changed) return;
     this.rerenderPreview?.();
   }
 
   private async applyHoveredPriorityClear(path: string): Promise<void> {
-    const changed = path.includes(INLINE_CHECKBOX_PATH_SEP)
-      ? await this.plugin.clearInlineTaskPriority(path)
-      : await this.plugin.clearConcernPriority(path);
+    const changed = await this.plugin.clearPriorityForPath(path);
     if (!changed) return;
     this.rerenderPreview?.();
   }

@@ -18,7 +18,6 @@ import {
 import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
-import { INLINE_CHECKBOX_PATH_SEP } from "../../services/inline-task-parser";
 import {
   formatPriorityBadgeText,
   getItemPriorityBadge,
@@ -613,17 +612,13 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private async applyHoveredPriority(path: string, digit: string): Promise<void> {
-    const changed = path.includes(INLINE_CHECKBOX_PATH_SEP)
-      ? await this.plugin.setInlineTaskPriority(path, digit)
-      : await this.plugin.setConcernPriority(path, digit);
+    const changed = await this.plugin.setPriorityForPath(path, digit);
     if (!changed) return;
     await this.render();
   }
 
   private async clearHoveredPriority(path: string): Promise<void> {
-    const changed = path.includes(INLINE_CHECKBOX_PATH_SEP)
-      ? await this.plugin.clearInlineTaskPriority(path)
-      : await this.plugin.clearConcernPriority(path);
+    const changed = await this.plugin.clearPriorityForPath(path);
     if (!changed) return;
     await this.render();
   }
