@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, parsePriorityFromText, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -1133,7 +1133,8 @@ export default class LifeDashboardPlugin extends Plugin {
   private async createConcernFile(
     parentFile: TFile,
     name: string,
-    kind: string
+    kind: string,
+    priority?: string
   ): Promise<{ path: string; fileName: string } | null> {
     const parentName = parentFile.basename;
     const parentDir = parentFile.parent?.path ?? "";
@@ -1152,15 +1153,18 @@ export default class LifeDashboardPlugin extends Plugin {
     }
 
     const id = this.generateConcernId();
-    const frontmatter = [
+    const frontmatterLines = [
       "---",
       `${propName}: ${propValue}`,
       `parent: "[[${parentName}]]"`,
       `kind: ${kind}`,
       `id: "${id}"`,
-      "---",
-      ""
-    ].join("\n");
+    ];
+    if (priority) {
+      frontmatterLines.push(`priority: ${priority}`);
+    }
+    frontmatterLines.push("---", "");
+    const frontmatter = frontmatterLines.join("\n");
 
     try {
       await this.app.vault.create(newPath, frontmatter);
@@ -1195,13 +1199,15 @@ export default class LifeDashboardPlugin extends Plugin {
 
     const indent = match[1];
     const rawText = match[2].trim();
+    const priorityRank = parsePriorityFromText(rawText);
+    const priority = priorityRank != null ? `p${priorityRank}` : undefined;
     const cleanText = stripPriorityEmojis(rawText);
     const safeName = this.sanitizeFileName(cleanText);
 
     this.openConcernPicker({
       placeholder: "Select parent for the new concern...",
       onChoose: (parentFile: TFile) => {
-        void this.doPromoteCheckbox(file, line, indent, safeName, parentFile);
+        void this.doPromoteCheckbox(file, line, indent, safeName, parentFile, priority);
       }
     });
   }
@@ -1211,9 +1217,10 @@ export default class LifeDashboardPlugin extends Plugin {
     line: number,
     indent: string,
     safeName: string,
-    parentFile: TFile
+    parentFile: TFile,
+    priority?: string
   ): Promise<void> {
-    const result = await this.createConcernFile(parentFile, safeName, "task");
+    const result = await this.createConcernFile(parentFile, safeName, "task", priority);
     if (!result) return;
 
     // Replace the checkbox line with a wikilink

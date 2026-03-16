@@ -28,6 +28,14 @@ export function stripPriorityEmojis(text: string): string {
   return text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
 }
 
+/** Extract the priority rank (0-4) from text containing a Tasks-plugin emoji, or null if none. */
+export function parsePriorityFromText(text: string): number | null {
+  for (const [emoji, rank] of PRIORITY_EMOJI_MAP) {
+    if (text.includes(emoji)) return rank;
+  }
+  return null;
+}
+
 /** Synthetic path separator for inline checkbox items. */
 export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
 
