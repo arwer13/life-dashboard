@@ -797,6 +797,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const result: CalendarEntry[] = [];
 
     for (const task of this.plugin.getTaskTreeItems()) {
+      if (!isFileItem(task)) continue;
       for (const entry of this.plugin.timeData.getEntriesForPath(task.path)) {
         if (entry.startMs >= window.startMs && entry.startMs < window.endMs) {
           result.push({ path: task.path, basename: task.basename, entry });
@@ -896,6 +897,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private getBasenameByPath(): Map<string, string> {
     const map = new Map<string, string>();
     for (const task of this.plugin.getTaskTreeItems()) {
+      if (!isFileItem(task)) continue;
       map.set(task.path, task.basename);
     }
     return map;

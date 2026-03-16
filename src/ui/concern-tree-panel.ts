@@ -456,8 +456,13 @@ export class ConcernTreePanel {
       row.createEl("span", { cls: "fmo-inline-task-checkbox", text: "\u2610" });
     }
 
+    const linkCls = [
+      "fmo-note-link",
+      isParentOnly ? "fmo-note-link-parent" : "",
+      isInline ? "fmo-note-link-inline" : ""
+    ].filter(Boolean).join(" ");
     const link = row.createEl("a", {
-      cls: isParentOnly ? "fmo-note-link fmo-note-link-parent" : "fmo-note-link",
+      cls: linkCls,
       text: node.item.basename,
       href: "#"
     });

@@ -1159,6 +1159,11 @@ export default class LifeDashboardPlugin extends Plugin {
     // Replace the checkbox line with a wikilink
     const content = await this.app.vault.read(sourceFile);
     const lines = content.split("\n");
+    const currentLine = lines[line];
+    if (!currentLine || !/^\s*- \[ \]\s+/.test(currentLine)) {
+      new Notice("The checkbox line appears to have changed. Promotion aborted.");
+      return;
+    }
     lines[line] = `${indent}- [[${fileName}]]`;
     await this.app.vault.modify(sourceFile, lines.join("\n"));
 
