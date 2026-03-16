@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, PRIORITY_EMOJI_PATTERN } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, PRIORITY_EMOJI_PATTERN, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -945,6 +945,52 @@ export default class LifeDashboardPlugin extends Plugin {
       },
       "Could not remove frontmatter priority"
     );
+  }
+
+  async setInlineTaskPriority(inlinePath: string, digit: string): Promise<boolean> {
+    const emoji = PRIORITY_DIGIT_TO_EMOJI.get(digit);
+    if (!emoji) return false;
+    return this.modifyInlineTaskLine(inlinePath, (text) => {
+      const stripped = text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+      return `${stripped} ${emoji}`;
+    });
+  }
+
+  async clearInlineTaskPriority(inlinePath: string): Promise<boolean> {
+    return this.modifyInlineTaskLine(inlinePath, (text) => {
+      return text.replace(PRIORITY_EMOJI_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+    });
+  }
+
+  private async modifyInlineTaskLine(
+    inlinePath: string,
+    transform: (text: string) => string
+  ): Promise<boolean> {
+    const sepIdx = inlinePath.indexOf(INLINE_CHECKBOX_PATH_SEP);
+    if (sepIdx < 0) return false;
+    const filePath = inlinePath.slice(0, sepIdx);
+    const lineNum = Number.parseInt(inlinePath.slice(sepIdx + INLINE_CHECKBOX_PATH_SEP.length), 10);
+    if (!Number.isFinite(lineNum)) return false;
+
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) return false;
+
+    const content = await this.app.vault.read(file);
+    const lines = content.split("\n");
+    const line = lines[lineNum];
+    if (!line) return false;
+
+    const match = /^(\s*[-*]\s+\[ \]\s+)(.+)$/.exec(line);
+    if (!match) return false;
+
+    const prefix = match[1];
+    const oldText = match[2];
+    const newText = transform(oldText);
+    if (newText === oldText) return false;
+
+    lines[lineNum] = `${prefix}${newText}`;
+    await this.app.vault.modify(file, lines.join("\n"));
+    return true;
   }
 
   async resetAllConcernPriorities(): Promise<void> {

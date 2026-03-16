@@ -19,6 +19,15 @@ const PRIORITY_EMOJI_MAP = new Map<string, number>([
 /** Regex matching any Tasks-plugin priority emoji. Exported for reuse. */
 export const PRIORITY_EMOJI_PATTERN = /[\u{1F53A}\u{1F53C}\u{1F53D}\u23EB\u23EC]/gu;
 
+/** Digit (0-4) → priority emoji for writing back to checkbox lines. */
+export const PRIORITY_DIGIT_TO_EMOJI = new Map<string, string>([
+  ["0", "\u{1F53A}"], // 🔺 highest
+  ["1", "\u23EB"],    // ⏫ high
+  ["2", "\u{1F53C}"], // 🔼 medium
+  ["3", "\u{1F53D}"], // 🔽 low
+  ["4", "\u23EC"],    // ⏬ lowest
+]);
+
 /** Synthetic path separator for inline checkbox items. */
 export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
 
