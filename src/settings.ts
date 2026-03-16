@@ -23,6 +23,7 @@ export interface LifeDashboardSettings {
   calendarTreePanelState: string;
   kanbanDefaultColumnProperty: string;
   kanbanDefaultSwimlaneProperty: string;
+  outlineMaxRows: number;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
@@ -53,4 +54,5 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   calendarTreePanelState: "",
   kanbanDefaultColumnProperty: "status",
   kanbanDefaultSwimlaneProperty: "priority",
+  outlineMaxRows: 1000,
 };

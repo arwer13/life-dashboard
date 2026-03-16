@@ -53,7 +53,7 @@ export type ConcernTreePanelConfig = {
 
 type TreeNodeRenderContext = {
   state: TreeRenderState;
-  limit: { count: number; truncated: boolean };
+  limit: { count: number; max: number; truncated: boolean };
   rerender: () => void;
   subtreePathsByPath: Map<string, Set<string>>;
 };
@@ -375,7 +375,7 @@ export class ConcernTreePanel {
         ownSeconds: taskTree.ownSeconds,
         matchedPaths
       },
-      limit: { count: 0, truncated: false },
+      limit: { count: 0, max: this.plugin.settings.outlineMaxRows, truncated: false },
       rerender,
       subtreePathsByPath: this.buildSubtreePathMap(roots),
     };
@@ -386,7 +386,7 @@ export class ConcernTreePanel {
     if (nodeCtx.limit.truncated) {
       containerEl.createEl("div", {
         cls: "fmo-tree-panel-truncated",
-        text: "Preview truncated at 160 rows."
+        text: `Preview truncated at ${nodeCtx.limit.max} rows.`
       });
     }
   }
@@ -403,7 +403,7 @@ export class ConcernTreePanel {
     if (ctx.limit.truncated) return;
     if (ancestry.has(node.path)) return;
 
-    if (ctx.limit.count >= 160) {
+    if (ctx.limit.count >= ctx.limit.max) {
       ctx.limit.truncated = true;
       return;
     }

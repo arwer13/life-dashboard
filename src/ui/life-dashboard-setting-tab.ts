@@ -133,6 +133,20 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         }
       },
       {
+        name: "Outline max rows",
+        description: "Maximum number of rows displayed in canvas/outline tree panels before truncating.",
+        placeholder: "1000",
+        getValue: () => String(this.plugin.settings.outlineMaxRows),
+        setValue: (value) => {
+          const parsed = Number.parseInt(value, 10);
+          this.plugin.settings.outlineMaxRows = Number.isFinite(parsed) && parsed >= 50 ? parsed : 1000;
+        },
+        transform: (value) => value.trim(),
+        afterSave: async () => {
+          this.plugin.refreshView();
+        }
+      },
+      {
         name: "Time log file path",
         description: "JSON file path in vault where time entries are stored.",
         placeholder: DEFAULT_TIME_LOG_PATH,
