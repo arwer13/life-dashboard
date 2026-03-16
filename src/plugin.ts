@@ -55,6 +55,7 @@ import {
 } from "./models/view-types";
 import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
 import { createSubConcernsExtension } from "./ui/editor/sub-concerns-extension";
+import { createCheckboxPromoteExtension } from "./ui/editor/checkbox-promote-extension";
 
 export type OutlineTimeRange = OutlineTimeRangeType;
 export type TimeWindow = TimeWindowType;
@@ -148,6 +149,7 @@ export default class LifeDashboardPlugin extends Plugin {
     });
     this.registerBasesView(KANBAN_BASES_VIEW_ID, createKanbanViewRegistration(this));
     this.registerEditorExtension(createSubConcernsExtension(this));
+    this.registerEditorExtension(createCheckboxPromoteExtension(this));
 
     this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
       void this.activateView();
@@ -1075,6 +1077,92 @@ export default class LifeDashboardPlugin extends Plugin {
       const message = error instanceof Error ? error.message : String(error);
       new Notice(`Failed to create sub-concern: ${message}`);
     }
+  }
+
+  private sanitizeFileName(text: string): string {
+    return text
+      .replace(/[\\/:*?"<>|]/g, "-")
+      .replace(/[\x00-\x1F\x7F]/g, "-")
+      .replace(/^[\s.]+|[\s.]+$/g, "")
+      .replace(/-{2,}/g, "-")
+      || "untitled";
+  }
+
+  async promoteCheckboxToConcern(filePath: string, line: number): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!(file instanceof TFile)) return;
+
+    const content = await this.app.vault.read(file);
+    const lines = content.split("\n");
+    const lineText = lines[line];
+    if (!lineText) return;
+
+    const match = /^(\s*)- \[ \]\s+(.+)$/.exec(lineText);
+    if (!match) return;
+
+    const indent = match[1];
+    const rawText = match[2].trim();
+    // Strip priority emojis for the name
+    const cleanText = rawText.replace(/[\u{1F53A}\u23EB\u{1F53C}\u{1F53D}\u23EC]/gu, "").trim();
+    const safeName = this.sanitizeFileName(cleanText);
+
+    this.openConcernPicker({
+      placeholder: "Select parent for the new concern...",
+      onChoose: (parentFile: TFile) => {
+        void this.doPromoteCheckbox(file, line, indent, safeName, parentFile);
+      }
+    });
+  }
+
+  private async doPromoteCheckbox(
+    sourceFile: TFile,
+    line: number,
+    indent: string,
+    safeName: string,
+    parentFile: TFile
+  ): Promise<void> {
+    const parentName = parentFile.basename;
+    const parentDir = parentFile.parent?.path ?? "";
+    const propName = this.settings.propertyName.trim() || "type";
+    const propValue = this.settings.propertyValue.trim() || "concen";
+
+    const dir = parentDir ? `${parentDir}/` : "";
+    let fileName = safeName;
+    let newPath = normalizePath(`${dir}${fileName}.md`);
+
+    let counter = 1;
+    while (this.app.vault.getAbstractFileByPath(newPath)) {
+      fileName = `${safeName} ${counter}`;
+      newPath = normalizePath(`${dir}${fileName}.md`);
+      counter++;
+    }
+
+    const id = this.generateConcernId();
+    const frontmatter = [
+      "---",
+      `${propName}: ${propValue}`,
+      `parent: "[[${parentName}]]"`,
+      "kind: task",
+      `id: "${id}"`,
+      "---",
+      ""
+    ].join("\n");
+
+    try {
+      await this.app.vault.create(newPath, frontmatter);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(`Failed to create concern: ${message}`);
+      return;
+    }
+
+    // Replace the checkbox line with a wikilink
+    const content = await this.app.vault.read(sourceFile);
+    const lines = content.split("\n");
+    lines[line] = `${indent}- [[${fileName}]]`;
+    await this.app.vault.modify(sourceFile, lines.join("\n"));
+
+    await this.openFile(newPath);
   }
 
   private updateSubConcernHeaderButton(): void {
