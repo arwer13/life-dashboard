@@ -1,5 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
-import type { ListEntry, TaskItem, TimeLogByNoteId } from "./models/types";
+import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
+import { isFileItem } from "./models/types";
+import { parseInlineTasksForFile } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -126,6 +128,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private macOsTrayTimerService!: MacOsTrayTimerService;
   private macOsTrayRecentConcerns: MacOsTrayRecentConcern[] = [];
   private concernQuickSearchModal: TaskSelectModal | null = null;
+  private cachedInlineItems: InlineTaskItem[] = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -391,7 +394,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   getTaskTreeItems(): TaskItem[] {
-    return this.taskFilterService.getTaskTreeItems();
+    return [...this.taskFilterService.getTaskTreeItems(), ...this.cachedInlineItems];
   }
 
   async postFilterSettingsChanged(): Promise<void> {
@@ -444,7 +447,7 @@ export default class LifeDashboardPlugin extends Plugin {
     const resolvedLinks = this.app.metadataCache.resolvedLinks;
 
     let foundPath: string | null = null;
-    for (const concern of this.taskFilterService.getTaskTreeItems()) {
+    for (const concern of this.taskFilterService.getTaskTreeItems().filter(isFileItem)) {
       const outgoing = resolvedLinks[concern.file.path];
       if (outgoing && file.path in outgoing) {
         if (foundPath !== null) return null;
@@ -576,6 +579,7 @@ export default class LifeDashboardPlugin extends Plugin {
     const suggestionDecorations: Record<string, TaskSelectModalSuggestionDecoration> = {};
 
     for (const item of concernItems) {
+      if (!isFileItem(item)) continue;
       allConcernFiles.push(item.file);
 
       const state = this.getConcernQuickOpenFrontmatterState(item.frontmatter);
@@ -757,7 +761,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   openConcernPicker(options: ConcernPickerOptions): void {
-    const taskFiles = this.getTaskTreeItems().map((item) => item.file);
+    const taskFiles = this.getTaskTreeItems().filter(isFileItem).map((item) => item.file);
     if (taskFiles.length === 0) {
       new Notice(options.emptyNotice ?? "No concerns available.");
       options.onCloseWithoutChoice?.();
@@ -939,6 +943,7 @@ export default class LifeDashboardPlugin extends Plugin {
   async resetAllConcernPriorities(): Promise<void> {
     const concernItems = this.getTaskTreeItems();
     const paths = concernItems
+      .filter(isFileItem)
       .filter((item) =>
         Object.prototype.hasOwnProperty.call(item.frontmatter ?? {}, PRIORITY_FRONTMATTER_KEY)
       )
@@ -1486,11 +1491,27 @@ export default class LifeDashboardPlugin extends Plugin {
     }
   }
 
+  private async refreshInlineTaskCache(): Promise<void> {
+    const fileItems = this.taskFilterService.getTaskTreeItems();
+    this.cachedInlineItems = [];
+    for (const item of fileItems) {
+      if (!isFileItem(item)) continue;
+      try {
+        const content = await this.app.vault.cachedRead(item.file);
+        const parsed = parseInlineTasksForFile(item.file.path, content);
+        this.cachedInlineItems.push(...parsed);
+      } catch {
+        // File may have been deleted between filter and read
+      }
+    }
+    this.treeStructureVersion++;
+    this.refreshTaskStructureViews();
+  }
+
   private handleTaskStructureChange(): void {
     this.taskFilterService.invalidateCache();
-    this.treeStructureVersion++;
     this.recomputeMacOsTrayRecentConcerns();
-    this.refreshTaskStructureViews();
+    void this.refreshInlineTaskCache();
   }
 
   private async handleVaultRename(file: TAbstractFile, oldPath: string): Promise<void> {

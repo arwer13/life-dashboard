@@ -6,6 +6,7 @@ import {
 } from "obsidian";
 import { DISPLAY_VERSION } from "../../version";
 import type { TaskItem, TaskTreeNode } from "../../models/types";
+import { isFileItem, isInlineItem } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   OUTLINE_RANGE_OPTIONS,
@@ -19,6 +20,7 @@ import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import {
   formatPriorityBadgeText,
+  getItemPriorityBadge,
   isPriorityDigitKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../../services/priority-utils";
@@ -196,7 +198,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       const ownSecondsByPath = this.getOwnSecondsByPath(textFiltered, this.outlineTimeRange);
       const matched = this.outlineShowOnlyTrackedThisPeriod
         ? textFiltered.filter(
-            (item) => (ownSecondsByPath.get(item.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
+            (item) => (ownSecondsByPath.get(item.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
           )
         : textFiltered;
       subheader.setText(this.getCumulativeFilterLabel(prop, value, queryWithButtonFilters));
@@ -212,8 +214,8 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       const latestMatchedStartByPath = new Map<string, number>();
       for (const item of matched) {
         latestMatchedStartByPath.set(
-          item.file.path,
-          latestTrackedStartForPath(item.file.path)
+          item.path,
+          latestTrackedStartForPath(item.path)
         );
       }
       const sections = this.groupMatchedPathsByRecencyBucket(matched, latestMatchedStartByPath);
@@ -223,7 +225,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
         const visiblePaths = this.outlineShowParents
           ? this.collectPathsWithParents(section.matchedPaths, parentByPath)
           : section.matchedPaths;
-        const visibleTasks = tasks.filter((item) => visiblePaths.has(item.file.path));
+        const visibleTasks = tasks.filter((item) => visiblePaths.has(item.path));
         const tree = this.buildTaskTree(visibleTasks, {
           ownSecondsForPath: (path) => ownSecondsByPath.get(path) ?? 0,
           sortMode: this.outlineSortMode,
@@ -314,9 +316,13 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
     const ownSecondsByPath = new Map<string, number>();
     for (const item of tasks) {
+      if (isInlineItem(item)) {
+        ownSecondsByPath.set(item.path, 0);
+        continue;
+      }
       ownSecondsByPath.set(
-        item.file.path,
-        this.plugin.timeData.getTrackedSecondsForRange(item.file.path, range)
+        item.path,
+        this.plugin.timeData.getTrackedSecondsForRange(item.path, range)
       );
     }
     return ownSecondsByPath;
@@ -365,13 +371,19 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private buildParentPathMap(tasks: TaskItem[]): Map<string, string> {
-    const allPaths = new Set(tasks.map((item) => item.file.path));
+    const allPaths = new Set(tasks.map((item) => item.path));
     const parentByPath = new Map<string, string>();
 
     for (const item of tasks) {
-      const parentPath = this.resolveParentPath(item.parentRaw, item.file.path);
-      if (!parentPath || !allPaths.has(parentPath) || parentPath === item.file.path) continue;
-      parentByPath.set(item.file.path, parentPath);
+      if (isInlineItem(item)) {
+        if (allPaths.has(item.parentPath) && item.parentPath !== item.path) {
+          parentByPath.set(item.path, item.parentPath);
+        }
+        continue;
+      }
+      const parentPath = this.resolveParentPath(item.parentRaw, item.path);
+      if (!parentPath || !allPaths.has(parentPath) || parentPath === item.path) continue;
+      parentByPath.set(item.path, parentPath);
     }
 
     return parentByPath;
@@ -412,15 +424,15 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const weekStart = this.plugin.timeData.getWeekStart(now).getTime();
 
     for (const item of matched) {
-      const latest = latestMatchedStartByPath.get(item.file.path) ?? 0;
+      const latest = latestMatchedStartByPath.get(item.path) ?? 0;
       if (latest >= todayStart) {
-        groups[0].matchedPaths.add(item.file.path);
+        groups[0].matchedPaths.add(item.path);
       } else if (latest >= yesterdayStart) {
-        groups[1].matchedPaths.add(item.file.path);
+        groups[1].matchedPaths.add(item.path);
       } else if (latest >= weekStart) {
-        groups[2].matchedPaths.add(item.file.path);
+        groups[2].matchedPaths.add(item.path);
       } else {
-        groups[3].matchedPaths.add(item.file.path);
+        groups[3].matchedPaths.add(item.path);
       }
     }
 
@@ -480,11 +492,15 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(node.path);
 
+    const isInline = isInlineItem(node.item);
     const li = containerEl.createEl("li", { cls: "fmo-tree-item" });
     const isParentOnly = !state.matchedPaths.has(node.path);
-    const row = li.createEl("div", {
-      cls: isParentOnly ? "fmo-tree-row fmo-tree-row-parent" : "fmo-tree-row"
-    });
+    const rowCls = [
+      "fmo-tree-row",
+      isParentOnly ? "fmo-tree-row-parent" : "",
+      isInline ? "fmo-tree-row-inline" : ""
+    ].filter(Boolean).join(" ");
+    const row = li.createEl("div", { cls: rowCls });
     row.addEventListener("mouseenter", () => {
       this.hoveredConcernPath = node.path;
     });
@@ -506,11 +522,11 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
           type: "button"
         }
       }) as HTMLButtonElement;
-      setTreeToggleState(toggle, isExpanded, node.item.file.basename);
+      setTreeToggleState(toggle, isExpanded, node.item.basename);
 
       toggle.addEventListener("click", () => {
         const next = !isTreeToggleExpanded(toggle);
-        setTreeToggleState(toggle, next, node.item.file.basename);
+        setTreeToggleState(toggle, next, node.item.basename);
         if (childrenList) {
           childrenList.hidden = !next;
         }
@@ -522,18 +538,22 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       createTreeToggleSpacer(row);
     }
 
+    if (isInline) {
+      row.createEl("span", { cls: "fmo-inline-task-checkbox", text: "\u2610" });
+    }
+
     const link = row.createEl("a", {
       cls: isParentOnly ? "fmo-note-link fmo-note-link-parent" : "fmo-note-link",
-      text: node.item.file.basename,
+      text: node.item.basename,
       href: "#"
     });
 
     link.addEventListener("click", (evt) => {
       evt.preventDefault();
-      void this.plugin.openFile(node.item.file.path);
+      void this.plugin.openFile(isInlineItem(node.item) ? node.item.parentPath : node.item.path);
     });
 
-    const priorityBadge = formatPriorityBadgeText(node.item.frontmatter?.priority);
+    const priorityBadge = getItemPriorityBadge(node.item);
     if (priorityBadge) {
       row.createEl("span", {
         cls: "fmo-priority-badge",
@@ -544,13 +564,15 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       });
     }
 
-    row.createEl("span", {
-      cls: "fmo-time-badge",
-      text: this.plugin.timeData.formatShortDuration(total),
-      attr: {
-        title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
-      }
-    });
+    if (!isInline) {
+      row.createEl("span", {
+        cls: "fmo-time-badge",
+        text: this.plugin.timeData.formatShortDuration(total),
+        attr: {
+          title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
+        }
+      });
+    }
 
     if (childrenList) {
       for (const child of node.children) {
@@ -585,12 +607,14 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private async applyHoveredPriority(path: string, digit: string): Promise<void> {
+    if (path.includes("#checkbox:")) return;
     const changed = await this.plugin.setConcernPriority(path, digit);
     if (!changed) return;
     await this.render();
   }
 
   private async clearHoveredPriority(path: string): Promise<void> {
+    if (path.includes("#checkbox:")) return;
     const changed = await this.plugin.clearConcernPriority(path);
     if (!changed) return;
     await this.render();

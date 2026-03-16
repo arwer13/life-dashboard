@@ -1,5 +1,6 @@
 import { SearchComponent, setTooltip } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../models/types";
+import { isFileItem, isInlineItem } from "../models/types";
 import {
   type OutlineSortMode,
   type TaskTreeData,
@@ -15,6 +16,7 @@ import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder"
 import { filterTasksByQuery } from "../services/outline-filter";
 import {
   formatPriorityBadgeText,
+  getItemPriorityBadge,
   isPriorityDigitKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../services/priority-utils";
@@ -151,8 +153,8 @@ export class ConcernTreePanel {
 
   private renderControls(tasks: TaskItem[]): void {
     const controls = this.container.createEl("div", { cls: "fmo-tree-panel-controls" });
-    const tasksByName = [...tasks].sort((a, b) =>
-      a.file.basename.localeCompare(b.file.basename, undefined, { sensitivity: "base" })
+    const tasksByName = [...tasks].filter(isFileItem).sort((a, b) =>
+      a.basename.localeCompare(b.basename, undefined, { sensitivity: "base" })
     );
 
     if (!this.hideControls.root) {
@@ -162,8 +164,8 @@ export class ConcernTreePanel {
       rootSelect.createEl("option", { value: "", text: "All concerns" });
       for (const task of tasksByName) {
         rootSelect.createEl("option", {
-          value: task.file.path,
-          text: task.file.basename
+          value: task.path,
+          text: task.basename
         });
       }
       rootSelect.value = this.state.rootPath;
@@ -272,11 +274,11 @@ export class ConcernTreePanel {
     const parentByPath = this.parentByPath;
     const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
-    const scopedTasks = tasks.filter((task) => scopePaths.has(task.file.path));
+    const scopedTasks = tasks.filter((task) => scopePaths.has(task.path));
     const queryMatched = filterTasksByQuery(scopedTasks, this.state.query);
     const matched = this.state.trackedOnly
       ? queryMatched.filter(
-          (task) => (ownSecondsByPath.get(task.file.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
+          (task) => (ownSecondsByPath.get(task.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
         )
       : queryMatched;
 
@@ -291,11 +293,11 @@ export class ConcernTreePanel {
       return;
     }
 
-    const matchedPaths = new Set(matched.map((task) => task.file.path));
+    const matchedPaths = new Set(matched.map((task) => task.path));
     const visiblePaths = this.state.showParents
       ? this.collectPathsWithParents(matchedPaths, parentByPath, scopePaths)
       : matchedPaths;
-    const visibleTasks = tasks.filter((task) => visiblePaths.has(task.file.path));
+    const visibleTasks = tasks.filter((task) => visiblePaths.has(task.path));
     const latestTrackedStartForPath = this.createLatestTrackedStartResolver(this.state.range);
     const resolveParentPathFn = (parentRaw: unknown, sourcePath: string): string | null =>
       resolveParentPath(parentRaw, sourcePath, this.plugin.app.metadataCache);
@@ -409,13 +411,16 @@ export class ConcernTreePanel {
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(node.path);
 
+    const isInline = isInlineItem(node.item);
     const isParentOnly = !ctx.state.matchedPaths.has(node.path);
     const li = containerEl.createEl("li", { cls: "fmo-tree-item fmo-tree-panel-tree-item" });
-    const row = li.createEl("div", {
-      cls: isParentOnly
-        ? "fmo-tree-row fmo-tree-row-parent fmo-tree-panel-tree-row"
-        : "fmo-tree-row fmo-tree-panel-tree-row"
-    });
+    const rowCls = [
+      "fmo-tree-row",
+      "fmo-tree-panel-tree-row",
+      isParentOnly ? "fmo-tree-row-parent" : "",
+      isInline ? "fmo-tree-row-inline" : ""
+    ].filter(Boolean).join(" ");
+    const row = li.createEl("div", { cls: rowCls });
     row.dataset.concernPath = node.path;
     const hoveredPaths = ctx.subtreePathsByPath.get(node.path) ?? new Set([node.path]);
     row.addEventListener("mouseenter", () => {
@@ -434,7 +439,7 @@ export class ConcernTreePanel {
           type: "button"
         }
       }) as HTMLButtonElement;
-      setTreeToggleState(toggle, !isCollapsed, node.item.file.basename);
+      setTreeToggleState(toggle, !isCollapsed, node.item.basename);
       toggle.addEventListener("click", () => {
         if (this.state.collapsedNodePaths.has(node.path)) {
           this.state.collapsedNodePaths.delete(node.path);
@@ -447,17 +452,21 @@ export class ConcernTreePanel {
       createTreeToggleSpacer(row);
     }
 
+    if (isInline) {
+      row.createEl("span", { cls: "fmo-inline-task-checkbox", text: "\u2610" });
+    }
+
     const link = row.createEl("a", {
       cls: isParentOnly ? "fmo-note-link fmo-note-link-parent" : "fmo-note-link",
-      text: node.item.file.basename,
+      text: node.item.basename,
       href: "#"
     });
     link.addEventListener("click", (evt) => {
       evt.preventDefault();
-      void this.plugin.openFile(node.item.file.path);
+      void this.plugin.openFile(isInlineItem(node.item) ? node.item.parentPath : node.item.path);
     });
 
-    const priorityBadge = formatPriorityBadgeText(node.item.frontmatter?.priority);
+    const priorityBadge = getItemPriorityBadge(node.item);
     if (priorityBadge) {
       row.createEl("span", {
         cls: "fmo-priority-badge",
@@ -466,15 +475,17 @@ export class ConcernTreePanel {
       });
     }
 
-    const total = ctx.state.cumulativeSeconds.get(node.path) ?? 0;
-    const own = ctx.state.ownSeconds.get(node.path) ?? 0;
-    row.createEl("span", {
-      cls: "fmo-time-badge",
-      text: this.plugin.timeData.formatShortDuration(total),
-      attr: {
-        title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
-      }
-    });
+    if (!isInline) {
+      const total = ctx.state.cumulativeSeconds.get(node.path) ?? 0;
+      const own = ctx.state.ownSeconds.get(node.path) ?? 0;
+      row.createEl("span", {
+        cls: "fmo-time-badge",
+        text: this.plugin.timeData.formatShortDuration(total),
+        attr: {
+          title: `Own: ${this.plugin.timeData.formatShortDuration(own)} | Total (with children): ${this.plugin.timeData.formatShortDuration(total)}`
+        }
+      });
+    }
 
     if (!hasChildren || this.state.collapsedNodePaths.has(node.path)) return;
 
@@ -489,10 +500,14 @@ export class ConcernTreePanel {
   private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
     const ownSecondsByPath = new Map<string, number>();
     for (const task of tasks) {
+      if (isInlineItem(task)) {
+        ownSecondsByPath.set(task.path, 0);
+        continue;
+      }
       const seconds = this.customWindow
-        ? this.plugin.timeData.getTrackedSecondsForWindow(task.file.path, this.customWindow)
-        : this.plugin.timeData.getTrackedSecondsForRange(task.file.path, range);
-      ownSecondsByPath.set(task.file.path, seconds);
+        ? this.plugin.timeData.getTrackedSecondsForWindow(task.path, this.customWindow)
+        : this.plugin.timeData.getTrackedSecondsForRange(task.path, range);
+      ownSecondsByPath.set(task.path, seconds);
     }
     return ownSecondsByPath;
   }
@@ -512,12 +527,18 @@ export class ConcernTreePanel {
   }
 
   private buildParentPathMap(tasks: TaskItem[]): Map<string, string> {
-    const allPaths = new Set(tasks.map((task) => task.file.path));
+    const allPaths = new Set(tasks.map((task) => task.path));
     const parentByPath = new Map<string, string>();
     for (const task of tasks) {
-      const parentPath = resolveParentPath(task.parentRaw, task.file.path, this.plugin.app.metadataCache);
-      if (!parentPath || !allPaths.has(parentPath) || parentPath === task.file.path) continue;
-      parentByPath.set(task.file.path, parentPath);
+      if (isInlineItem(task)) {
+        if (allPaths.has(task.parentPath) && task.parentPath !== task.path) {
+          parentByPath.set(task.path, task.parentPath);
+        }
+        continue;
+      }
+      const parentPath = resolveParentPath(task.parentRaw, task.path, this.plugin.app.metadataCache);
+      if (!parentPath || !allPaths.has(parentPath) || parentPath === task.path) continue;
+      parentByPath.set(task.path, parentPath);
     }
     return parentByPath;
   }
@@ -527,7 +548,7 @@ export class ConcernTreePanel {
     parentByPath: Map<string, string>,
     rootPath: string
   ): Set<string> {
-    const allPaths = new Set(tasks.map((task) => task.file.path));
+    const allPaths = new Set(tasks.map((task) => task.path));
     if (!rootPath || !allPaths.has(rootPath)) {
       return allPaths;
     }
@@ -735,12 +756,14 @@ export class ConcernTreePanel {
   }
 
   private async applyHoveredPriorityValue(path: string, digit: string): Promise<void> {
+    if (path.includes("#checkbox:")) return;
     const changed = await this.plugin.setConcernPriority(path, digit);
     if (!changed) return;
     this.rerenderPreview?.();
   }
 
   private async applyHoveredPriorityClear(path: string): Promise<void> {
+    if (path.includes("#checkbox:")) return;
     const changed = await this.plugin.clearConcernPriority(path);
     if (!changed) return;
     this.rerenderPreview?.();
