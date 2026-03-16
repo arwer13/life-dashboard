@@ -1,4 +1,5 @@
 import { Notice, TFile, type WorkspaceLeaf } from "obsidian";
+import { isFileItem } from "../../models/types";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMELOG } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
 import { formatTimestampLocal, localTimestampToUTC, parseIntervalToken } from "../../services/time-log-store";
@@ -78,7 +79,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
       const name = nameMap.get(normalizedNoteId) ?? "unknown";
       const nameEl = row.createEl("span", { cls: "fmo-timelog-name fmo-timelog-name-clickable", text: name });
       nameEl.addEventListener("click", () => {
-        const tasks = this.plugin.getTaskTreeItems().map((item) => item.file);
+        const tasks = this.plugin.getTaskTreeItems().filter(isFileItem).map((item) => item.file);
         const modal = new TaskSelectModal(this.app, tasks, (file) => {
           void this.reassignEntry(data, entry.noteId, entry.token, file);
         });

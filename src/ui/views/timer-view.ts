@@ -229,12 +229,12 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       });
       const link = row.createEl("a", {
         cls: isTracked ? "fmo-note-link fmo-context-link-tracked" : "fmo-note-link",
-        text: node.item.file.basename,
+        text: node.item.basename,
         href: "#"
       });
       link.addEventListener("click", (evt) => {
         evt.preventDefault();
-        void this.plugin.openFile(node.item.file.path);
+        void this.plugin.openFile(node.item.path);
       });
 
       if (isTracked) {

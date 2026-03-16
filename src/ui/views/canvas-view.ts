@@ -165,7 +165,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       this.canvasTreesLoaded = true;
     }
 
-    const validPaths = new Set(tasks.map((task) => task.file.path));
+    const validPaths = new Set(tasks.map((task) => task.path));
     let changed = false;
     this.canvasTrees = this.canvasTrees.map((tree) => {
       const normalizedRootPath =
@@ -342,17 +342,17 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
   private getPreferredRootPath(tasks: TaskItem[]): string {
     const selectedPath = this.plugin.settings.selectedTaskPath.trim();
-    if (selectedPath.length > 0 && tasks.some((task) => task.file.path === selectedPath)) {
+    if (selectedPath.length > 0 && tasks.some((task) => task.path === selectedPath)) {
       return selectedPath;
     }
 
     let bestPath = "";
     let bestSeconds = -1;
     for (const task of tasks) {
-      const seconds = this.plugin.timeData.getTrackedSeconds(task.file.path);
+      const seconds = this.plugin.timeData.getTrackedSeconds(task.path);
       if (seconds > bestSeconds) {
         bestSeconds = seconds;
-        bestPath = task.file.path;
+        bestPath = task.path;
       }
     }
     return bestPath;

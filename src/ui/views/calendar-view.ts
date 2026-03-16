@@ -1,5 +1,6 @@
 import { Notice } from "obsidian";
 import type { TimeLogEntry } from "../../models/types";
+import { isFileItem } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   DASHBOARD_COLORS,
@@ -796,9 +797,9 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const result: CalendarEntry[] = [];
 
     for (const task of this.plugin.getTaskTreeItems()) {
-      for (const entry of this.plugin.timeData.getEntriesForPath(task.file.path)) {
+      for (const entry of this.plugin.timeData.getEntriesForPath(task.path)) {
         if (entry.startMs >= window.startMs && entry.startMs < window.endMs) {
-          result.push({ path: task.file.path, basename: task.file.basename, entry });
+          result.push({ path: task.path, basename: task.basename, entry });
         }
       }
     }
@@ -895,7 +896,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private getBasenameByPath(): Map<string, string> {
     const map = new Map<string, string>();
     for (const task of this.plugin.getTaskTreeItems()) {
-      map.set(task.file.path, task.file.basename);
+      map.set(task.path, task.basename);
     }
     return map;
   }
@@ -1523,7 +1524,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   }
 
   private selectConcernPathForSegment(draftBlock: HTMLElement): Promise<string | null> {
-    const taskFiles = this.plugin.getTaskTreeItems().map((item) => item.file);
+    const taskFiles = this.plugin.getTaskTreeItems().filter(isFileItem).map((item) => item.file);
     if (taskFiles.length === 0) {
       new Notice("No concerns available to assign this segment.");
       return Promise.resolve(null);

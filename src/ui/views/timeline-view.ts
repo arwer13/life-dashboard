@@ -1,6 +1,7 @@
 import type { App, TFile, WorkspaceLeaf } from "obsidian";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, DASHBOARD_COLORS, DAY_MS } from "../../models/view-types";
 import type LifeDashboardPlugin from "../../plugin";
+import { isFileItem } from "../../models/types";
 import { matchesFrontmatterFilter } from "../../services/outline-filter";
 import { LifeDashboardBaseView } from "./base-view";
 
@@ -101,6 +102,7 @@ function collectEntries(plugin: LifeDashboardPlugin): TimelineEntry[] {
   rangeEnd.setFullYear(rangeEnd.getFullYear() + 1);
 
   for (const task of tasks) {
+    if (!isFileItem(task)) continue;
     const fm = task.frontmatter;
     if (!fm) continue;
     if (!matchesFrontmatterFilter(fm, "kind", "project")) continue;

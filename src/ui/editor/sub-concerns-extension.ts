@@ -3,6 +3,7 @@ import { StateEffect, StateField, type EditorState, type Extension } from "@code
 import { editorInfoField } from "obsidian";
 import { resolveParentPath } from "../../services/task-tree-builder";
 import type LifeDashboardPlugin from "../../plugin";
+import { isFileItem } from "../../models/types";
 
 type ChildInfo = { name: string; path: string; mtime: number };
 
@@ -141,6 +142,7 @@ function getDirectChildren(plugin: LifeDashboardPlugin, parentPath: string): Chi
   const children: ChildInfo[] = [];
 
   for (const item of items) {
+    if (!isFileItem(item)) continue;
     if (item.file.path === parentPath) continue;
     const resolved = resolveParentPath(item.parentRaw, item.file.path, plugin.app.metadataCache);
     if (resolved === parentPath) {
