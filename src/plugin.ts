@@ -1651,6 +1651,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private async refreshInlineTaskCache(): Promise<void> {
     const gen = ++this.inlineTaskCacheGeneration;
+    this.taskFilterService.invalidateCache();
     const fileItems = this.taskFilterService.getTaskTreeItems();
     const results: InlineTaskItem[][] = await Promise.all(
       fileItems.filter(isFileItem).map(async (item) => {
