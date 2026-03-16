@@ -1,3 +1,4 @@
+import type { FrontMatterCache } from "obsidian";
 import { prepareSimpleSearch } from "obsidian";
 import type { TaskItem } from "../models/types";
 import type { OutlineFilterToken } from "../models/view-types";
@@ -51,13 +52,19 @@ export function parseFilterTokens(query: string): OutlineFilterToken[] {
 }
 
 function taskMatchesFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolean {
-  const pathText = task.file.path.toLowerCase();
-  const fileText = `${task.file.basename} ${task.file.name}`.toLowerCase();
-  const anyText = `${task.file.basename} ${task.file.path}`.toLowerCase();
+  const pathText = task.path.toLowerCase();
+  const basename = task.basename;
+  const fileText = task.kind === "file"
+    ? `${task.file.basename} ${task.file.name}`.toLowerCase()
+    : basename.toLowerCase();
+  const anyText = task.kind === "file"
+    ? `${task.file.basename} ${task.file.path}`.toLowerCase()
+    : `${basename} ${task.path}`.toLowerCase();
 
   for (const token of tokens) {
     if (token.key === "prop") {
-      const matches = matchesFrontmatterFilter(task.frontmatter, token.prop, token.value);
+      const fm = task.kind === "file" ? task.frontmatter : undefined;
+      const matches = matchesFrontmatterFilter(fm, token.prop, token.value);
       if (token.negated ? matches : !matches) {
         return false;
       }
@@ -76,7 +83,7 @@ function taskMatchesFilter(task: TaskItem, tokens: OutlineFilterToken[]): boolea
 }
 
 export function matchesFrontmatterFilter(
-  frontmatter: TaskItem["frontmatter"],
+  frontmatter: FrontMatterCache | undefined,
   key: string,
   expectedValue: string | null
 ): boolean {

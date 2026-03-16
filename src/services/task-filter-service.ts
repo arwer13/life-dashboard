@@ -34,13 +34,16 @@ export class TaskFilterService {
       if (!this.frontmatterMatchesTaskFilters(fm)) continue;
 
       tasks.push({
+        kind: "file",
         file,
+        path: file.path,
+        basename: file.basename,
         parentRaw: fm?.parent,
         frontmatter: fm
       });
     }
 
-    tasks.sort((a, b) => a.file.path.localeCompare(b.file.path));
+    tasks.sort((a, b) => a.path.localeCompare(b.path));
     this.cachedTasks = tasks;
     this.lastCacheKey = cacheKey;
     return [...tasks];

@@ -1,6 +1,7 @@
 import type { MetadataCache } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../models/types";
 import type { TaskTreeData, TaskTreeBuildOptions, OutlineSortMode } from "../models/view-types";
+import { getItemPriorityRank } from "./priority-utils";
 
 export function buildTaskTree(
   tasks: TaskItem[],
@@ -16,16 +17,21 @@ export function buildTaskTree(
   const nodesByPath = new Map<string, TaskTreeNode>();
 
   for (const item of tasks) {
-    nodesByPath.set(item.file.path, {
+    nodesByPath.set(item.path, {
       item,
-      path: item.file.path,
+      path: item.path,
       children: [],
       parentPath: null
     });
   }
 
   for (const node of nodesByPath.values()) {
-    const parentPath = resolveParentPathFn(node.item.parentRaw, node.item.file.path);
+    let parentPath: string | null;
+    if (node.item.kind === "inline") {
+      parentPath = node.item.parentPath;
+    } else {
+      parentPath = resolveParentPathFn(node.item.parentRaw, node.item.path);
+    }
     if (!parentPath || parentPath === node.path || !nodesByPath.has(parentPath)) continue;
     node.parentPath = parentPath;
     nodesByPath.get(parentPath)?.children.push(node);
@@ -93,10 +99,7 @@ function compareNodes(
   subtreeLatestByPath: Map<string, number>
 ): number {
   if (sortMode === "priority") {
-    const priorityCmp = comparePriorityValues(
-      readPriorityValue(a.item.frontmatter),
-      readPriorityValue(b.item.frontmatter)
-    );
+    const priorityCmp = getItemPriorityRank(a.item) - getItemPriorityRank(b.item);
     if (priorityCmp !== 0) return priorityCmp;
   }
 
@@ -106,7 +109,7 @@ function compareNodes(
     return latestB - latestA;
   }
 
-  return a.item.file.path.localeCompare(b.item.file.path);
+  return a.path.localeCompare(b.path);
 }
 
 function computeSubtreeLatestStartMs(
@@ -139,43 +142,6 @@ function computeSubtreeLatestStartMs(
   visiting.delete(node.path);
   memo.set(node.path, latest);
   return latest;
-}
-
-function readPriorityValue(frontmatter: TaskItem["frontmatter"]): unknown {
-  if (!frontmatter) return null;
-  return frontmatter.priority ?? frontmatter.prio ?? frontmatter.p;
-}
-
-function comparePriorityValues(a: unknown, b: unknown): number {
-  const rankA = getPriorityRank(a);
-  const rankB = getPriorityRank(b);
-  return rankA - rankB;
-}
-
-function getPriorityRank(value: unknown): number {
-  if (value == null) return 100;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Math.max(0, value);
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return 100;
-  if (normalized === "urgent") return 0;
-  if (normalized === "high") return 1;
-  if (normalized === "medium" || normalized === "med") return 2;
-  if (normalized === "low") return 3;
-
-  const pMatch = /^p([0-9]+)$/.exec(normalized);
-  if (pMatch?.[1]) {
-    return Number.parseInt(pMatch[1], 10);
-  }
-
-  const parsed = Number.parseFloat(normalized);
-  if (Number.isFinite(parsed)) {
-    return Math.max(0, parsed);
-  }
-
-  return 100;
 }
 
 function extractParentCandidates(value: unknown): string[] {
