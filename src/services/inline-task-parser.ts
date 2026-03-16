@@ -66,6 +66,7 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
 
     const rawText = checkboxMatch[1]!.trim();
     const { displayText, priority } = extractPriority(rawText);
+    if (!displayText) continue;
 
     items.push({
       kind: "inline",
