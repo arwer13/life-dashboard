@@ -965,7 +965,15 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   reparentConcernInteractive(concernPath: string): void {
-    if (concernPath.includes(INLINE_CHECKBOX_PATH_SEP)) return;
+    if (concernPath.includes(INLINE_CHECKBOX_PATH_SEP)) {
+      const sepIdx = concernPath.indexOf(INLINE_CHECKBOX_PATH_SEP);
+      const filePath = concernPath.slice(0, sepIdx);
+      const lineNum = Number.parseInt(concernPath.slice(sepIdx + INLINE_CHECKBOX_PATH_SEP.length), 10);
+      if (Number.isFinite(lineNum)) {
+        void this.promoteCheckboxToConcern(filePath, lineNum);
+      }
+      return;
+    }
 
     const file = this.app.vault.getAbstractFileByPath(concernPath);
     if (!(file instanceof TFile)) return;
