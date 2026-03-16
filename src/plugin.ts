@@ -1226,8 +1226,6 @@ export default class LifeDashboardPlugin extends Plugin {
     }
     lines[line] = `${indent}- [[${result.fileName}]]`;
     await this.app.vault.modify(sourceFile, lines.join("\n"));
-
-    await this.openFile(result.path);
   }
 
   private updateSubConcernHeaderButton(): void {
