@@ -8,7 +8,8 @@ import {
   type TreeRenderState,
   OUTLINE_RANGE_OPTIONS,
   OUTLINE_SORT_OPTIONS,
-  MIN_TRACKED_SECONDS_PER_PERIOD
+  MIN_TRACKED_SECONDS_PER_PERIOD,
+  CLOSED_FILTER_QUERY
 } from "../models/view-types";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
@@ -33,6 +34,7 @@ export type ConcernTreePanelState = {
   showParents: boolean;
   showInlineTasks: boolean;
   priorityOnly: boolean;
+  showClosed: boolean;
   collapsedNodePaths: Set<string>;
 };
 
@@ -59,6 +61,7 @@ type TreeNodeRenderContext = {
   limit: { count: number; max: number; truncated: boolean };
   rerender: () => void;
   subtreePathsByPath: Map<string, Set<string>>;
+  inlineOnlyBranches: Set<string>;
 };
 
 export class ConcernTreePanel {
@@ -152,6 +155,7 @@ export class ConcernTreePanel {
     if (partial.showParents !== undefined) this.state.showParents = partial.showParents;
     if (partial.showInlineTasks !== undefined) this.state.showInlineTasks = partial.showInlineTasks;
     if (partial.priorityOnly !== undefined) this.state.priorityOnly = partial.priorityOnly;
+    if (partial.showClosed !== undefined) this.state.showClosed = partial.showClosed;
     this.render();
   }
 
@@ -269,6 +273,19 @@ export class ConcernTreePanel {
       this.rerenderPreview?.();
     });
 
+    const showClosedRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const showClosedInput = showClosedRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    showClosedInput.checked = this.state.showClosed;
+    showClosedRow.createEl("span", { text: "Show closed" });
+    setTooltip(showClosedRow, `When off: ${CLOSED_FILTER_QUERY}`);
+    showClosedInput.addEventListener("change", () => {
+      this.state.showClosed = showClosedInput.checked;
+      this.rerenderPreview?.();
+    });
+
     if (!this.hideControls.filter) {
       const filterRow = controls.createEl("div", { cls: "fmo-tree-panel-filter" });
       const filterSearch = new SearchComponent(filterRow);
@@ -311,7 +328,10 @@ export class ConcernTreePanel {
     const priorityFilteredTasks = this.state.priorityOnly
       ? filteredTasks.filter((task) => getItemPriorityRank(task) < 100)
       : filteredTasks;
-    const queryMatched = filterTasksByQuery(priorityFilteredTasks, this.state.query);
+    const closedFilter = this.state.showClosed
+      ? this.state.query
+      : this.withClosedFilter(this.state.query);
+    const queryMatched = filterTasksByQuery(priorityFilteredTasks, closedFilter);
     const matched = this.state.trackedOnly
       ? queryMatched.filter(
           (task) => (ownSecondsByPath.get(task.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
@@ -355,7 +375,7 @@ export class ConcernTreePanel {
       return;
     }
 
-    const branchPaths = this.collectBranchPaths(roots);
+    const { branchPaths, inlineOnlyBranches } = this.collectBranchPaths(roots);
     if (branchPaths.size > 0) {
       for (const path of [...this.state.collapsedNodePaths]) {
         if (!branchPaths.has(path)) {
@@ -366,7 +386,7 @@ export class ConcernTreePanel {
 
     this.visiblePaths = visiblePaths;
 
-    this.displayPathMap = this.buildDisplayPathMap(visiblePaths, roots);
+    this.displayPathMap = this.buildDisplayPathMap(visiblePaths, roots, inlineOnlyBranches);
 
     const top = containerEl.createEl("div", { cls: "fmo-tree-panel-preview-top" });
     const actions = top.createEl("div", { cls: "fmo-tree-panel-preview-actions" });
@@ -375,9 +395,8 @@ export class ConcernTreePanel {
       text: "Expand all",
       attr: { type: "button" }
     });
-    expandAllBtn.disabled = this.state.collapsedNodePaths.size === 0;
     expandAllBtn.addEventListener("click", () => {
-      this.state.collapsedNodePaths.clear();
+      this.state.collapsedNodePaths = new Set(inlineOnlyBranches);
       rerender();
     });
 
@@ -388,7 +407,9 @@ export class ConcernTreePanel {
     });
     collapseAllBtn.disabled = branchPaths.size === 0;
     collapseAllBtn.addEventListener("click", () => {
-      this.state.collapsedNodePaths = new Set(branchPaths);
+      const paths = new Set(branchPaths);
+      for (const path of inlineOnlyBranches) paths.delete(path);
+      this.state.collapsedNodePaths = paths;
       rerender();
     });
 
@@ -413,6 +434,7 @@ export class ConcernTreePanel {
       limit: { count: 0, max: this.plugin.settings.outlineMaxRows, truncated: false },
       rerender,
       subtreePathsByPath: this.buildSubtreePathMap(roots),
+      inlineOnlyBranches,
     };
     for (const root of roots) {
       this.renderTreeNode(list, root, new Set(), 0, nodeCtx);
@@ -466,8 +488,11 @@ export class ConcernTreePanel {
     row.addEventListener("mouseleave", (evt) => this.handleRowMouseLeave(evt));
     row.style.paddingInlineStart = `${Math.min(12, depth) * 6}px`;
     const hasChildren = node.children.length > 0;
+    const onlyInlineChildren = ctx.inlineOnlyBranches.has(node.path);
     if (hasChildren) {
-      const isCollapsed = this.state.collapsedNodePaths.has(node.path);
+      const isCollapsed = onlyInlineChildren
+        ? !this.state.collapsedNodePaths.has(node.path)
+        : this.state.collapsedNodePaths.has(node.path);
       const toggle = row.createEl("button", {
         cls: "fmo-tree-toggle",
         attr: {
@@ -487,13 +512,10 @@ export class ConcernTreePanel {
       createTreeToggleSpacer(row);
     }
 
-    if (isInline) {
-      row.createEl("span", { cls: "fmo-inline-task-checkbox", text: "\u2610" });
-    }
-
     const linkCls = [
       "fmo-note-link",
-      isParentOnly ? "fmo-note-link-parent" : ""
+      isParentOnly ? "fmo-note-link-parent" : "",
+      isInline ? "fmo-note-link-inline" : ""
     ].filter(Boolean).join(" ");
     const link = row.createEl("a", {
       cls: linkCls,
@@ -502,8 +524,16 @@ export class ConcernTreePanel {
     });
     link.addEventListener("click", (evt) => {
       evt.preventDefault();
-      void this.plugin.openFile(isInlineItem(node.item) ? node.item.parentPath : node.item.path);
+      const inlineItem = isInlineItem(node.item) ? node.item : null;
+      void this.plugin.openFile(inlineItem ? inlineItem.parentPath : node.item.path, inlineItem?.line);
     });
+
+    if (onlyInlineChildren) {
+      row.createEl("span", {
+        cls: "fmo-inline-count",
+        text: `(${node.children.length} inline${node.children.length === 1 ? "" : "s"})`
+      });
+    }
 
     const priorityBadge = getItemPriorityBadge(node.item);
     if (priorityBadge) {
@@ -526,7 +556,10 @@ export class ConcernTreePanel {
       });
     }
 
-    if (!hasChildren || this.state.collapsedNodePaths.has(node.path)) return;
+    const effectivelyCollapsed = onlyInlineChildren
+      ? !this.state.collapsedNodePaths.has(node.path)
+      : this.state.collapsedNodePaths.has(node.path);
+    if (!hasChildren || effectivelyCollapsed) return;
 
     const children = li.createEl("ul", { cls: "fmo-tree fmo-tree-panel-tree-children" });
     for (const child of node.children) {
@@ -640,34 +673,43 @@ export class ConcernTreePanel {
     return root ? [root] : taskTree.roots;
   }
 
-  private collectBranchPaths(roots: TaskTreeNode[]): Set<string> {
+  private collectBranchPaths(
+    roots: TaskTreeNode[]
+  ): { branchPaths: Set<string>; inlineOnlyBranches: Set<string> } {
     const branchPaths = new Set<string>();
+    const inlineOnlyBranches = new Set<string>();
     const visit = (node: TaskTreeNode, ancestry: Set<string>): void => {
       if (ancestry.has(node.path)) return;
       if (node.children.length > 0) {
         branchPaths.add(node.path);
+        if (node.children.every((c) => isInlineItem(c.item))) {
+          inlineOnlyBranches.add(node.path);
+        }
       }
-
       const nextAncestry = new Set(ancestry);
       nextAncestry.add(node.path);
       for (const child of node.children) {
         visit(child, nextAncestry);
       }
     };
-
     for (const root of roots) {
       visit(root, new Set());
     }
-
-    return branchPaths;
+    return { branchPaths, inlineOnlyBranches };
   }
 
-  private computeDisplayedPaths(roots: TaskTreeNode[]): Set<string> {
+  private computeDisplayedPaths(
+    roots: TaskTreeNode[],
+    inlineOnlyBranches: Set<string>
+  ): Set<string> {
     const displayed = new Set<string>();
     const visit = (node: TaskTreeNode, ancestry: Set<string>): void => {
       if (ancestry.has(node.path)) return;
       displayed.add(node.path);
-      if (this.state.collapsedNodePaths.has(node.path)) return;
+      const isCollapsed = inlineOnlyBranches.has(node.path)
+        ? !this.state.collapsedNodePaths.has(node.path)
+        : this.state.collapsedNodePaths.has(node.path);
+      if (isCollapsed) return;
       const nextAncestry = new Set(ancestry);
       nextAncestry.add(node.path);
       for (const child of node.children) {
@@ -682,9 +724,10 @@ export class ConcernTreePanel {
 
   private buildDisplayPathMap(
     visiblePaths: Set<string>,
-    roots: TaskTreeNode[]
+    roots: TaskTreeNode[],
+    inlineOnlyBranches: Set<string>
   ): Map<string, string> {
-    const displayedPaths = this.computeDisplayedPaths(roots);
+    const displayedPaths = this.computeDisplayedPaths(roots, inlineOnlyBranches);
     const map = new Map<string, string>();
     for (const path of visiblePaths) {
       if (displayedPaths.has(path)) {
@@ -729,6 +772,11 @@ export class ConcernTreePanel {
     }
 
     return subtreePathsByPath;
+  }
+
+  private withClosedFilter(query: string): string {
+    const base = query.trim();
+    return base.length > 0 ? `${base} ${CLOSED_FILTER_QUERY}` : CLOSED_FILTER_QUERY;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────

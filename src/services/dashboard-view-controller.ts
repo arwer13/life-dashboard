@@ -8,7 +8,8 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
-  VIEW_TYPE_LIFE_DASHBOARD_TIMER
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
 } from "../models/view-types";
 import type { LifeDashboardSettings } from "../settings";
 
@@ -83,6 +84,10 @@ export class DashboardViewController {
     await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, "tab");
   }
 
+  async activateSupplementsView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS, "tab");
+  }
+
   private static readonly DASHBOARD_VIEW_TYPES = LIFE_DASHBOARD_VIEW_TYPES;
 
   refreshView(): void {
@@ -114,6 +119,10 @@ export class DashboardViewController {
     this.settings.viewWasVisible = visible;
     this.lastPersistedVisibility = visible;
     await this.saveSettings();
+  }
+
+  refreshSingleViewType(viewType: string): void {
+    this.refreshViewByType(viewType);
   }
 
   private refreshViewByType(viewType: string): void {

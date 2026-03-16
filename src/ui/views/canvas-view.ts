@@ -23,6 +23,7 @@ type CanvasTreeDraft = {
   showParents: boolean;
   showInlineTasks: boolean;
   priorityOnly: boolean;
+  showClosed: boolean;
   collapsed: boolean;
   x: number;
   y: number;
@@ -42,6 +43,7 @@ type PersistedCanvasTreeDraft = {
   showParents: boolean;
   showInlineTasks: boolean;
   priorityOnly: boolean;
+  showClosed: boolean;
   collapsed: boolean;
   x: number;
   y: number;
@@ -266,6 +268,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
     draft.showParents = tree.showParents;
     draft.showInlineTasks = tree.showInlineTasks ?? true;
     draft.priorityOnly = tree.priorityOnly ?? false;
+    draft.showClosed = tree.showClosed ?? false;
     draft.collapsed = tree.collapsed;
     draft.x = this.clamp(Math.floor(tree.x), 16, CANVAS_STAGE_WIDTH - CANVAS_CARD_MIN_WIDTH - 16);
     draft.y = this.clamp(Math.floor(tree.y), 16, CANVAS_STAGE_HEIGHT - CANVAS_CARD_MIN_HEIGHT - 16);
@@ -299,6 +302,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       showParents: tree.showParents,
       showInlineTasks: tree.showInlineTasks,
       priorityOnly: tree.priorityOnly,
+      showClosed: tree.showClosed,
       collapsed: tree.collapsed,
       x: Math.round(tree.x),
       y: Math.round(tree.y),
@@ -380,6 +384,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       showParents: true,
       showInlineTasks: true,
       priorityOnly: false,
+      showClosed: false,
       collapsed: false,
       x: 64,
       y: 64,
@@ -486,6 +491,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         showParents: tree.showParents,
         showInlineTasks: tree.showInlineTasks,
         priorityOnly: tree.priorityOnly,
+        showClosed: tree.showClosed,
         collapsedNodePaths: tree.collapsedNodePaths,
       },
       onChange: (_visiblePaths, newState) => {
@@ -497,6 +503,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         tree.showParents = newState.showParents;
         tree.showInlineTasks = newState.showInlineTasks;
         tree.priorityOnly = newState.priorityOnly;
+        tree.showClosed = newState.showClosed;
         tree.collapsedNodePaths = newState.collapsedNodePaths;
         this.persistCanvasTrees();
       },

@@ -552,6 +552,10 @@ body.fmo-resizing-h * {
   color: var(--text-muted);
 }
 
+.frontmatter-outline-view .fmo-note-link-inline {
+  font-style: italic;
+}
+
 .frontmatter-outline-view .fmo-time-badge {
   margin-left: auto;
   color: color-mix(in srgb, var(--text-accent) 75%, var(--text-normal) 25%);
@@ -561,6 +565,12 @@ body.fmo-resizing-h * {
   border-radius: 999px;
   padding: 1px 6px;
   background: color-mix(in srgb, var(--background-primary) 82%, var(--text-accent) 18%);
+}
+
+.frontmatter-outline-view .fmo-inline-count {
+  margin-left: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .frontmatter-outline-view .fmo-priority-badge {
@@ -2048,15 +2058,6 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   -webkit-box-orient: vertical;
 }
 
-/* ── Inline checkbox subtasks in tree ─────────────────────────── */
-
-.fmo-inline-task-checkbox {
-  margin-inline-end: 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-  user-select: none;
-}
-
 /* ── Promote button (editor decoration) ──────────────────────── */
 
 .fmo-promote-checkbox-btn {
@@ -2083,4 +2084,198 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   opacity: 1;
   color: var(--text-normal);
   background: var(--background-secondary);
+}
+
+/* ── Supplements Grid View ── */
+
+.fmo-supplements-view {
+  padding: 16px;
+  overflow: auto;
+}
+
+.fmo-supplements-year-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fmo-supplements-year-btn {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.fmo-supplements-year-btn:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+.fmo-supplements-year-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+  min-width: 40px;
+  text-align: center;
+}
+
+.fmo-supplements-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+/* ── Sidebar: Ingredient Tree ── */
+
+.fmo-supplements-sidebar {
+  flex-shrink: 0;
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.fmo-supplements-tree-group {
+  margin-bottom: 6px;
+}
+
+.fmo-supplements-tree-parent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.fmo-supplements-tree-parent:hover {
+  background: var(--background-modifier-hover);
+}
+
+.fmo-supplements-tree-child {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 1px 6px 1px 16px;
+  border-radius: 4px;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.fmo-supplements-tree-child:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.fmo-supplements-tree-count {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+}
+
+/* ── Year Grid (mirrors calendar year heatmap) ── */
+
+.fmo-supplements-year-wrapper {
+  --year-cell-size: 12px;
+  --year-gap: 2px;
+  --year-label-width: 28px;
+  overflow-x: auto;
+}
+
+.fmo-supplements-year-month-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
+.fmo-supplements-year-label-spacer {
+  width: var(--year-label-width);
+  min-width: var(--year-label-width);
+}
+
+.fmo-supplements-year-month-track {
+  display: grid;
+  grid-template-columns: repeat(var(--year-cols), var(--year-cell-size));
+  column-gap: var(--year-gap);
+  min-width: max-content;
+}
+
+.fmo-supplements-year-month-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: visible;
+  line-height: 1;
+}
+
+.fmo-supplements-year-body {
+  display: flex;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.fmo-supplements-year-day-labels {
+  width: var(--year-label-width);
+  min-width: var(--year-label-width);
+  display: grid;
+  grid-template-rows: repeat(7, var(--year-cell-size));
+  row-gap: var(--year-gap);
+}
+
+.fmo-supplements-year-day-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  line-height: var(--year-cell-size);
+  text-align: right;
+  padding-right: 4px;
+  user-select: none;
+}
+
+.fmo-supplements-year-grid {
+  display: flex;
+  gap: var(--year-gap);
+  min-width: max-content;
+}
+
+.fmo-supplements-year-week {
+  display: grid;
+  grid-template-rows: repeat(7, var(--year-cell-size));
+  row-gap: var(--year-gap);
+}
+
+.fmo-supplements-year-cell {
+  width: var(--year-cell-size);
+  height: var(--year-cell-size);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+  transition: outline-color 0.1s, opacity 0.12s;
+}
+
+.fmo-supplements-year-cell:hover {
+  outline: 1px solid var(--text-muted);
+  outline-offset: -1px;
+}
+
+.fmo-supplements-year-cell-empty {
+  background: transparent;
+}
+
+.fmo-supplements-year-cell-today {
+  outline: 2px solid var(--text-accent);
+  outline-offset: -1px;
+}
+
+/* Hover highlight from ingredient tree */
+
+.fmo-supplements-year-wrapper.is-highlight-active .fmo-supplements-year-cell:not(.is-highlighted):not(.fmo-supplements-year-cell-empty) {
+  opacity: 0.12;
+}
+
+.fmo-supplements-year-wrapper.is-highlight-active .fmo-supplements-year-cell.is-highlighted {
+  outline: 1px solid var(--text-muted);
+  outline-offset: -1px;
 }

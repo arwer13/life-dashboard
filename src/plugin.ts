@@ -25,6 +25,10 @@ import {
   HealthTrackingService,
   type HealthTrackingRangeSnapshot
 } from "./services/health-tracking-service";
+import {
+  SupplementsTrackingService,
+  type SupplementsSnapshot
+} from "./services/supplements-tracking-service";
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TextInputModal } from "./ui/text-input-modal";
@@ -40,7 +44,8 @@ import {
   LifeDashboardOutlineView,
   LifeDashboardTimeLogView,
   LifeDashboardTimelineView,
-  LifeDashboardTimerView
+  LifeDashboardTimerView,
+  LifeDashboardSupplementsView
 } from "./ui/views";
 import { renderTimelineInto } from "./ui/views/timeline-view";
 import {
@@ -51,7 +56,8 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
-  VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT
+  VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT,
+  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
 } from "./models/view-types";
 import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
 import { createSubConcernsExtension } from "./ui/editor/sub-concerns-extension";
@@ -112,6 +118,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private timerNotificationService!: TimerNotificationService;
   private trackingService!: TrackingService;
   private healthTrackingService!: HealthTrackingService;
+  private supplementsTrackingService!: SupplementsTrackingService;
   private viewController!: DashboardViewController;
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
@@ -143,6 +150,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR, (leaf) => new LifeDashboardCalendarView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, (leaf) => new LifeDashboardTimeLogView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, (leaf) => new LifeDashboardTimelineView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS, (leaf) => new LifeDashboardSupplementsView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
     this.registerMarkdownCodeBlockProcessor("life-dashboard-timeline", (_source, el) => {
@@ -178,6 +186,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addRibbonIcon("gantt-chart", "Open Timeline", () => {
       void this.viewController.activateTimelineView();
+    });
+
+    this.addRibbonIcon("pill", "Open Supplements Grid", () => {
+      void this.viewController.activateSupplementsView();
     });
 
     this.addCommand({
@@ -233,6 +245,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Open Timeline",
       callback: () => {
         void this.viewController.activateTimelineView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-supplements",
+      name: "Open Supplements Grid",
+      callback: () => {
+        void this.viewController.activateSupplementsView();
       }
     });
 
@@ -322,6 +342,10 @@ export default class LifeDashboardPlugin extends Plugin {
         }
         if (this.isHealthTrackingPath(file.path)) {
           void this.reloadHealthTrackingAndRefresh();
+          return;
+        }
+        if (this.isSupplementsPath(file.path)) {
+          void this.reloadSupplementsAndRefresh();
         }
       })
     );
@@ -873,6 +897,14 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.healthTrackingService.getRangeSnapshot(window, now);
   }
 
+  async ensureSupplementsLoaded(): Promise<void> {
+    await this.supplementsTrackingService.ensureLoaded();
+  }
+
+  getSupplementsSnapshot(): SupplementsSnapshot {
+    return this.supplementsTrackingService.getSnapshot();
+  }
+
   async readTimeLog(): Promise<TimeLogByNoteId> {
     return this.timeLogStore.readTimeLogMap();
   }
@@ -1086,7 +1118,7 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
 
-  async openFile(path: string): Promise<void> {
+  async openFile(path: string, line?: number): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return;
 
@@ -1094,6 +1126,15 @@ export default class LifeDashboardPlugin extends Plugin {
     if (!leaf) return;
 
     await leaf.openFile(file, { active: true });
+
+    if (line != null) {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (view?.editor) {
+        const pos = { line, ch: 0 };
+        view.editor.setCursor(pos);
+        view.editor.scrollIntoView({ from: pos, to: pos }, true);
+      }
+    }
   }
 
   private createSubConcern(): void {
@@ -1331,6 +1372,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.timeData = new TimeDataFacade(this.app, this.timeWindowService);
     this.timerNotificationService = new TimerNotificationService();
     this.healthTrackingService = new HealthTrackingService(this.app);
+    this.supplementsTrackingService = new SupplementsTrackingService(this.app);
     this.macOsTrayTimerService = new MacOsTrayTimerService({
       openTimer: () => {
         void this.viewController.activateTimerView();
@@ -1687,6 +1729,11 @@ export default class LifeDashboardPlugin extends Plugin {
       return;
     }
 
+    if (this.isSupplementsPath(oldPath) || this.isSupplementsPath(file.path)) {
+      await this.reloadSupplementsAndRefresh();
+      return;
+    }
+
     let settingsChanged = false;
     const remappedSelected = this.remapPathPrefix(this.settings.selectedTaskPath, oldPath, file.path);
     if (remappedSelected !== this.settings.selectedTaskPath) {
@@ -1717,6 +1764,11 @@ export default class LifeDashboardPlugin extends Plugin {
       return;
     }
 
+    if (this.isSupplementsPath(file.path)) {
+      await this.reloadSupplementsAndRefresh();
+      return;
+    }
+
     let settingsChanged = false;
     if (this.pathMatchesOrDescends(this.settings.selectedTaskPath, file.path)) {
       this.settings.selectedTaskPath = "";
@@ -1742,6 +1794,11 @@ export default class LifeDashboardPlugin extends Plugin {
 
     if (this.isHealthTrackingPath(file.path)) {
       await this.reloadHealthTrackingAndRefresh();
+      return;
+    }
+
+    if (this.isSupplementsPath(file.path)) {
+      await this.reloadSupplementsAndRefresh();
       return;
     }
 
@@ -1776,6 +1833,15 @@ export default class LifeDashboardPlugin extends Plugin {
   private async reloadHealthTrackingAndRefresh(): Promise<void> {
     await this.healthTrackingService.reload();
     this.refreshView();
+  }
+
+  private isSupplementsPath(path: string): boolean {
+    return this.supplementsTrackingService.matchesPath(path);
+  }
+
+  private async reloadSupplementsAndRefresh(): Promise<void> {
+    await this.supplementsTrackingService.reload();
+    this.viewController.refreshSingleViewType(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS);
   }
 
   private scheduleDebouncedSave(timerField: "outlineFilterSaveTimer" | "canvasDraftSaveTimer"): void {

@@ -12,6 +12,7 @@ import {
   OUTLINE_RANGE_OPTIONS,
   OUTLINE_SORT_OPTIONS,
   MIN_TRACKED_SECONDS_PER_PERIOD,
+  CLOSED_FILTER_QUERY,
   type OutlineSortMode,
   type TreeRenderState
 } from "../../models/view-types";
@@ -36,6 +37,7 @@ type RecencySection = { label: string; matchedPaths: Set<string> };
 export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   private outlineExpandAll = true;
   private outlineStatusDoneFilterEnabled = false;
+  private outlineShowClosed = false;
   private outlineTimeRange: OutlineTimeRange = "todayYesterday";
   private outlineShowOnlyTrackedThisPeriod = true;
   private outlineSortMode: OutlineSortMode = "recent";
@@ -117,6 +119,15 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     showParentsInput.checked = this.outlineShowParents;
     showParentsRow.createEl("span", { text: "Show parents" });
     setTooltip(showParentsRow, "Include matching concerns' parents and group siblings under shared parents.");
+
+    const showClosedRow = controlsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const showClosedInput = showClosedRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    showClosedInput.checked = this.outlineShowClosed;
+    showClosedRow.createEl("span", { text: "Show closed" });
+    setTooltip(showClosedRow, `When off: ${CLOSED_FILTER_QUERY}`);
 
     const sortRow = controlsRow.createEl("label", { cls: "fmo-outline-sort-row" });
     sortRow.createEl("span", { cls: "fmo-outline-sort-label", text: "Sort" });
@@ -275,6 +286,11 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       renderFilteredOutline(filter.getValue());
     });
 
+    showClosedInput.addEventListener("change", () => {
+      this.outlineShowClosed = showClosedInput.checked;
+      renderFilteredOutline(filter.getValue());
+    });
+
     sortSelect.addEventListener("change", () => {
       const selected = sortSelect.value as OutlineSortMode;
       this.outlineSortMode = OUTLINE_SORT_OPTIONS.some((option) => option.value === selected)
@@ -330,9 +346,14 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private withButtonFilters(query: string): string {
-    if (!this.outlineStatusDoneFilterEnabled) return query;
-    const base = query.trim();
-    return base.length > 0 ? `${base} prop:status=done` : "prop:status=done";
+    let result = query.trim();
+    if (this.outlineStatusDoneFilterEnabled) {
+      result = result.length > 0 ? `${result} prop:status=done` : "prop:status=done";
+    }
+    if (!this.outlineShowClosed) {
+      result = result.length > 0 ? `${result} ${CLOSED_FILTER_QUERY}` : CLOSED_FILTER_QUERY;
+    }
+    return result;
   }
 
   private getCumulativeFilterLabel(
@@ -514,8 +535,10 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const own = state.ownSeconds.get(node.path) ?? 0;
 
     let childrenList: HTMLElement | null = null;
+    const onlyInlineChildren = node.children.length > 0
+      && node.children.every((child) => isInlineItem(child.item));
     if (node.children.length > 0) {
-      const isExpanded = Boolean(state.expandAll);
+      const isExpanded = onlyInlineChildren ? false : Boolean(state.expandAll);
       const toggle = row.createEl("button", {
         cls: "fmo-tree-toggle",
         attr: {
@@ -538,13 +561,10 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       createTreeToggleSpacer(row);
     }
 
-    if (isInline) {
-      row.createEl("span", { cls: "fmo-inline-task-checkbox", text: "\u2610" });
-    }
-
     const linkCls = [
       "fmo-note-link",
-      isParentOnly ? "fmo-note-link-parent" : ""
+      isParentOnly ? "fmo-note-link-parent" : "",
+      isInline ? "fmo-note-link-inline" : ""
     ].filter(Boolean).join(" ");
     const link = row.createEl("a", {
       cls: linkCls,
@@ -554,8 +574,16 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
     link.addEventListener("click", (evt) => {
       evt.preventDefault();
-      void this.plugin.openFile(isInlineItem(node.item) ? node.item.parentPath : node.item.path);
+      const inlineItem = isInlineItem(node.item) ? node.item : null;
+      void this.plugin.openFile(inlineItem ? inlineItem.parentPath : node.item.path, inlineItem?.line);
     });
+
+    if (onlyInlineChildren) {
+      row.createEl("span", {
+        cls: "fmo-inline-count",
+        text: `(${node.children.length} inline${node.children.length === 1 ? "" : "s"})`
+      });
+    }
 
     const priorityBadge = getItemPriorityBadge(node.item);
     if (priorityBadge) {

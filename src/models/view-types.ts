@@ -34,13 +34,15 @@ export const VIEW_TYPE_LIFE_DASHBOARD_CALENDAR = "life-dashboard-calendar-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMELOG = "life-dashboard-timelog-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT = "life-dashboard-beancount-view";
 export const VIEW_TYPE_LIFE_DASHBOARD_TIMELINE = "life-dashboard-timeline-view";
+export const VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS = "life-dashboard-supplements-view";
 export const LIFE_DASHBOARD_VIEW_TYPES = [
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
-  VIEW_TYPE_LIFE_DASHBOARD_TIMELINE
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
+  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
 ] as const;
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +54,8 @@ export const DASHBOARD_COLORS = [
 ];
 
 export const MIN_TRACKED_SECONDS_PER_PERIOD = 60;
+
+export const CLOSED_FILTER_QUERY = "-prop:status=done -prop:status=rejected -prop:archived=true";
 
 export const OUTLINE_RANGE_OPTIONS: Array<{ value: OutlineTimeRange; label: string }> = [
   { value: "today", label: "today" },
