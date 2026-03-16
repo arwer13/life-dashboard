@@ -21,6 +21,8 @@ type CanvasTreeDraft = {
   range: OutlineTimeRange;
   trackedOnly: boolean;
   showParents: boolean;
+  showInlineTasks: boolean;
+  priorityOnly: boolean;
   collapsed: boolean;
   x: number;
   y: number;
@@ -38,6 +40,8 @@ type PersistedCanvasTreeDraft = {
   range: OutlineTimeRange;
   trackedOnly: boolean;
   showParents: boolean;
+  showInlineTasks: boolean;
+  priorityOnly: boolean;
   collapsed: boolean;
   x: number;
   y: number;
@@ -260,6 +264,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
     draft.range = tree.range;
     draft.trackedOnly = tree.trackedOnly;
     draft.showParents = tree.showParents;
+    draft.showInlineTasks = tree.showInlineTasks ?? true;
+    draft.priorityOnly = tree.priorityOnly ?? false;
     draft.collapsed = tree.collapsed;
     draft.x = this.clamp(Math.floor(tree.x), 16, CANVAS_STAGE_WIDTH - CANVAS_CARD_MIN_WIDTH - 16);
     draft.y = this.clamp(Math.floor(tree.y), 16, CANVAS_STAGE_HEIGHT - CANVAS_CARD_MIN_HEIGHT - 16);
@@ -291,6 +297,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       range: tree.range,
       trackedOnly: tree.trackedOnly,
       showParents: tree.showParents,
+      showInlineTasks: tree.showInlineTasks,
+      priorityOnly: tree.priorityOnly,
       collapsed: tree.collapsed,
       x: Math.round(tree.x),
       y: Math.round(tree.y),
@@ -370,6 +378,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       range: "todayYesterday",
       trackedOnly: true,
       showParents: true,
+      showInlineTasks: true,
+      priorityOnly: false,
       collapsed: false,
       x: 64,
       y: 64,
@@ -474,6 +484,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         range: tree.range,
         trackedOnly: tree.trackedOnly,
         showParents: tree.showParents,
+        showInlineTasks: tree.showInlineTasks,
+        priorityOnly: tree.priorityOnly,
         collapsedNodePaths: tree.collapsedNodePaths,
       },
       onChange: (_visiblePaths, newState) => {
@@ -483,6 +495,8 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         tree.range = newState.range;
         tree.trackedOnly = newState.trackedOnly;
         tree.showParents = newState.showParents;
+        tree.showInlineTasks = newState.showInlineTasks;
+        tree.priorityOnly = newState.priorityOnly;
         tree.collapsedNodePaths = newState.collapsedNodePaths;
         this.persistCanvasTrees();
       },

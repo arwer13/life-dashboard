@@ -81,6 +81,29 @@ Set `parent: "[[NoteName]]"` in frontmatter to create tree relationships.
 | `"quoted"` | `"my task"` | Literal phrase |
 | `-` prefix | `-archived` | Negation |
 
+### Inline subtasks
+
+Checkbox items (`- [ ] text`) listed under a `# Tasks` or `## Tasks` heading inside a concern note appear as subtasks in outline and canvas trees. Checked items (`- [x]`) are automatically hidden.
+
+**Priority emojis** — prefix a task with one of the following to set its priority:
+
+| Emoji | Priority |
+|-------|----------|
+| 🔺 | p0 (critical) |
+| ⏫ | p1 (urgent) |
+| 🔼 | p2 (high) |
+| 🔽 | p3 (low) |
+| ⏬ | p4 (lowest) |
+
+**Hotkeys** — hover over any item in the tree and press `0`–`4` to set priority, or `-` to clear it.
+
+**Promote button** — the `↗` button on an inline task converts the checkbox into a full concern note.
+
+**Filter controls** — two toggles in the tree panel control inline task visibility:
+
+- **Inline tasks** — show or hide inline subtasks in the tree (default: on)
+- **Priority only** — show only items that have a priority set (default: off)
+
 ### Settings
 
 All settings are in **Settings > Life Dashboard**.

@@ -359,7 +359,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       this.scheduleStartupTotalsLoad();
       void this.maybeAutoSelectFromActive();
-      this.refreshView();
+      void this.refreshInlineTaskCache();
       this.updateSubConcernHeaderButton();
     });
 

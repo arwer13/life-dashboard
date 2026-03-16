@@ -89,6 +89,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     range: "today" as OutlineTimeRange,
     trackedOnly: false,
     showParents: true,
+    showInlineTasks: true,
+    priorityOnly: false,
     collapsedNodePaths: new Set(),
   };
   private calendarTreeStateLoaded = false;
@@ -182,6 +184,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     if (typeof obj.query === "string") this.calendarTreeState.query = obj.query;
     if (obj.sortMode === "recent" || obj.sortMode === "priority") this.calendarTreeState.sortMode = obj.sortMode;
     if (typeof obj.showParents === "boolean") this.calendarTreeState.showParents = obj.showParents;
+    if (typeof obj.showInlineTasks === "boolean") this.calendarTreeState.showInlineTasks = obj.showInlineTasks;
+    if (typeof obj.priorityOnly === "boolean") this.calendarTreeState.priorityOnly = obj.priorityOnly;
     if (Array.isArray(obj.collapsedNodePaths)) {
       this.calendarTreeState.collapsedNodePaths = new Set(
         (obj.collapsedNodePaths as unknown[]).filter((p): p is string => typeof p === "string")
@@ -195,6 +199,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       query: this.calendarTreeState.query,
       sortMode: this.calendarTreeState.sortMode,
       showParents: this.calendarTreeState.showParents,
+      showInlineTasks: this.calendarTreeState.showInlineTasks,
+      priorityOnly: this.calendarTreeState.priorityOnly,
       collapsedNodePaths: [...this.calendarTreeState.collapsedNodePaths],
     };
     this.plugin.setCalendarTreePanelState(JSON.stringify(state));

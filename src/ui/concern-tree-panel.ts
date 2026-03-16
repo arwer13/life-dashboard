@@ -17,6 +17,7 @@ import { filterTasksByQuery } from "../services/outline-filter";
 import {
   formatPriorityBadgeText,
   getItemPriorityBadge,
+  getItemPriorityRank,
   isPriorityDigitKey,
   shouldIgnorePriorityHotkeyTarget
 } from "../services/priority-utils";
@@ -29,6 +30,8 @@ export type ConcernTreePanelState = {
   range: OutlineTimeRange;
   trackedOnly: boolean;
   showParents: boolean;
+  showInlineTasks: boolean;
+  priorityOnly: boolean;
   collapsedNodePaths: Set<string>;
 };
 
@@ -146,6 +149,8 @@ export class ConcernTreePanel {
     if (partial.range !== undefined) this.state.range = partial.range;
     if (partial.trackedOnly !== undefined) this.state.trackedOnly = partial.trackedOnly;
     if (partial.showParents !== undefined) this.state.showParents = partial.showParents;
+    if (partial.showInlineTasks !== undefined) this.state.showInlineTasks = partial.showInlineTasks;
+    if (partial.priorityOnly !== undefined) this.state.priorityOnly = partial.priorityOnly;
     this.render();
   }
 
@@ -239,6 +244,30 @@ export class ConcernTreePanel {
       });
     }
 
+    const showInlineRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const showInlineInput = showInlineRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    showInlineInput.checked = this.state.showInlineTasks;
+    showInlineRow.createEl("span", { text: "Inline tasks" });
+    showInlineInput.addEventListener("change", () => {
+      this.state.showInlineTasks = showInlineInput.checked;
+      this.rerenderPreview?.();
+    });
+
+    const priorityOnlyRow = flagsRow.createEl("label", { cls: "fmo-outline-tracked-only-row" });
+    const priorityOnlyInput = priorityOnlyRow.createEl("input", {
+      cls: "fmo-outline-tracked-only-input",
+      attr: { type: "checkbox" }
+    }) as HTMLInputElement;
+    priorityOnlyInput.checked = this.state.priorityOnly;
+    priorityOnlyRow.createEl("span", { text: "Priority only" });
+    priorityOnlyInput.addEventListener("change", () => {
+      this.state.priorityOnly = priorityOnlyInput.checked;
+      this.rerenderPreview?.();
+    });
+
     if (!this.hideControls.filter) {
       const filterRow = controls.createEl("div", { cls: "fmo-tree-panel-filter" });
       const filterSearch = new SearchComponent(filterRow);
@@ -275,7 +304,13 @@ export class ConcernTreePanel {
     const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
     const scopedTasks = tasks.filter((task) => scopePaths.has(task.path));
-    const queryMatched = filterTasksByQuery(scopedTasks, this.state.query);
+    const filteredTasks = this.state.showInlineTasks
+      ? scopedTasks
+      : scopedTasks.filter((task) => !isInlineItem(task));
+    const priorityFilteredTasks = this.state.priorityOnly
+      ? filteredTasks.filter((task) => getItemPriorityRank(task) < 100)
+      : filteredTasks;
+    const queryMatched = filterTasksByQuery(priorityFilteredTasks, this.state.query);
     const matched = this.state.trackedOnly
       ? queryMatched.filter(
           (task) => (ownSecondsByPath.get(task.path) ?? 0) >= MIN_TRACKED_SECONDS_PER_PERIOD
@@ -429,7 +464,7 @@ export class ConcernTreePanel {
       this.scheduleHover(hoveredPaths);
     });
     row.addEventListener("mouseleave", (evt) => this.handleRowMouseLeave(evt));
-    row.style.paddingInlineStart = `${Math.min(12, depth) * 11}px`;
+    row.style.paddingInlineStart = `${Math.min(12, depth) * 6}px`;
     const hasChildren = node.children.length > 0;
     if (hasChildren) {
       const isCollapsed = this.state.collapsedNodePaths.has(node.path);
