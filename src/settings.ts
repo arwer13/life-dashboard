@@ -24,6 +24,7 @@ export interface LifeDashboardSettings {
   kanbanDefaultColumnProperty: string;
   kanbanDefaultSwimlaneProperty: string;
   outlineMaxRows: number;
+  concernMapState: string;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
@@ -55,4 +56,5 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   kanbanDefaultColumnProperty: "status",
   kanbanDefaultSwimlaneProperty: "priority",
   outlineMaxRows: 1000,
+  concernMapState: "",
 };

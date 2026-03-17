@@ -9,7 +9,8 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
-  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
+  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS,
+  VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP
 } from "../models/view-types";
 
 /** Views that depend on task structure (concern files, inline tasks, priorities). */
@@ -20,6 +21,7 @@ const TASK_STRUCTURE_VIEW_TYPES: readonly string[] = [
   VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
+  VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP,
 ];
 
 /** Views that depend on time tracking data (totals, entries, elapsed time). */
@@ -105,6 +107,10 @@ export class DashboardViewController {
 
   async activateSupplementsView(): Promise<void> {
     await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS, "tab");
+  }
+
+  async activateConcernMapView(): Promise<void> {
+    await this.openAndRevealView(VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP, "tab");
   }
 
   private static readonly DASHBOARD_VIEW_TYPES = LIFE_DASHBOARD_VIEW_TYPES;

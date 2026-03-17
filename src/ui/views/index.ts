@@ -6,3 +6,4 @@ export { LifeDashboardTimeLogView } from "./time-log-view";
 export { LifeDashboardBeancountView } from "./beancount-view";
 export { LifeDashboardTimelineView } from "./timeline-view";
 export { LifeDashboardSupplementsView } from "./supplements-view";
+export { LifeDashboardConcernMapView } from "./concern-map-view";

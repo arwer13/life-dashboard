@@ -13,8 +13,8 @@ import {
 } from "../models/view-types";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
-import { buildTaskTree, resolveParentPath, buildParentPathMap, collectPathsWithParents } from "../services/task-tree-builder";
-import { filterTasksByQuery } from "../services/outline-filter";
+import { buildTaskTree, resolveParentPath, buildParentPathMap, collectPathsWithParents, collectScopePaths } from "../services/task-tree-builder";
+import { filterTasksByQuery, withClosedFilter } from "../services/outline-filter";
 import {
   getItemPriorityBadge,
   getItemPriorityRank,
@@ -318,7 +318,7 @@ export class ConcernTreePanel {
       resolveParentPath(parentRaw, sourcePath, this.plugin.app.metadataCache);
     this.parentByPath = buildParentPathMap(tasks, resolveParentPathFn);
     const parentByPath = this.parentByPath;
-    const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
+    const scopePaths = collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
     const scopedTasks = tasks.filter((task) => scopePaths.has(task.path));
     const filteredTasks = this.state.showInlineTasks
@@ -329,7 +329,7 @@ export class ConcernTreePanel {
       : filteredTasks;
     const closedFilter = this.state.showClosed
       ? this.state.query
-      : this.withClosedFilter(this.state.query);
+      : withClosedFilter(this.state.query);
     const queryMatched = filterTasksByQuery(priorityFilteredTasks, closedFilter);
     const matched = this.state.trackedOnly
       ? queryMatched.filter(
@@ -596,41 +596,6 @@ export class ConcernTreePanel {
   }
 
 
-  private collectScopePaths(
-    tasks: TaskItem[],
-    parentByPath: Map<string, string>,
-    rootPath: string
-  ): Set<string> {
-    const allPaths = new Set(tasks.map((task) => task.path));
-    if (!rootPath || !allPaths.has(rootPath)) {
-      return allPaths;
-    }
-
-    const childrenByPath = new Map<string, string[]>();
-    for (const [childPath, parentPath] of parentByPath.entries()) {
-      const siblings = childrenByPath.get(parentPath);
-      if (siblings) {
-        siblings.push(childPath);
-      } else {
-        childrenByPath.set(parentPath, [childPath]);
-      }
-    }
-
-    const scoped = new Set<string>();
-    const stack = [rootPath];
-    while (stack.length > 0) {
-      const next = stack.pop();
-      if (!next || scoped.has(next)) continue;
-      scoped.add(next);
-      for (const childPath of childrenByPath.get(next) ?? []) {
-        stack.push(childPath);
-      }
-    }
-
-    return scoped;
-  }
-
-
   private selectRoots(taskTree: TaskTreeData, rootPath: string): TaskTreeNode[] {
     if (!rootPath) return taskTree.roots;
     const root = taskTree.nodesByPath.get(rootPath);
@@ -736,11 +701,6 @@ export class ConcernTreePanel {
     }
 
     return subtreePathsByPath;
-  }
-
-  private withClosedFilter(query: string): string {
-    const base = query.trim();
-    return base.length > 0 ? `${base} ${CLOSED_FILTER_QUERY}` : CLOSED_FILTER_QUERY;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────

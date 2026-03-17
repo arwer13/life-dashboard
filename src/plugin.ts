@@ -45,7 +45,8 @@ import {
   LifeDashboardTimeLogView,
   LifeDashboardTimelineView,
   LifeDashboardTimerView,
-  LifeDashboardSupplementsView
+  LifeDashboardSupplementsView,
+  LifeDashboardConcernMapView
 } from "./ui/views";
 import { renderTimelineInto } from "./ui/views/timeline-view";
 import {
@@ -57,7 +58,8 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT,
-  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
+  VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS,
+  VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP
 } from "./models/view-types";
 import { createKanbanViewRegistration, KANBAN_BASES_VIEW_ID } from "./ui/bases/kanban-bases-view";
 import { createSubConcernsExtension } from "./ui/editor/sub-concerns-extension";
@@ -123,6 +125,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private startupTotalsLoadStarted = false;
   private outlineFilterSaveTimer: number | null = null;
   private canvasDraftSaveTimer: number | null = null;
+  private concernMapSaveTimer: number | null = null;
   private subConcernActionEl: HTMLElement | null = null;
   private subConcernActionFilePath: string | null = null;
   private notificationPermissionRequested = false;
@@ -151,6 +154,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELOG, (leaf) => new LifeDashboardTimeLogView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_TIMELINE, (leaf) => new LifeDashboardTimelineView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS, (leaf) => new LifeDashboardSupplementsView(leaf, this));
+    this.registerView(VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP, (leaf) => new LifeDashboardConcernMapView(leaf, this));
     this.registerView(VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT, (leaf) => new LifeDashboardBeancountView(leaf));
     this.registerExtensions(["beancount"], VIEW_TYPE_LIFE_DASHBOARD_BEANCOUNT);
     this.registerMarkdownCodeBlockProcessor("life-dashboard-timeline", (_source, el) => {
@@ -190,6 +194,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addRibbonIcon("pill", "Open Supplements Grid", () => {
       void this.viewController.activateSupplementsView();
+    });
+
+    this.addRibbonIcon("map", "Open Concern Map", () => {
+      void this.viewController.activateConcernMapView();
     });
 
     this.addCommand({
@@ -253,6 +261,14 @@ export default class LifeDashboardPlugin extends Plugin {
       name: "Open Supplements Grid",
       callback: () => {
         void this.viewController.activateSupplementsView();
+      }
+    });
+
+    this.addCommand({
+      id: "open-concern-map",
+      name: "Open Concern Map",
+      callback: () => {
+        void this.viewController.activateConcernMapView();
       }
     });
 
@@ -415,6 +431,10 @@ export default class LifeDashboardPlugin extends Plugin {
     if (this.canvasDraftSaveTimer !== null) {
       window.clearTimeout(this.canvasDraftSaveTimer);
       this.canvasDraftSaveTimer = null;
+    }
+    if (this.concernMapSaveTimer !== null) {
+      window.clearTimeout(this.concernMapSaveTimer);
+      this.concernMapSaveTimer = null;
     }
     await this.saveSettings();
 
@@ -854,6 +874,16 @@ export default class LifeDashboardPlugin extends Plugin {
     if (this.settings.canvasDraftState === state) return;
     this.settings.canvasDraftState = state;
     this.scheduleCanvasDraftSave();
+  }
+
+  getConcernMapState(): string {
+    return this.settings.concernMapState || "";
+  }
+
+  setConcernMapState(state: string): void {
+    if (this.settings.concernMapState === state) return;
+    this.settings.concernMapState = state;
+    this.scheduleConcernMapSave();
   }
 
   getCalendarTreePanelState(): string {
@@ -1879,7 +1909,7 @@ export default class LifeDashboardPlugin extends Plugin {
     this.viewController.refreshViewByType(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS);
   }
 
-  private scheduleDebouncedSave(timerField: "outlineFilterSaveTimer" | "canvasDraftSaveTimer"): void {
+  private scheduleDebouncedSave(timerField: "outlineFilterSaveTimer" | "canvasDraftSaveTimer" | "concernMapSaveTimer"): void {
     if (this[timerField] !== null) {
       window.clearTimeout(this[timerField]);
     }
@@ -1896,6 +1926,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private scheduleCanvasDraftSave(): void {
     this.scheduleDebouncedSave("canvasDraftSaveTimer");
+  }
+
+  private scheduleConcernMapSave(): void {
+    this.scheduleDebouncedSave("concernMapSaveTimer");
   }
 
   private scheduleStartupTotalsLoad(): void {

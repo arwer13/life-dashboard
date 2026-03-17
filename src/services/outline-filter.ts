@@ -2,6 +2,12 @@ import type { FrontMatterCache } from "obsidian";
 import { prepareSimpleSearch } from "obsidian";
 import type { TaskItem } from "../models/types";
 import type { OutlineFilterToken } from "../models/view-types";
+import { CLOSED_FILTER_QUERY } from "../models/view-types";
+
+export function withClosedFilter(query: string): string {
+  const base = query.trim();
+  return base.length > 0 ? `${base} ${CLOSED_FILTER_QUERY}` : CLOSED_FILTER_QUERY;
+}
 
 export function filterTasksByQuery(tasks: TaskItem[], query: string): TaskItem[] {
   const tokens = parseFilterTokens(query);

@@ -131,6 +131,37 @@ export function collectPathsWithParents(
   return output;
 }
 
+export function collectScopePaths(
+  tasks: TaskItem[],
+  parentByPath: Map<string, string>,
+  rootPath: string
+): Set<string> {
+  const allPaths = new Set(tasks.map((task) => task.path));
+  if (!rootPath || !allPaths.has(rootPath)) return allPaths;
+
+  const childrenByPath = new Map<string, string[]>();
+  for (const [childPath, parentPath] of parentByPath.entries()) {
+    const siblings = childrenByPath.get(parentPath);
+    if (siblings) {
+      siblings.push(childPath);
+    } else {
+      childrenByPath.set(parentPath, [childPath]);
+    }
+  }
+
+  const scoped = new Set<string>();
+  const stack = [rootPath];
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (!next || scoped.has(next)) continue;
+    scoped.add(next);
+    for (const childPath of childrenByPath.get(next) ?? []) {
+      stack.push(childPath);
+    }
+  }
+  return scoped;
+}
+
 function compareNodes(
   a: TaskTreeNode,
   b: TaskTreeNode,
