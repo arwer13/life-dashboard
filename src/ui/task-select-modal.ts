@@ -59,6 +59,7 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
     this.showPathInSuggestion = options.showPathInSuggestion ?? true;
     this.onModalClose = options.onModalClose;
     this.setPlaceholder(options.placeholder ?? "Select task note...");
+    this.registerNavigationHotkeys();
     this.registerCycleHotkeys();
     this.applySearchMode();
   }
@@ -178,6 +179,32 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
       });
       pos = end;
     }
+  }
+
+  private registerNavigationHotkeys(): void {
+    // Use event.code (physical key) so Ctrl+N/P works regardless of keyboard layout.
+    this.scope.register(["Ctrl"], null, (evt: KeyboardEvent) => {
+      if (evt.code === "KeyN") {
+        evt.preventDefault();
+        this.moveSelection(1);
+        return false;
+      }
+      if (evt.code === "KeyP") {
+        evt.preventDefault();
+        this.moveSelection(-1);
+        return false;
+      }
+      return;
+    });
+  }
+
+  private moveSelection(direction: 1 | -1): void {
+    const chooser = (this as any).chooser;
+    if (!chooser?.values?.length) return;
+    const count: number = chooser.values.length;
+    const current: number = chooser.selectedItem ?? 0;
+    const next = Math.min(Math.max(current + direction, 0), count - 1);
+    chooser.setSelectedItem(next, true);
   }
 
   private registerCycleHotkeys(): void {

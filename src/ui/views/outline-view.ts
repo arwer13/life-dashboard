@@ -7,6 +7,7 @@ import {
 import { DISPLAY_VERSION } from "../../version";
 import type { TaskItem, TaskTreeNode } from "../../models/types";
 import { isFileItem, isInlineItem } from "../../models/types";
+import { buildParentPathMap, collectPathsWithParents } from "../../services/task-tree-builder";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
   OUTLINE_RANGE_OPTIONS,
@@ -21,9 +22,7 @@ import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import {
   getItemPriorityBadge,
-  isPriorityDigitKey,
-  isReparentKey,
-  shouldIgnorePriorityHotkeyTarget
+  handlePriorityHotkey
 } from "../../services/priority-utils";
 import {
   createTreeToggleSpacer,
@@ -191,7 +190,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
     const outlineBody = contentEl.createEl("div", { cls: "fmo-outline-body" });
     const latestTrackedStartForPath = this.createLatestTrackedStartResolver(this.outlineTimeRange);
-    const parentByPath = this.buildParentPathMap(tasks);
+    const parentByPath = buildParentPathMap(tasks, (raw, src) => this.resolveParentPath(raw, src));
     const renderFilteredOutline = (query: string): void => {
       outlineBody.empty();
       this.hoveredConcernPath = null;
@@ -234,7 +233,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
         if (section.matchedPaths.size === 0) continue;
 
         const visiblePaths = this.outlineShowParents
-          ? this.collectPathsWithParents(section.matchedPaths, parentByPath)
+          ? collectPathsWithParents(section.matchedPaths, parentByPath)
           : section.matchedPaths;
         const visibleTasks = tasks.filter((item) => visiblePaths.has(item.path));
         const tree = this.buildTaskTree(visibleTasks, {
@@ -389,43 +388,6 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       cached.set(path, latest);
       return latest;
     };
-  }
-
-  private buildParentPathMap(tasks: TaskItem[]): Map<string, string> {
-    const allPaths = new Set(tasks.map((item) => item.path));
-    const parentByPath = new Map<string, string>();
-
-    for (const item of tasks) {
-      if (isInlineItem(item)) {
-        if (allPaths.has(item.parentPath) && item.parentPath !== item.path) {
-          parentByPath.set(item.path, item.parentPath);
-        }
-        continue;
-      }
-      const parentPath = this.resolveParentPath(item.parentRaw, item.path);
-      if (!parentPath || !allPaths.has(parentPath) || parentPath === item.path) continue;
-      parentByPath.set(item.path, parentPath);
-    }
-
-    return parentByPath;
-  }
-
-  private collectPathsWithParents(
-    matchedPaths: Set<string>,
-    parentByPath: Map<string, string>
-  ): Set<string> {
-    const output = new Set<string>(matchedPaths);
-    for (const path of matchedPaths) {
-      let cursor = parentByPath.get(path);
-      const seen = new Set<string>();
-      while (cursor && !seen.has(cursor)) {
-        seen.add(cursor);
-        output.add(cursor);
-        cursor = parentByPath.get(cursor);
-      }
-    }
-
-    return output;
   }
 
   private groupMatchedPathsByRecencyBucket(
@@ -616,32 +578,11 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     if (this.keydownRegistered) return;
     this.keydownRegistered = true;
     this.registerDomEvent(document, "keydown", (event) => {
-      if (!this.hoveredConcernPath) return;
-      if (event.altKey || event.ctrlKey || event.metaKey) return;
-      if (event.repeat) return;
-      if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
-
-      const isReparent = isReparentKey(event.key);
-      if (event.shiftKey && !isReparent) return;
-
-      const isPriorityDigit = isPriorityDigitKey(event.key);
-      const isPriorityClear = event.key === "-";
-      if (!isPriorityDigit && !isPriorityClear && !isReparent) return;
-
-      const hoveredPath = this.hoveredConcernPath;
-      if (!hoveredPath) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      if (isReparent) {
-        this.plugin.reparentConcernInteractive(hoveredPath);
-        return;
-      }
-      if (isPriorityClear) {
-        void this.clearHoveredPriority(hoveredPath);
-        return;
-      }
-      void this.applyHoveredPriority(hoveredPath, event.key);
+      handlePriorityHotkey(event, this.hoveredConcernPath, {
+        onReparent: (path) => this.plugin.reparentConcernInteractive(path),
+        onPriorityDigit: (path, digit) => void this.applyHoveredPriority(path, digit),
+        onPriorityClear: (path) => void this.clearHoveredPriority(path),
+      });
     });
   }
 

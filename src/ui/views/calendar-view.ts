@@ -16,6 +16,14 @@ import type { OutlineTimeRange, TimeWindow } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel, type ConcernTreePanelState } from "../concern-tree-panel";
 import { TaskSelectModal } from "../task-select-modal";
+import {
+  toDateKey,
+  buildYearWeeks,
+  getMonthStartWeekIndex,
+  MONTH_ABBREVIATIONS,
+  pad2,
+  type YearSlot
+} from "../../services/year-grid-utils";
 
 type CalendarPeriod = "today" | "week" | "month" | "year";
 
@@ -29,11 +37,6 @@ type CalendarDayBucket = {
   totalSeconds: number;
   secondsByPath: Map<string, number>;
 };
-
-type CalendarYearSlot = {
-  date: Date;
-  key: string;
-} | null;
 
 type HourRange = { minHour: number; maxHour: number };
 
@@ -76,8 +79,6 @@ const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
-
-const pad2 = (n: number): string => String(n).padStart(2, "0");
 
 export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private calendarTreePanel: ConcernTreePanel | null = null;
@@ -422,10 +423,6 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     return `${startStr}, ${start.getFullYear()} \u2013 ${endStr}, ${end.getFullYear()}`;
   }
 
-  private getDateKey(date: Date): string {
-    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-  }
-
   private hasRenderableHealthData(healthRange: HealthTrackingRangeSnapshot): boolean {
     return healthRange.daysByDateKey.size > 0
       || healthRange.observability.sleepFiles.length > 0
@@ -437,7 +434,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     date: Date,
     healthRange: HealthTrackingRangeSnapshot
   ): HealthTrackingDay | null {
-    return healthRange.daysByDateKey.get(this.getDateKey(date)) ?? null;
+    return healthRange.daysByDateKey.get(toDateKey(date)) ?? null;
   }
 
   private renderHealthOverview(
@@ -783,7 +780,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
         const segmentEndMs = Math.min(entryEndMs, nextDayStart.getTime());
         const segmentSeconds = Math.floor((segmentEndMs - cursorMs) / 1000);
         if (segmentSeconds > 0) {
-          const key = this.getDateKey(dayStart);
+          const key = toDateKey(dayStart);
           let bucket = buckets.get(key);
           if (!bucket) {
             bucket = { totalSeconds: 0, secondsByPath: new Map() };
@@ -1254,7 +1251,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       const dayMs = new Date(year, month, d, 0, 0, 0, 0).getTime();
       const isToday = dayMs === todayMs;
       const dayDate = new Date(dayMs);
-      const dateKey = this.getDateKey(dayDate);
+      const dateKey = toDateKey(dayDate);
       const bucket = dayBuckets.get(dateKey);
       const healthDay = this.getHealthDay(dayDate, healthRange);
       const totalSeconds = bucket?.totalSeconds ?? 0;
@@ -1303,47 +1300,6 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     }
   }
 
-  private buildYearWeeks(year: number): CalendarYearSlot[][] {
-    const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
-    const weeks: CalendarYearSlot[][] = [];
-    let currentDate = new Date(year, 0, 1);
-    const yearEnd = new Date(year + 1, 0, 1);
-
-    const firstDayOfWeek = (currentDate.getDay() - weekStartsOn + 7) % 7;
-    let currentWeek: CalendarYearSlot[] = Array.from({ length: firstDayOfWeek }, () => null);
-
-    while (currentDate < yearEnd) {
-      const dayOfWeek = (currentDate.getDay() - weekStartsOn + 7) % 7;
-      if (dayOfWeek === 0 && currentWeek.length > 0) {
-        while (currentWeek.length < 7) currentWeek.push(null);
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-      currentWeek.push({ date: new Date(currentDate), key: this.getDateKey(currentDate) });
-      currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 1);
-    }
-
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push(null);
-      weeks.push(currentWeek);
-    }
-
-    return weeks;
-  }
-
-  private getMonthStartWeekByIndex(weeks: CalendarYearSlot[][]): Map<number, number> {
-    const monthStartWeekByIndex = new Map<number, number>();
-    for (let weekIndex = 0; weekIndex < weeks.length; weekIndex++) {
-      for (const slot of weeks[weekIndex]) {
-        if (slot && slot.date.getDate() === 1) {
-          monthStartWeekByIndex.set(slot.date.getMonth(), weekIndex);
-          break;
-        }
-      }
-    }
-    return monthStartWeekByIndex;
-  }
-
   private renderYearHeatmap(
     containerEl: HTMLElement,
     entries: CalendarEntry[],
@@ -1358,24 +1314,25 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const dayLabels = this.getWeekdayLabels();
 
     const wrapper = containerEl.createEl("div", { cls: "fmo-calendar-year-wrapper" });
-    const weeks = this.buildYearWeeks(year);
+    const weekStartsOn = this.plugin.settings.weekStartsOn === "sunday" ? 0 : 1;
+    const weeks = buildYearWeeks(year, weekStartsOn);
 
     const monthLabelRow = wrapper.createEl("div", { cls: "fmo-calendar-year-month-row" });
     monthLabelRow.createEl("div", { cls: "fmo-calendar-year-day-label-spacer" });
     const monthTrack = monthLabelRow.createEl("div", { cls: "fmo-calendar-year-month-track" });
     monthTrack.style.setProperty("--year-cols", `${weeks.length}`);
-    const monthStartWeekByIndex = this.getMonthStartWeekByIndex(weeks);
-    for (let monthIdx = 0; monthIdx < MONTH_NAMES.length; monthIdx++) {
+    const monthStartWeekByIndex = getMonthStartWeekIndex(weeks);
+    for (let monthIdx = 0; monthIdx < MONTH_ABBREVIATIONS.length; monthIdx++) {
       const weekIndex = monthStartWeekByIndex.get(monthIdx);
       if (weekIndex == null) continue;
       const monthLabel = monthTrack.createEl("div", {
         cls: "fmo-calendar-year-month-label",
-        text: MONTH_NAMES[monthIdx].slice(0, 3)
+        text: MONTH_ABBREVIATIONS[monthIdx]
       });
       monthLabel.style.gridColumn = `${weekIndex + 1}`;
     }
 
-    const todayKey = this.getDateKey(this.plugin.timeData.getDayStart(now));
+    const todayKey = toDateKey(this.plugin.timeData.getDayStart(now));
 
     const body = wrapper.createEl("div", { cls: "fmo-calendar-year-body" });
     const dayLabelColumn = body.createEl("div", { cls: "fmo-calendar-year-day-labels" });

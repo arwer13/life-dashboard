@@ -1,5 +1,6 @@
 import type { MetadataCache } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../models/types";
+import { isInlineItem } from "../models/types";
 import type { TaskTreeData, TaskTreeBuildOptions, OutlineSortMode } from "../models/view-types";
 import { getItemPriorityRank } from "./priority-utils";
 
@@ -90,6 +91,44 @@ export function resolveParentPath(
     if (file) return file.path;
   }
   return null;
+}
+
+export function buildParentPathMap(
+  tasks: TaskItem[],
+  resolveParent: (parentRaw: unknown, sourcePath: string) => string | null
+): Map<string, string> {
+  const allPaths = new Set(tasks.map((task) => task.path));
+  const parentByPath = new Map<string, string>();
+  for (const task of tasks) {
+    if (isInlineItem(task)) {
+      if (allPaths.has(task.parentPath) && task.parentPath !== task.path) {
+        parentByPath.set(task.path, task.parentPath);
+      }
+      continue;
+    }
+    const parentPath = resolveParent(task.parentRaw, task.path);
+    if (!parentPath || !allPaths.has(parentPath) || parentPath === task.path) continue;
+    parentByPath.set(task.path, parentPath);
+  }
+  return parentByPath;
+}
+
+export function collectPathsWithParents(
+  matchedPaths: Set<string>,
+  parentByPath: Map<string, string>,
+  scopedPaths?: Set<string>
+): Set<string> {
+  const output = new Set<string>(matchedPaths);
+  for (const path of matchedPaths) {
+    let cursor = parentByPath.get(path);
+    const seen = new Set<string>();
+    while (cursor && !seen.has(cursor) && (!scopedPaths || scopedPaths.has(cursor))) {
+      seen.add(cursor);
+      output.add(cursor);
+      cursor = parentByPath.get(cursor);
+    }
+  }
+  return output;
 }
 
 function compareNodes(

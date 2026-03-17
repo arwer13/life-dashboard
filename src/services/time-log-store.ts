@@ -5,6 +5,7 @@ import {
   DEFAULT_TIME_LOG_PATH,
   type LifeDashboardSettings
 } from "../settings";
+import { pad2 } from "./year-grid-utils";
 
 export interface ParsedIntervalToken {
   start: string;
@@ -14,10 +15,6 @@ export interface ParsedIntervalToken {
 }
 
 const TIMESTAMP_RE = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2}):(\d{2})$/;
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
 
 function formatUTC(date: Date): string {
   return `${date.getUTCFullYear()}.${pad2(date.getUTCMonth() + 1)}.${pad2(date.getUTCDate())}-${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;

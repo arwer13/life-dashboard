@@ -5,7 +5,7 @@ import {
   type App
 } from "obsidian";
 import type { TimeWindow } from "./time-window-service";
-import { toDateKey } from "./year-grid-utils";
+import { toDateKey, getDayStart } from "./year-grid-utils";
 
 const TRACKING_FOLDER_PATH = "Me/Tracking";
 const SLEEP_FILE_PATTERN = /^sleep.*\.csv$/i;
@@ -103,7 +103,7 @@ export class HealthTrackingService {
 
     const startDate = new Date(window.startMs);
     const endDate = new Date(window.endMs);
-    const tomorrowStart = this.getDayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    const tomorrowStart = getDayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
 
     const activeEndMs = Math.min(window.endMs, tomorrowStart.getTime());
     const summary: HealthTrackingRangeSummary = {
@@ -122,7 +122,7 @@ export class HealthTrackingService {
     let stepsTotal = 0;
 
     for (
-      const cursor = this.getDayStart(startDate);
+      const cursor = getDayStart(startDate);
       cursor.getTime() < endDate.getTime();
       cursor.setDate(cursor.getDate() + 1)
     ) {
@@ -476,7 +476,4 @@ export class HealthTrackingService {
     return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   }
 
-  private getDayStart(date: Date): Date {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-  }
 }

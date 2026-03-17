@@ -316,12 +316,12 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.registerEvent(
       this.app.metadataCache.on("changed", (file) => {
-        // Only trigger the expensive cascade if this file is (or was) a concern.
+        // Only trigger if this file is (or was) a concern.
         const cache = this.app.metadataCache.getFileCache(file);
         const prop = this.settings.propertyName.trim();
         const hasConcernProperty = prop && cache?.frontmatter && prop in cache.frontmatter;
         if (!hasConcernProperty && !this.taskFilterService.hasCachedFilePath(file.path)) return;
-        this.handleTaskStructureChange();
+        this.handleConcernContentChange(file.path);
       })
     );
     this.registerEvent(
@@ -1696,6 +1696,28 @@ export default class LifeDashboardPlugin extends Plugin {
     }
   }
 
+  private async refreshInlineTaskCacheForPath(changedPath: string): Promise<void> {
+    const gen = ++this.inlineTaskCacheGeneration;
+    const file = this.app.vault.getAbstractFileByPath(changedPath);
+    if (!(file instanceof TFile)) return;
+
+    let newItems: InlineTaskItem[];
+    try {
+      const content = await this.app.vault.cachedRead(file);
+      newItems = parseInlineTasksForFile(changedPath, content);
+    } catch {
+      newItems = [];
+    }
+
+    if (gen !== this.inlineTaskCacheGeneration) return;
+    this.cachedInlineItems = [
+      ...this.cachedInlineItems.filter((item) => item.parentPath !== changedPath),
+      ...newItems
+    ];
+    this.treeStructureVersion++;
+    this.refreshTaskStructureViews();
+  }
+
   private async refreshInlineTaskCache(): Promise<void> {
     const gen = ++this.inlineTaskCacheGeneration;
     this.taskFilterService.invalidateCache();
@@ -1716,6 +1738,14 @@ export default class LifeDashboardPlugin extends Plugin {
     this.refreshTaskStructureViews();
   }
 
+  /** A single concern file's content changed (metadata cache update). Scope refresh to that file. */
+  private handleConcernContentChange(changedPath: string): void {
+    this.taskFilterService.invalidateCache();
+    this.recomputeMacOsTrayRecentConcerns();
+    void this.refreshInlineTaskCacheForPath(changedPath);
+  }
+
+  /** Full structure change (file added/removed/renamed). Re-parse all inline tasks. */
   private handleTaskStructureChange(): void {
     this.taskFilterService.invalidateCache();
     this.recomputeMacOsTrayRecentConcerns();
@@ -1837,7 +1867,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private async reloadHealthTrackingAndRefresh(): Promise<void> {
     await this.healthTrackingService.reload();
-    this.refreshView();
+    this.viewController.refreshViewByType(VIEW_TYPE_LIFE_DASHBOARD_CALENDAR);
   }
 
   private isSupplementsPath(path: string): boolean {
@@ -1846,7 +1876,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private async reloadSupplementsAndRefresh(): Promise<void> {
     await this.supplementsTrackingService.reload();
-    this.viewController.refreshSingleViewType(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS);
+    this.viewController.refreshViewByType(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS);
   }
 
   private scheduleDebouncedSave(timerField: "outlineFilterSaveTimer" | "canvasDraftSaveTimer"): void {

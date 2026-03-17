@@ -220,48 +220,50 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
     });
   }
 
-  private addTextSetting(containerEl: HTMLElement, config: TextSettingConfig): void {
+  private createDebouncedPersist(afterSave?: () => void): {
+    schedulePersist: () => void;
+    flushPersist: () => void;
+  } {
     let saveTimer: number | null = null;
     let dirty = false;
     let persistRunning = false;
 
     const persistIfNeeded = async (): Promise<void> => {
       if (!dirty || persistRunning) return;
-
       persistRunning = true;
       dirty = false;
       try {
-        await this.persistAndAfterSave(config.afterSave);
+        await this.persistAndAfterSave(afterSave);
       } catch (error) {
-        console.error("[life-dashboard] Failed to persist text setting:", error);
+        console.error("[life-dashboard] Failed to persist setting:", error);
       } finally {
         persistRunning = false;
-        if (dirty) {
+        if (dirty) void persistIfNeeded();
+      }
+    };
+
+    return {
+      schedulePersist: () => {
+        dirty = true;
+        if (saveTimer !== null) window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+          saveTimer = null;
           void persistIfNeeded();
+        }, 350);
+      },
+      flushPersist: () => {
+        if (saveTimer !== null) {
+          window.clearTimeout(saveTimer);
+          saveTimer = null;
         }
-      }
-    };
-
-    const schedulePersist = (): void => {
-      dirty = true;
-      if (saveTimer !== null) {
-        window.clearTimeout(saveTimer);
-      }
-
-      saveTimer = window.setTimeout(() => {
-        saveTimer = null;
+        if (!dirty) return;
         void persistIfNeeded();
-      }, 350);
-    };
-
-    const flushPersist = (): void => {
-      if (saveTimer !== null) {
-        window.clearTimeout(saveTimer);
-        saveTimer = null;
       }
-      if (!dirty) return;
-      void persistIfNeeded();
     };
+  }
+
+  private addTextSetting(containerEl: HTMLElement, config: TextSettingConfig): void {
+    const { schedulePersist, flushPersist } = this.createDebouncedPersist(config.afterSave);
 
     new Setting(containerEl)
       .setName(config.name)
@@ -303,46 +305,7 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
   }
 
   private addTextAreaSetting(containerEl: HTMLElement, config: TextAreaSettingConfig): void {
-    let saveTimer: number | null = null;
-    let dirty = false;
-    let persistRunning = false;
-
-    const persistIfNeeded = async (): Promise<void> => {
-      if (!dirty || persistRunning) return;
-
-      persistRunning = true;
-      dirty = false;
-      try {
-        await this.persistAndAfterSave(config.afterSave);
-      } catch (error) {
-        console.error("[life-dashboard] Failed to persist textarea setting:", error);
-      } finally {
-        persistRunning = false;
-        if (dirty) {
-          void persistIfNeeded();
-        }
-      }
-    };
-
-    const schedulePersist = (): void => {
-      dirty = true;
-      if (saveTimer !== null) {
-        window.clearTimeout(saveTimer);
-      }
-      saveTimer = window.setTimeout(() => {
-        saveTimer = null;
-        void persistIfNeeded();
-      }, 350);
-    };
-
-    const flushPersist = (): void => {
-      if (saveTimer !== null) {
-        window.clearTimeout(saveTimer);
-        saveTimer = null;
-      }
-      if (!dirty) return;
-      void persistIfNeeded();
-    };
+    const { schedulePersist, flushPersist } = this.createDebouncedPersist(config.afterSave);
 
     new Setting(containerEl)
       .setName(config.name)

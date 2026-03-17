@@ -39,6 +39,42 @@ export function isReparentKey(key: string): boolean {
   return key === "§" || key === ">";
 }
 
+export type PriorityHotkeyCallbacks = {
+  onReparent: (path: string) => void;
+  onPriorityDigit: (path: string, digit: string) => void;
+  onPriorityClear: (path: string) => void;
+};
+
+export function handlePriorityHotkey(
+  event: KeyboardEvent,
+  hoveredPath: string | null,
+  callbacks: PriorityHotkeyCallbacks
+): boolean {
+  if (!hoveredPath) return false;
+  if (event.altKey || event.ctrlKey || event.metaKey) return false;
+  if (event.repeat) return false;
+  if (shouldIgnorePriorityHotkeyTarget(event.target)) return false;
+
+  const isReparent = isReparentKey(event.key);
+  if (event.shiftKey && !isReparent) return false;
+
+  const isPriorityDigit = isPriorityDigitKey(event.key);
+  const isPriorityClear = event.key === "-";
+  if (!isPriorityDigit && !isPriorityClear && !isReparent) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (isReparent) {
+    callbacks.onReparent(hoveredPath);
+  } else if (isPriorityClear) {
+    callbacks.onPriorityClear(hoveredPath);
+  } else {
+    callbacks.onPriorityDigit(hoveredPath, event.key);
+  }
+  return true;
+}
+
 export function shouldIgnorePriorityHotkeyTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;

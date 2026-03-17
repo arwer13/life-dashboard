@@ -13,14 +13,12 @@ import {
 } from "../models/view-types";
 import type LifeDashboardPlugin from "../plugin";
 import type { OutlineTimeRange } from "../plugin";
-import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder";
+import { buildTaskTree, resolveParentPath, buildParentPathMap, collectPathsWithParents } from "../services/task-tree-builder";
 import { filterTasksByQuery } from "../services/outline-filter";
 import {
   getItemPriorityBadge,
   getItemPriorityRank,
-  isPriorityDigitKey,
-  isReparentKey,
-  shouldIgnorePriorityHotkeyTarget
+  handlePriorityHotkey
 } from "../services/priority-utils";
 import { createTreeToggleSpacer, setTreeToggleState } from "./tree-toggle";
 
@@ -316,7 +314,9 @@ export class ConcernTreePanel {
     }
 
     const ownSecondsByPath = this.getOwnSecondsByPath(tasks, this.state.range);
-    this.parentByPath = this.buildParentPathMap(tasks);
+    const resolveParentPathFn = (parentRaw: unknown, sourcePath: string): string | null =>
+      resolveParentPath(parentRaw, sourcePath, this.plugin.app.metadataCache);
+    this.parentByPath = buildParentPathMap(tasks, resolveParentPathFn);
     const parentByPath = this.parentByPath;
     const scopePaths = this.collectScopePaths(tasks, parentByPath, this.state.rootPath);
 
@@ -350,12 +350,10 @@ export class ConcernTreePanel {
 
     const matchedPaths = new Set(matched.map((task) => task.path));
     const visiblePaths = this.state.showParents
-      ? this.collectPathsWithParents(matchedPaths, parentByPath, scopePaths)
+      ? collectPathsWithParents(matchedPaths, parentByPath, scopePaths)
       : matchedPaths;
     const visibleTasks = tasks.filter((task) => visiblePaths.has(task.path));
     const latestTrackedStartForPath = this.createLatestTrackedStartResolver(this.state.range);
-    const resolveParentPathFn = (parentRaw: unknown, sourcePath: string): string | null =>
-      resolveParentPath(parentRaw, sourcePath, this.plugin.app.metadataCache);
     const taskTree = buildTaskTree(visibleTasks, resolveParentPathFn, {
       ownSecondsForPath: (path) => ownSecondsByPath.get(path) ?? 0,
       sortMode: this.state.sortMode,
@@ -597,22 +595,6 @@ export class ConcernTreePanel {
     };
   }
 
-  private buildParentPathMap(tasks: TaskItem[]): Map<string, string> {
-    const allPaths = new Set(tasks.map((task) => task.path));
-    const parentByPath = new Map<string, string>();
-    for (const task of tasks) {
-      if (isInlineItem(task)) {
-        if (allPaths.has(task.parentPath) && task.parentPath !== task.path) {
-          parentByPath.set(task.path, task.parentPath);
-        }
-        continue;
-      }
-      const parentPath = resolveParentPath(task.parentRaw, task.path, this.plugin.app.metadataCache);
-      if (!parentPath || !allPaths.has(parentPath) || parentPath === task.path) continue;
-      parentByPath.set(task.path, parentPath);
-    }
-    return parentByPath;
-  }
 
   private collectScopePaths(
     tasks: TaskItem[],
@@ -648,23 +630,6 @@ export class ConcernTreePanel {
     return scoped;
   }
 
-  private collectPathsWithParents(
-    matchedPaths: Set<string>,
-    parentByPath: Map<string, string>,
-    scopedPaths: Set<string>
-  ): Set<string> {
-    const output = new Set<string>(matchedPaths);
-    for (const path of matchedPaths) {
-      let cursor = parentByPath.get(path);
-      const seen = new Set<string>();
-      while (cursor && !seen.has(cursor) && scopedPaths.has(cursor)) {
-        seen.add(cursor);
-        output.add(cursor);
-        cursor = parentByPath.get(cursor);
-      }
-    }
-    return output;
-  }
 
   private selectRoots(taskTree: TaskTreeData, rootPath: string): TaskTreeNode[] {
     if (!rootPath) return taskTree.roots;
@@ -819,32 +784,11 @@ export class ConcernTreePanel {
   private initializePriorityHotkeys(): void {
     this.container.tabIndex = -1;
     this.container.addEventListener("keydown", (event) => {
-      if (!this.hoveredConcernPath) return;
-      if (event.altKey || event.ctrlKey || event.metaKey) return;
-      if (event.repeat) return;
-      if (shouldIgnorePriorityHotkeyTarget(event.target)) return;
-
-      const isReparent = isReparentKey(event.key);
-      if (event.shiftKey && !isReparent) return;
-
-      const isPriorityDigit = isPriorityDigitKey(event.key);
-      const isPriorityClear = event.key === "-";
-      if (!isPriorityDigit && !isPriorityClear && !isReparent) return;
-
-      const path = this.hoveredConcernPath;
-      if (!path) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      if (isReparent) {
-        this.plugin.reparentConcernInteractive(path);
-        return;
-      }
-      if (isPriorityClear) {
-        void this.applyHoveredPriorityClear(path);
-        return;
-      }
-      void this.applyHoveredPriorityValue(path, event.key);
+      handlePriorityHotkey(event, this.hoveredConcernPath, {
+        onReparent: (path) => this.plugin.reparentConcernInteractive(path),
+        onPriorityDigit: (path, digit) => void this.applyHoveredPriorityValue(path, digit),
+        onPriorityClear: (path) => void this.applyHoveredPriorityClear(path),
+      });
     });
   }
 

@@ -11,6 +11,25 @@ import {
   VIEW_TYPE_LIFE_DASHBOARD_TIMER,
   VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS
 } from "../models/view-types";
+
+/** Views that depend on task structure (concern files, inline tasks, priorities). */
+const TASK_STRUCTURE_VIEW_TYPES: readonly string[] = [
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+  VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+  VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+  VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELINE,
+];
+
+/** Views that depend on time tracking data (totals, entries, elapsed time). */
+const TIME_TRACKING_VIEW_TYPES: readonly string[] = [
+  VIEW_TYPE_LIFE_DASHBOARD_TIMER,
+  VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
+  VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
+  VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
+  VIEW_TYPE_LIFE_DASHBOARD_TIMELOG,
+];
 import type { LifeDashboardSettings } from "../settings";
 
 export class DashboardViewController {
@@ -95,11 +114,11 @@ export class DashboardViewController {
   }
 
   refreshTaskStructureViews(): void {
-    this.refreshViews(DashboardViewController.DASHBOARD_VIEW_TYPES);
+    this.refreshViews(TASK_STRUCTURE_VIEW_TYPES);
   }
 
   refreshTimeTrackingViews(): void {
-    this.refreshViews(DashboardViewController.DASHBOARD_VIEW_TYPES);
+    this.refreshViews(TIME_TRACKING_VIEW_TYPES);
   }
 
   pushLiveTimerUpdate(): void {
@@ -121,11 +140,7 @@ export class DashboardViewController {
     await this.saveSettings();
   }
 
-  refreshSingleViewType(viewType: string): void {
-    this.refreshViewByType(viewType);
-  }
-
-  private refreshViewByType(viewType: string): void {
+  refreshViewByType(viewType: string): void {
     for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
       if (leaf.view instanceof LifeDashboardBaseView && "render" in leaf.view) {
         void (leaf.view as LifeDashboardBaseView & { render(): Promise<void> }).render();
