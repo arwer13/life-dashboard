@@ -1,14 +1,9 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type LifeDashboardPlugin from "../../plugin";
 import { buildTaskTree, resolveParentPath } from "../../services/task-tree-builder";
-import {
-  filterTasksByQuery,
-  parseFilterTokens,
-  matchesFrontmatterFilter,
-  flattenFrontmatterValues
-} from "../../services/outline-filter";
+import { filterTasksByQuery } from "../../services/outline-filter";
 import type { TaskItem } from "../../models/types";
-import type { TaskTreeData, TaskTreeBuildOptions, OutlineFilterToken } from "../../models/view-types";
+import type { TaskTreeData, TaskTreeBuildOptions } from "../../models/view-types";
 
 export abstract class LifeDashboardBaseView extends ItemView {
   protected readonly plugin: LifeDashboardPlugin;
@@ -32,21 +27,5 @@ export abstract class LifeDashboardBaseView extends ItemView {
 
   protected filterTasksByQuery(tasks: TaskItem[], query: string): TaskItem[] {
     return filterTasksByQuery(tasks, query);
-  }
-
-  protected parseFilterTokens(query: string): OutlineFilterToken[] {
-    return parseFilterTokens(query);
-  }
-
-  protected matchesFrontmatterFilter(
-    frontmatter: import("obsidian").FrontMatterCache | undefined,
-    key: string,
-    expectedValue: string | null
-  ): boolean {
-    return matchesFrontmatterFilter(frontmatter, key, expectedValue);
-  }
-
-  protected flattenFrontmatterValues(value: unknown): string[] {
-    return flattenFrontmatterValues(value);
   }
 }

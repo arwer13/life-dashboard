@@ -16,7 +16,6 @@ import type { OutlineTimeRange } from "../plugin";
 import { buildTaskTree, resolveParentPath } from "../services/task-tree-builder";
 import { filterTasksByQuery } from "../services/outline-filter";
 import {
-  formatPriorityBadgeText,
   getItemPriorityBadge,
   getItemPriorityRank,
   isPriorityDigitKey,

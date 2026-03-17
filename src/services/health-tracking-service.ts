@@ -5,6 +5,7 @@ import {
   type App
 } from "obsidian";
 import type { TimeWindow } from "./time-window-service";
+import { toDateKey } from "./year-grid-utils";
 
 const TRACKING_FOLDER_PATH = "Me/Tracking";
 const SLEEP_FILE_PATTERN = /^sleep.*\.csv$/i;
@@ -125,7 +126,7 @@ export class HealthTrackingService {
       cursor.getTime() < endDate.getTime();
       cursor.setDate(cursor.getDate() + 1)
     ) {
-      const dateKey = this.toDateKey(cursor);
+      const dateKey = toDateKey(cursor);
       const day = this.snapshot.daysByDateKey.get(dateKey);
       if (day) {
         daysByDateKey.set(dateKey, day);
@@ -340,7 +341,7 @@ export class HealthTrackingService {
 
       const bedEnd = bedEndIdx >= 0 ? this.parseLocalDateTime(row[bedEndIdx]) : null;
       const nightDate = nightDateIdx >= 0 ? this.parseLocalDate(row[nightDateIdx]) : null;
-      const dateKey = bedEnd ? this.toDateKey(bedEnd) : nightDate ? this.toDateKey(nightDate) : "";
+      const dateKey = bedEnd ? toDateKey(bedEnd) : nightDate ? toDateKey(nightDate) : "";
       if (!dateKey) {
         errors.push(`Skipping sleep row ${index + 1} in ${sourcePath}: invalid date.`);
         continue;
@@ -395,7 +396,7 @@ export class HealthTrackingService {
       }
 
       records.push({
-        dateKey: this.toDateKey(date),
+        dateKey: toDateKey(date),
         steps,
         sourcePath,
       });
@@ -473,10 +474,6 @@ export class HealthTrackingService {
 
   private formatTime(date: Date): string {
     return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  }
-
-  private toDateKey(date: Date): string {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 
   private getDayStart(date: Date): Date {

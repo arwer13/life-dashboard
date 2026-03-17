@@ -19,10 +19,16 @@ export class TaskFilterService {
     this.lastCacheKey = "";
   }
 
+  /** Check whether a file path was in the last cached task list (without rebuilding). */
+  hasCachedFilePath(path: string): boolean {
+    if (!this.cachedTasks) return false;
+    return this.cachedTasks.some((t) => t.path === path);
+  }
+
   getTaskTreeItems(): TaskItem[] {
     const cacheKey = this.buildCacheKey();
     if (this.cachedTasks && this.lastCacheKey === cacheKey) {
-      return [...this.cachedTasks];
+      return this.cachedTasks;
     }
 
     const files = this.app.vault.getMarkdownFiles();
@@ -46,7 +52,7 @@ export class TaskFilterService {
     tasks.sort((a, b) => a.path.localeCompare(b.path));
     this.cachedTasks = tasks;
     this.lastCacheKey = cacheKey;
-    return [...tasks];
+    return tasks;
   }
 
   fileMatchesTaskFilter(file: TFile): boolean {

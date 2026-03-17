@@ -20,7 +20,6 @@ import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import {
-  formatPriorityBadgeText,
   getItemPriorityBadge,
   isPriorityDigitKey,
   isReparentKey,

@@ -315,7 +315,12 @@ export default class LifeDashboardPlugin extends Plugin {
     this.addSettingTab(new LifeDashboardSettingTab(this.app, this));
 
     this.registerEvent(
-      this.app.metadataCache.on("changed", () => {
+      this.app.metadataCache.on("changed", (file) => {
+        // Only trigger the expensive cascade if this file is (or was) a concern.
+        const cache = this.app.metadataCache.getFileCache(file);
+        const prop = this.settings.propertyName.trim();
+        const hasConcernProperty = prop && cache?.frontmatter && prop in cache.frontmatter;
+        if (!hasConcernProperty && !this.taskFilterService.hasCachedFilePath(file.path)) return;
         this.handleTaskStructureChange();
       })
     );
