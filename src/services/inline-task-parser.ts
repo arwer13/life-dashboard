@@ -48,8 +48,8 @@ export function parseInlinePath(inlinePath: string): { filePath: string; line: n
   return { filePath: inlinePath.slice(0, sepIdx), line };
 }
 
-const TASKS_HEADING_RE = /^(#{1,2})\s+tasks\s*$/i;
-const ANY_HEADING_RE = /^(#{1,6})\s/;
+export const TASKS_HEADING_RE = /^(#{1,2})\s+tasks\s*$/i;
+export const ANY_HEADING_RE = /^(#{1,6})\s/;
 const UNCHECKED_CHECKBOX_RE = /^[-*]\s+\[ \]\s+(.+)$/;
 
 /**

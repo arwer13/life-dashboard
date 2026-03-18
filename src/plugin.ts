@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, parsePriorityFromText, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, parsePriorityFromText, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP, TASKS_HEADING_RE, ANY_HEADING_RE } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -1281,11 +1281,113 @@ export default class LifeDashboardPlugin extends Plugin {
     const safeName = this.sanitizeFileName(cleanText);
 
     this.openConcernPicker({
-      placeholder: "Select parent for the new concern...",
+      placeholder: "Move inline task to...",
       onChoose: (parentFile: TFile) => {
-        void this.doPromoteCheckbox(file, line, indent, safeName, parentFile, priority);
+        void this.moveOrPromoteCheckbox(file, line, lineText, indent, safeName, parentFile, priority);
       }
     });
+  }
+
+  private async moveOrPromoteCheckbox(
+    sourceFile: TFile,
+    line: number,
+    originalLineText: string,
+    indent: string,
+    safeName: string,
+    targetFile: TFile,
+    priority?: string
+  ): Promise<void> {
+    // If target has a Tasks section, move inline task there instead of promoting
+    if (targetFile.path !== sourceFile.path) {
+      const targetContent = await this.app.vault.read(targetFile);
+      const insertIdx = this.findTasksSectionInsertLine(targetContent);
+      if (insertIdx >= 0) {
+        await this.moveInlineTaskToFile(sourceFile, line, originalLineText, targetFile);
+        return;
+      }
+    }
+    // Fall back to promote-to-concern
+    await this.doPromoteCheckbox(sourceFile, line, indent, safeName, targetFile, priority);
+  }
+
+  /**
+   * Find the line index where a new checkbox should be inserted inside the Tasks section.
+   * Returns -1 if no Tasks section exists.
+   */
+  private findTasksSectionInsertLine(content: string): number {
+    const lines = content.split("\n");
+
+    let insideTasksSection = false;
+    let sectionHeadingLevel = 0;
+    let lastCheckboxLine = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!.trimEnd();
+      const headingMatch = ANY_HEADING_RE.exec(line);
+
+      if (headingMatch) {
+        const level = headingMatch[1]!.length;
+        const tasksMatch = TASKS_HEADING_RE.exec(line);
+        if (tasksMatch) {
+          insideTasksSection = true;
+          sectionHeadingLevel = tasksMatch[1]!.length;
+          lastCheckboxLine = i;
+          continue;
+        }
+        if (insideTasksSection && level <= sectionHeadingLevel) {
+          // End of Tasks section — insert before this heading
+          return lastCheckboxLine + 1;
+        }
+        continue;
+      }
+
+      if (insideTasksSection) {
+        if (/^\s*[-*]\s+\[.\]\s+/.test(line)) {
+          lastCheckboxLine = i;
+        }
+      }
+    }
+
+    // Tasks section extends to end of file
+    if (insideTasksSection) {
+      return lastCheckboxLine + 1;
+    }
+    return -1;
+  }
+
+  private async moveInlineTaskToFile(
+    sourceFile: TFile,
+    sourceLine: number,
+    originalLineText: string,
+    targetFile: TFile
+  ): Promise<void> {
+    // Re-read source to verify the line hasn't changed
+    const sourceContent = await this.app.vault.read(sourceFile);
+    const sourceLines = sourceContent.split("\n");
+    if (sourceLines[sourceLine] !== originalLineText) {
+      new Notice("The checkbox line appears to have changed. Move aborted.");
+      return;
+    }
+
+    // Extract the raw checkbox text (normalize indent for the target)
+    const checkboxMatch = /^\s*[-*]\s+\[ \]\s+(.+)$/.exec(originalLineText);
+    if (!checkboxMatch) return;
+    const checkboxText = `- [ ] ${checkboxMatch[1].trim()}`;
+
+    // Insert into target first (safer: a failure only produces a duplicate, not data loss)
+    const targetContent = await this.app.vault.read(targetFile);
+    const insertIdx = this.findTasksSectionInsertLine(targetContent);
+    if (insertIdx < 0) {
+      new Notice("Target does not have a Tasks section. Move aborted.");
+      return;
+    }
+    const targetLines = targetContent.split("\n");
+    targetLines.splice(insertIdx, 0, checkboxText);
+    await this.app.vault.modify(targetFile, targetLines.join("\n"));
+
+    // Then remove from source
+    sourceLines.splice(sourceLine, 1);
+    await this.app.vault.modify(sourceFile, sourceLines.join("\n"));
   }
 
   private async doPromoteCheckbox(

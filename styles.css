@@ -955,7 +955,7 @@ body.fmo-resizing-h * {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  width: var(--map-box-width, 180px);
+  width: var(--map-box-width, 126px);
   min-height: auto;
   padding: 8px 10px;
   border: 1px solid var(--background-modifier-border);

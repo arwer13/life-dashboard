@@ -1,6 +1,6 @@
 import { SearchComponent, setTooltip } from "obsidian";
 import { DISPLAY_VERSION } from "../../version";
-import type { TaskItem } from "../../models/types";
+import type { TaskItem, InlineTaskItem } from "../../models/types";
 import { isFileItem, isInlineItem } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CONCERN_MAP,
@@ -20,6 +20,7 @@ import {
 } from "../../services/priority-utils";
 import { buildParentPathMap, collectPathsWithParents, collectScopePaths } from "../../services/task-tree-builder";
 import { withClosedFilter } from "../../services/outline-filter";
+import { parseInlinePath } from "../../services/inline-task-parser";
 
 type ConcernMapFilterState = {
   rootPath: string;
@@ -41,7 +42,7 @@ type PersistedConcernMapState = {
   filter: ConcernMapFilterState;
 };
 
-const MAP_BASE_BOX_WIDTH = 180;
+const MAP_BASE_BOX_WIDTH = 126;
 const MAP_BASE_BOX_HEIGHT = 56;
 const MAP_BASE_FONT_SIZE = 13;
 const MAP_MIN_FONT_SIZE = 9;
@@ -369,6 +370,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const vpHeight = viewport.clientHeight || this.contentEl.clientHeight || DEFAULT_REF_HEIGHT;
     this.refSize = { width: vpWidth, height: vpHeight };
 
+    this.migrateShiftedInlinePositions(filtered);
     this.ensurePositions(filtered);
 
     this.boxElements.clear();
@@ -704,6 +706,51 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   }
 
   // ── Positioning ───────────────────────────────────────────────────────
+
+  /**
+   * When inline task line numbers shift (e.g., a task is moved between files),
+   * their paths change but the tasks are conceptually the same. Transfer orphaned
+   * positions to the new paths by matching within the same parent file in line order.
+   */
+  private migrateShiftedInlinePositions(filtered: TaskItem[]): void {
+    const filteredPaths = new Set(filtered.map((t) => t.path));
+
+    // Collect orphaned inline positions grouped by parent file
+    const orphansByFile = new Map<string, Array<{ path: string; line: number; pos: { rx: number; ry: number } }>>();
+    for (const [path, pos] of this.positions) {
+      if (filteredPaths.has(path)) continue;
+      const parsed = parseInlinePath(path);
+      if (!parsed) continue;
+      let list = orphansByFile.get(parsed.filePath);
+      if (!list) { list = []; orphansByFile.set(parsed.filePath, list); }
+      list.push({ path, line: parsed.line, pos });
+    }
+    if (orphansByFile.size === 0) return;
+
+    // Collect unpositioned inline tasks grouped by parent file
+    const unposByFile = new Map<string, InlineTaskItem[]>();
+    for (const task of filtered) {
+      if (!isInlineItem(task) || this.positions.has(task.path)) continue;
+      let list = unposByFile.get(task.parentPath);
+      if (!list) { list = []; unposByFile.set(task.parentPath, list); }
+      list.push(task);
+    }
+
+    // Match orphans to unpositioned tasks by line order within each parent file
+    for (const [parentFile, orphans] of orphansByFile) {
+      const unpos = unposByFile.get(parentFile);
+      if (!unpos || unpos.length === 0) continue;
+
+      orphans.sort((a, b) => a.line - b.line);
+      unpos.sort((a, b) => a.line - b.line);
+
+      const count = Math.min(orphans.length, unpos.length);
+      for (let i = 0; i < count; i++) {
+        this.positions.set(unpos[i].path, orphans[i].pos);
+        this.positions.delete(orphans[i].path);
+      }
+    }
+  }
 
   private ensurePositions(filtered: TaskItem[]): void {
     const unpositioned = filtered.filter((task) => !this.positions.has(task.path));
