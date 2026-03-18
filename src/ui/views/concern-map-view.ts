@@ -151,20 +151,28 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
   // ── Coordinate conversion ─────────────────────────────────────────────
 
+  private usableWidth(): number {
+    return Math.max(1, this.refSize.width - this.getScaledBoxWidth());
+  }
+
+  private usableHeight(): number {
+    return Math.max(1, this.refSize.height - this.getScaledBoxHeight());
+  }
+
   private toPixelX(rx: number): number {
-    return rx * this.refSize.width;
+    return rx * this.usableWidth();
   }
 
   private toPixelY(ry: number): number {
-    return ry * this.refSize.height;
+    return ry * this.usableHeight();
   }
 
   private toRelX(px: number): number {
-    return px / this.refSize.width;
+    return px / this.usableWidth();
   }
 
   private toRelY(py: number): number {
-    return py / this.refSize.height;
+    return py / this.usableHeight();
   }
 
   // ── Controls ──────────────────────────────────────────────────────────
@@ -321,7 +329,6 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       if (stageEl) {
         stageEl.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
         stageEl.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
-        stageEl.style.setProperty("--map-box-min-height", `${this.getScaledBoxHeight()}px`);
       }
     });
     sizeSlider.addEventListener("change", () => {
@@ -349,7 +356,6 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const stage = viewport.createEl("div", { cls: "fmo-concern-map-stage" });
     stage.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
     stage.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
-    stage.style.setProperty("--map-box-min-height", `${this.getScaledBoxHeight()}px`);
 
     // Update reference size from viewport (used for fraction↔pixel conversion)
     const vpWidth = viewport.clientWidth || this.contentEl.clientWidth || DEFAULT_REF_WIDTH;
@@ -385,11 +391,13 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
         if (Math.abs(newW - this.refSize.width) < 1 && Math.abs(newH - this.refSize.height) < 1) return;
 
         this.refSize = { width: newW, height: newH };
+        const uw = this.usableWidth();
+        const uh = this.usableHeight();
         for (const [path, el] of this.boxElements) {
           const pos = this.positions.get(path);
           if (!pos) continue;
-          el.style.left = `${this.toPixelX(pos.rx)}px`;
-          el.style.top = `${this.toPixelY(pos.ry)}px`;
+          el.style.left = `${pos.rx * uw}px`;
+          el.style.top = `${pos.ry * uh}px`;
         }
       });
     } else {
@@ -473,12 +481,13 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       const startX = evt.clientX;
       const startY = evt.clientY;
 
-      // Snapshot start pixel positions and refSize for stable fraction conversion
-      const dragRef = { ...this.refSize };
+      // Snapshot start pixel positions and usable dimensions for stable fraction conversion
+      const dragUsableW = this.usableWidth();
+      const dragUsableH = this.usableHeight();
       const startPixels = new Map<string, { px: number; py: number }>();
       for (const path of this.selectedPaths) {
         const p = this.positions.get(path);
-        if (p) startPixels.set(path, { px: p.rx * dragRef.width, py: p.ry * dragRef.height });
+        if (p) startPixels.set(path, { px: p.rx * dragUsableW, py: p.ry * dragUsableH });
       }
 
       let dragging = false;
@@ -495,8 +504,8 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
           if (!p || !el) continue;
           const newPx = Math.max(0, start.px + dx);
           const newPy = Math.max(0, start.py + dy);
-          p.rx = newPx / dragRef.width;
-          p.ry = newPy / dragRef.height;
+          p.rx = newPx / dragUsableW;
+          p.ry = newPy / dragUsableH;
           el.style.left = `${newPx}px`;
           el.style.top = `${newPy}px`;
           el.classList.add("fmo-concern-map-box-dragging");
@@ -688,25 +697,33 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const cellH = boxH + MAP_GRID_GAP_Y;
     const cols = Math.max(1, Math.floor((this.refSize.width - MAP_GRID_PADDING * 2) / cellW));
 
-    let startRow = 0;
-    if (this.positions.size > 0) {
-      let maxPy = 0;
-      for (const pos of this.positions.values()) {
-        const py = this.toPixelY(pos.ry);
-        if (py > maxPy) maxPy = py;
-      }
-      startRow = Math.ceil((maxPy + boxH + MAP_GRID_GAP_Y) / cellH);
+    // Build set of occupied grid cells from existing positions
+    const occupied = new Set<string>();
+    for (const pos of this.positions.values()) {
+      const px = this.toPixelX(pos.rx);
+      const py = this.toPixelY(pos.ry);
+      const col = Math.round((px - MAP_GRID_PADDING) / cellW);
+      const row = Math.round((py - MAP_GRID_PADDING) / cellH);
+      if (col >= 0 && row >= 0) occupied.add(`${col},${row}`);
     }
 
-    for (let i = 0; i < unpositioned.length; i++) {
-      const col = i % cols;
-      const row = startRow + Math.floor(i / cols);
-      const px = MAP_GRID_PADDING + col * cellW;
-      const py = MAP_GRID_PADDING + row * cellH;
-      this.positions.set(unpositioned[i].path, {
+    // Place new items in the first available grid cells, scanning from top-left
+    let scanCol = 0;
+    let scanRow = 0;
+    for (const task of unpositioned) {
+      while (occupied.has(`${scanCol},${scanRow}`)) {
+        scanCol++;
+        if (scanCol >= cols) { scanCol = 0; scanRow++; }
+      }
+      const px = MAP_GRID_PADDING + scanCol * cellW;
+      const py = MAP_GRID_PADDING + scanRow * cellH;
+      this.positions.set(task.path, {
         rx: this.toRelX(px),
         ry: this.toRelY(py)
       });
+      occupied.add(`${scanCol},${scanRow}`);
+      scanCol++;
+      if (scanCol >= cols) { scanCol = 0; scanRow++; }
     }
 
     this.persistState();
