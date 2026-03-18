@@ -1022,6 +1022,11 @@ body.fmo-resizing-h * {
   line-height: 1.5;
 }
 
+.frontmatter-outline-view .fmo-concern-map-box-status {
+  color: var(--text-faint);
+  font-size: 0.85em;
+}
+
 /* ── Calendar: Layout ─────────────────────────────────────── */
 
 .frontmatter-outline-view .fmo-calendar-layout {

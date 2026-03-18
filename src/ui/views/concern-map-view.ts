@@ -31,6 +31,7 @@ type ConcernMapFilterState = {
   showInlineTasks: boolean;
   priorityOnly: boolean;
   showClosed: boolean;
+  showStatus: boolean;
   fontSize: number;
 };
 
@@ -74,6 +75,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     showInlineTasks: true,
     priorityOnly: true,
     showClosed: false,
+    showStatus: true,
     fontSize: MAP_BASE_FONT_SIZE
   };
   /** Positions stored as fractions of viewport dimensions. */
@@ -257,6 +259,11 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       rerenderCanvas();
     });
     setTooltip(showClosedRow, `When off: ${CLOSED_FILTER_QUERY}`);
+    this.renderFlag(flagsRow, "Status", this.filterState.showStatus, (v) => {
+      this.filterState.showStatus = v;
+      this.persistState();
+      rerenderCanvas();
+    });
 
     const filterRow = controls.createEl("div", { cls: "fmo-tree-panel-filter" });
     const filterSearch = new SearchComponent(filterRow);
@@ -425,10 +432,21 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     this.boxElements.set(task.path, box);
 
-    box.createEl("span", {
+    const nameEl = box.createEl("span", {
       cls: "fmo-concern-map-box-name",
       text: task.basename
     });
+
+    if (this.filterState.showStatus && isFileItem(task)) {
+      const raw = task.frontmatter?.status;
+      const statusLabel = raw != null ? String(raw).trim() : "";
+      if (statusLabel) {
+        nameEl.createEl("span", {
+          cls: "fmo-concern-map-box-status",
+          text: ` ${statusLabel}`
+        });
+      }
+    }
 
     const priorityBadge = getItemPriorityBadge(task);
     if (priorityBadge) {
@@ -773,7 +791,8 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const fontSize = typeof parsed.filter.fontSize === "number" && Number.isFinite(parsed.filter.fontSize)
       ? Math.max(MAP_MIN_FONT_SIZE, Math.min(MAP_MAX_FONT_SIZE, parsed.filter.fontSize))
       : MAP_BASE_FONT_SIZE;
-    this.filterState = { ...parsed.filter, fontSize };
+    const showStatus = typeof parsed.filter.showStatus === "boolean" ? parsed.filter.showStatus : true;
+    this.filterState = { ...parsed.filter, fontSize, showStatus };
 
     this.positions = new Map();
     for (const [path, pos] of Object.entries(parsed.positions)) {
@@ -817,6 +836,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     if (typeof f.showInlineTasks !== "boolean") return false;
     if (typeof f.priorityOnly !== "boolean") return false;
     if (typeof f.showClosed !== "boolean") return false;
+    if (f.showStatus !== undefined && typeof f.showStatus !== "boolean") return false;
     if (f.fontSize !== undefined && (typeof f.fontSize !== "number" || !Number.isFinite(f.fontSize))) return false;
 
     return true;
