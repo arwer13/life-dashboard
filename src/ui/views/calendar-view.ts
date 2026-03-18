@@ -102,6 +102,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   private activeDragCleanup: (() => void) | null = null;
   private pendingDraftBlock: HTMLElement | null = null;
   private concernPickerOpen = false;
+  private calendarMainScrollTop = 0;
 
   private get period(): CalendarPeriod {
     const value = this.plugin.settings.calendarPeriod;
@@ -215,6 +216,8 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     const { contentEl } = this;
     const existingPreview = contentEl.querySelector<HTMLElement>(".fmo-tree-panel-preview");
     this.calendarTreePanelScrollTop = existingPreview?.scrollTop ?? this.calendarTreePanelScrollTop;
+    const existingMain = contentEl.querySelector<HTMLElement>(".fmo-calendar-main");
+    this.calendarMainScrollTop = existingMain?.scrollTop ?? this.calendarMainScrollTop;
     contentEl.empty();
     contentEl.addClass("frontmatter-outline-view");
 
@@ -340,6 +343,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
     // Initial render of calendar with tree panel's visible paths
     renderCalendarMain(this.calendarTreePanel.getVisiblePaths());
+    main.scrollTop = this.calendarMainScrollTop;
   }
 
   private getTreeRange(): OutlineTimeRange {
@@ -555,7 +559,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
 
   private renderWeekHealthAxis(container: HTMLElement): void {
     const axisHead = container.createEl("div", { cls: "fmo-calendar-week-axis-head" });
-    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-spacer" });
+    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-spacer", text: "\u00a0" });
     axisHead.createEl("div", {
       cls: "fmo-calendar-week-axis-label",
       text: "sleep"
@@ -564,7 +568,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       cls: "fmo-calendar-week-axis-label",
       text: "steps"
     });
-    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-total-spacer" });
+    axisHead.createEl("div", { cls: "fmo-calendar-week-axis-total-spacer", text: "\u00a0" });
   }
 
   private renderWeekHealthCells(

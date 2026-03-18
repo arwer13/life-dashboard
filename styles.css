@@ -1266,7 +1266,8 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 }
 
 .frontmatter-outline-view .fmo-calendar-week-axis-spacer {
-  min-height: 1.15em;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .frontmatter-outline-view .fmo-calendar-week-axis-label {
@@ -1283,6 +1284,8 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
 
 .frontmatter-outline-view .fmo-calendar-week-axis-total-spacer {
   min-height: 1.2em;
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 .frontmatter-outline-view .fmo-calendar-week-hour-axis-body {

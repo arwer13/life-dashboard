@@ -46,7 +46,7 @@ type ElectronTrayBridge = {
 
 const TRANSPARENT_TRAY_PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7jquQAAAAASUVORK5CYII=";
-export const MAX_MACOS_TRAY_RECENT_CONCERNS = 3;
+export const MAX_MACOS_TRAY_RECENT_CONCERNS = 5;
 
 export type MacOsTrayRecentConcern = {
   label: string;
