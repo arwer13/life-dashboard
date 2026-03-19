@@ -139,16 +139,20 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     headerTop.createEl("h3", { text: "Concern Map" });
     headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
 
+    const controlsRow = header.createEl("div", { cls: "fmo-concern-map-controls-row" });
     const canvasArea = contentEl.createEl("div", { cls: "fmo-concern-map-canvas-area" });
 
+    let countSpan: HTMLElement;
     const rerenderCanvas = (): void => {
       this.captureViewportScroll();
       canvasArea.empty();
       this.hoveredConcernPath = null;
-      this.renderCanvasContent(canvasArea, tasks);
+      const count = this.renderCanvasContent(canvasArea, tasks);
+      countSpan.setText(`${count} concern${count === 1 ? "" : "s"}`);
     };
 
-    this.renderControls(header, tasks, rerenderCanvas);
+    this.renderControls(controlsRow, tasks, rerenderCanvas);
+    countSpan = this.renderCanvasTools(controlsRow, canvasArea, tasks, rerenderCanvas);
     rerenderCanvas();
   }
 
@@ -296,6 +300,172 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     return row;
   }
 
+  // ── Canvas tools (right side of controls row) ───────────────────────
+
+  private renderCanvasTools(
+    controlsRow: HTMLElement,
+    canvasArea: HTMLElement,
+    tasks: TaskItem[],
+    rerenderCanvas: () => void
+  ): HTMLElement {
+    const tools = controlsRow.createEl("div", { cls: "fmo-concern-map-tools" });
+    const countSpan = tools.createEl("span", { cls: "fmo-subheader" });
+
+    const sizeLabel = tools.createEl("label", { cls: "fmo-concern-map-size-label" });
+    sizeLabel.createEl("span", { text: "Size" });
+    const sizeSlider = sizeLabel.createEl("input", {
+      cls: "fmo-concern-map-size-slider",
+      attr: { type: "range", min: String(MAP_MIN_FONT_SIZE), max: String(MAP_MAX_FONT_SIZE), step: "1" }
+    }) as HTMLInputElement;
+    sizeSlider.value = String(this.filterState.fontSize);
+    sizeSlider.addEventListener("input", () => {
+      this.filterState.fontSize = Number(sizeSlider.value);
+      const stageEl = canvasArea.querySelector<HTMLElement>(".fmo-concern-map-stage");
+      if (stageEl) {
+        stageEl.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
+        stageEl.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
+      }
+    });
+    sizeSlider.addEventListener("change", () => {
+      this.filterState.fontSize = Number(sizeSlider.value);
+      this.persistState();
+      rerenderCanvas();
+    });
+
+    const buttonsRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
+
+    const resetBtn = buttonsRow.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Reset positions",
+      attr: { type: "button" }
+    });
+    setTooltip(resetBtn, "Re-arrange all boxes into a grid.");
+    resetBtn.addEventListener("click", () => {
+      this.positions.clear();
+      rerenderCanvas();
+    });
+
+    const fixBtn = buttonsRow.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Fix overlaps",
+      attr: { type: "button" }
+    });
+    setTooltip(fixBtn, "Nudge overlapping boxes apart while preserving relative positions.");
+    fixBtn.addEventListener("click", () => {
+      this.resolveOverlaps(tasks);
+      rerenderCanvas();
+    });
+
+    const fitBtn = buttonsRow.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Fit into canvas",
+      attr: { type: "button" }
+    });
+    setTooltip(fitBtn, "Scale and shift all boxes to fit within the visible viewport.");
+    fitBtn.addEventListener("click", () => {
+      this.fitIntoCanvas(tasks);
+      rerenderCanvas();
+    });
+
+    return countSpan;
+  }
+
+  private collectPixelItems(tasks: TaskItem[]): { path: string; x: number; y: number }[] {
+    const filtered = this.applyFilters(tasks);
+    const items: { path: string; x: number; y: number }[] = [];
+    for (const task of filtered) {
+      const pos = this.positions.get(task.path);
+      if (!pos) continue;
+      items.push({ path: task.path, x: this.toPixelX(pos.rx), y: this.toPixelY(pos.ry) });
+    }
+    return items;
+  }
+
+  private commitPixelItems(items: { path: string; x: number; y: number }[]): void {
+    for (const item of items) {
+      this.positions.set(item.path, { rx: this.toRelX(item.x), ry: this.toRelY(item.y) });
+    }
+    this.persistState();
+  }
+
+  private resolveOverlaps(tasks: TaskItem[]): void {
+    const boxW = this.getScaledBoxWidth();
+    const boxH = this.getScaledBoxHeight();
+    const gap = 4;
+    const maxIter = 100;
+    const items = this.collectPixelItems(tasks);
+    if (items.length < 2) return;
+
+    for (let iter = 0; iter < maxIter; iter++) {
+      let moved = false;
+      for (let i = 0; i < items.length; i++) {
+        for (let j = i + 1; j < items.length; j++) {
+          const a = items[i];
+          const b = items[j];
+          const overlapX = (boxW + gap) - Math.abs(a.x - b.x);
+          const overlapY = (boxH + gap) - Math.abs(a.y - b.y);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+
+          moved = true;
+          if (overlapX < overlapY) {
+            const push = overlapX / 2;
+            if (a.x <= b.x) { a.x -= push; b.x += push; }
+            else { a.x += push; b.x -= push; }
+          } else {
+            const push = overlapY / 2;
+            if (a.y <= b.y) { a.y -= push; b.y += push; }
+            else { a.y += push; b.y -= push; }
+          }
+        }
+      }
+      if (!moved) break;
+
+      for (const item of items) {
+        item.x = Math.max(0, item.x);
+        item.y = Math.max(0, item.y);
+      }
+    }
+
+    this.commitPixelItems(items);
+  }
+
+  private fitIntoCanvas(tasks: TaskItem[]): void {
+    const items = this.collectPixelItems(tasks);
+    if (items.length === 0) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const item of items) {
+      minX = Math.min(minX, item.x);
+      minY = Math.min(minY, item.y);
+      maxX = Math.max(maxX, item.x);
+      maxY = Math.max(maxY, item.y);
+    }
+
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    const uw = this.usableWidth();
+    const uh = this.usableHeight();
+
+    // Uniform scale — only shrink, never enlarge
+    let scale = 1;
+    if (spanX > uw || spanY > uh) {
+      const sx = spanX > 0 ? uw / spanX : Infinity;
+      const sy = spanY > 0 ? uh / spanY : Infinity;
+      scale = Math.min(sx, sy);
+    }
+
+    // Center on the axis with slack
+    const offsetX = Math.max(0, (uw - spanX * scale) / 2);
+    const offsetY = Math.max(0, (uh - spanY * scale) / 2);
+
+    for (const item of items) {
+      item.x = (item.x - minX) * scale + offsetX;
+      item.y = (item.y - minY) * scale + offsetY;
+    }
+
+    this.commitPixelItems(items);
+  }
+
   // ── Canvas ────────────────────────────────────────────────────────────
 
   private getScale(): number {
@@ -310,55 +480,8 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     return Math.round(MAP_BASE_BOX_HEIGHT * this.getScale());
   }
 
-  private renderCanvasContent(containerEl: HTMLElement, tasks: TaskItem[]): void {
+  private renderCanvasContent(containerEl: HTMLElement, tasks: TaskItem[]): number {
     const filtered = this.applyFilters(tasks);
-
-    const toolbar = containerEl.createEl("div", { cls: "fmo-concern-map-toolbar" });
-    toolbar.createEl("span", {
-      cls: "fmo-subheader",
-      text: `${filtered.length} concern${filtered.length === 1 ? "" : "s"}`
-    });
-
-    const sizeLabel = toolbar.createEl("label", { cls: "fmo-concern-map-size-label" });
-    sizeLabel.createEl("span", { text: "Size" });
-    const sizeSlider = sizeLabel.createEl("input", {
-      cls: "fmo-concern-map-size-slider",
-      attr: {
-        type: "range",
-        min: String(MAP_MIN_FONT_SIZE),
-        max: String(MAP_MAX_FONT_SIZE),
-        step: "1"
-      }
-    }) as HTMLInputElement;
-    sizeSlider.value = String(this.filterState.fontSize);
-    sizeSlider.addEventListener("input", () => {
-      this.filterState.fontSize = Number(sizeSlider.value);
-      const stageEl = containerEl.querySelector<HTMLElement>(".fmo-concern-map-stage");
-      if (stageEl) {
-        stageEl.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
-        stageEl.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
-      }
-    });
-    sizeSlider.addEventListener("change", () => {
-      this.filterState.fontSize = Number(sizeSlider.value);
-      this.persistState();
-      this.captureViewportScroll();
-      containerEl.empty();
-      this.renderCanvasContent(containerEl, tasks);
-    });
-
-    const resetBtn = toolbar.createEl("button", {
-      cls: "fmo-outline-range-btn",
-      text: "Reset positions",
-      attr: { type: "button" }
-    });
-    setTooltip(resetBtn, "Re-arrange all boxes into a grid.");
-    resetBtn.addEventListener("click", () => {
-      this.positions.clear();
-      this.captureViewportScroll();
-      containerEl.empty();
-      this.renderCanvasContent(containerEl, tasks);
-    });
 
     const viewport = containerEl.createEl("div", { cls: "fmo-concern-map-viewport" });
     const stage = viewport.createEl("div", { cls: "fmo-concern-map-stage" });
@@ -387,6 +510,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     viewport.scrollLeft = this.viewportScroll.left;
     viewport.scrollTop = this.viewportScroll.top;
+    return filtered.length;
   }
 
   private observeResize(viewport: HTMLElement): void {

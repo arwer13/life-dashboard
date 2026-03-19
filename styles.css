@@ -896,15 +896,37 @@ body.fmo-resizing-h * {
   gap: 8px;
 }
 
-.frontmatter-outline-view .fmo-concern-map-toolbar {
+.frontmatter-outline-view .fmo-concern-map-controls-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 4px;
+  gap: 16px;
+  padding: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--background-primary) 88%, var(--background-secondary) 12%);
 }
 
-.frontmatter-outline-view .fmo-concern-map-toolbar .fmo-subheader {
+.frontmatter-outline-view .fmo-concern-map-controls-row > .fmo-tree-panel-controls {
+  flex: 0 1 auto;
+  max-width: 560px;
+  border-bottom: none;
+  background: none;
+  padding: 0;
+}
+
+.frontmatter-outline-view .fmo-concern-map-tools {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.frontmatter-outline-view .fmo-concern-map-tools .fmo-subheader {
   margin: 0;
+}
+
+.frontmatter-outline-view .fmo-concern-map-tools-buttons {
+  display: flex;
+  gap: 6px;
 }
 
 .frontmatter-outline-view .fmo-concern-map-size-label {
