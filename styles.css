@@ -2090,6 +2090,12 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   margin-top: 12px;
 }
 
+.fmo-quick-task-priorities {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 /* Inline sub-concerns widget */
 .fmo-sub-concerns-inline {
   display: flex;

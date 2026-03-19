@@ -66,6 +66,7 @@ type MacOsTrayTimerActions = {
   startTimer: () => void;
   stopTimer: () => void;
   startRecentConcern: (path: string) => void;
+  quickAddTask: () => void;
 };
 
 export class MacOsTrayTimerService {
@@ -144,6 +145,11 @@ export class MacOsTrayTimerService {
       {
         label: model.isTracking ? "Stop Timer" : "Start Timer",
         click: model.isTracking ? this.actions.stopTimer : this.actions.startTimer
+      },
+      { type: "separator" },
+      {
+        label: "Add to inbox...",
+        click: this.actions.quickAddTask
       }
     ];
 

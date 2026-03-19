@@ -32,6 +32,7 @@ import {
 import { LifeDashboardSettingTab } from "./ui/life-dashboard-setting-tab";
 import { ListEntrySearchModal } from "./ui/list-entry-search-modal";
 import { TextInputModal } from "./ui/text-input-modal";
+import { QuickTaskModal } from "./ui/quick-task-modal";
 import {
   TaskSelectModal,
   type TaskSelectModalSearchMode,
@@ -1522,6 +1523,9 @@ export default class LifeDashboardPlugin extends Plugin {
       },
       startRecentConcern: (path) => {
         void this.selectConcernForTrayAndStartTracking(path);
+      },
+      quickAddTask: () => {
+        this.openQuickTaskModal();
       }
     });
     this.viewController = new DashboardViewController(this.app, this.settings, () => this.saveSettings());
@@ -2113,6 +2117,150 @@ export default class LifeDashboardPlugin extends Plugin {
       }
     } catch {
       // expected on mobile/web
+    }
+  }
+
+  private openQuickTaskModal(): void {
+    if (this.tryOpenQuickTaskNativeWindow()) return;
+    // Fallback for non-desktop or missing Electron APIs
+    const modal = new QuickTaskModal(this.app, (text, priorityEmoji) => {
+      void this.addQuickTaskToInbox(text, priorityEmoji);
+    });
+    modal.open();
+  }
+
+  private tryOpenQuickTaskNativeWindow(): boolean {
+    try {
+      const req = (window as unknown as { require?: (id: string) => unknown }).require;
+      if (!req) return false;
+
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      let BrowserWindow: any, screen: any;
+      try {
+        const m = req("electron/main") as any;
+        BrowserWindow = m?.BrowserWindow;
+        screen = m?.screen;
+      } catch { /* ignore */ }
+      if (!BrowserWindow) {
+        try {
+          const e = req("electron") as any;
+          BrowserWindow = e?.BrowserWindow ?? e?.remote?.BrowserWindow;
+          screen = e?.screen ?? e?.remote?.screen;
+        } catch { /* ignore */ }
+      }
+      if (!BrowserWindow || !screen) return false;
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+
+      const display = screen.getPrimaryDisplay();
+      const width = 480;
+      const height = 86;
+      const x = Math.round(display.workArea.x + (display.workArea.width - width) / 2);
+      const y = Math.round(display.workArea.y + display.workArea.height * 0.25);
+
+      const isDark = document.body.classList.contains("theme-dark");
+      const bg = isDark ? "#1e1e2e" : "#ffffff";
+      const fg = isDark ? "#cdd6f4" : "#1e1e2e";
+      const brd = isDark ? "#45475a" : "#d0d0d0";
+      const ibg = isDark ? "#313244" : "#f5f5f5";
+      const acc = isDark ? "#89b4fa" : "#4e79a7";
+
+      const html = `<!DOCTYPE html><html><head><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{padding:10px 14px;font-family:-apple-system,sans-serif;background:${bg};color:${fg};display:flex;flex-direction:column;gap:6px;overflow:hidden}
+input{width:100%;padding:6px 10px;border:1px solid ${brd};border-radius:6px;background:${ibg};color:${fg};font-size:14px;outline:none}
+input:focus{border-color:${acc}}
+.r{display:flex;gap:4px;align-items:center}
+button{border:1px solid ${brd};border-radius:10px;background:${ibg};color:${fg};font-size:11px;padding:2px 7px;cursor:pointer;opacity:.7}
+button:hover{opacity:1}
+button.a{border-color:${acc};color:${acc};opacity:1}
+.h{font-size:10px;color:${brd};flex:1;text-align:right}
+</style></head><body>
+<input id="t" placeholder="Task description" autofocus/>
+<div class="r"><button data-p="0">p0</button><button data-p="1">p1</button><button data-p="2">p2</button><button data-p="3">p3</button><button id="clr" style="display:none">-</button><span class="h">\u2318+0-3 priority \u00b7 Enter add \u00b7 Esc cancel</span></div>
+<script>
+let pr=null;
+function setPr(p){
+  if(pr===p){pr=null}else{pr=p}
+  document.querySelectorAll('[data-p]').forEach(x=>x.classList.toggle('a',x.dataset.p===pr));
+  document.getElementById('clr').style.display=pr!=null?'':'none';
+  document.getElementById('t').focus();
+}
+document.querySelectorAll('[data-p]').forEach(b=>{b.onclick=()=>setPr(b.dataset.p)});
+document.getElementById('clr').onclick=()=>setPr(null);
+document.addEventListener('keydown',e=>{
+  if(e.metaKey&&e.key>='0'&&e.key<='3'){e.preventDefault();setPr(e.key);return}
+  if(e.metaKey&&e.key==='-'){e.preventDefault();setPr(null);return}
+  if(e.key==='Enter'){e.preventDefault();sub()}
+  if(e.key==='Escape'){window.close()}
+});
+function sub(){const t=document.getElementById('t').value.trim();if(!t)return;document.title='R:'+JSON.stringify({t,p:pr})}
+</script></body></html>`;
+
+      const win = new BrowserWindow({
+        width, height, x, y,
+        frame: false,
+        alwaysOnTop: true,
+        resizable: false,
+        skipTaskbar: true,
+        show: false,
+        hasShadow: true,
+        roundedCorners: true,
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
+      });
+
+      win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+      win.webContents.once("page-title-updated", () => {
+        const title = win.getTitle();
+        if (!title.startsWith("R:")) return;
+        try {
+          const data = JSON.parse(title.slice(2));
+          const emoji = data.p ? (PRIORITY_DIGIT_TO_EMOJI.get(data.p) ?? null) : null;
+          void this.addQuickTaskToInbox(data.t, emoji);
+        } catch { /* ignore */ }
+        if (!win.isDestroyed()) win.close();
+      });
+      win.once("ready-to-show", () => {
+        win.show();
+        win.focus();
+        win.webContents.focus();
+      });
+      win.on("blur", () => { if (!win.isDestroyed()) win.close(); });
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async addQuickTaskToInbox(text: string, priorityEmoji: string | null): Promise<void> {
+    const inboxPath = this.settings.inboxNotePath;
+    if (!inboxPath) {
+      new Notice("No inbox note configured. Set it in Life Dashboard settings.");
+      return;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(inboxPath);
+    if (!(file instanceof TFile)) {
+      new Notice(`Inbox note not found: ${inboxPath}`);
+      return;
+    }
+
+    const prefix = priorityEmoji ? `${priorityEmoji} ` : "";
+    const checkboxText = `- [ ] ${prefix}${text}`;
+
+    let inserted = false;
+    await this.app.vault.process(file, (content) => {
+      const insertIdx = this.findTasksSectionInsertLine(content);
+      if (insertIdx < 0) return content;
+      inserted = true;
+      const lines = content.split("\n");
+      lines.splice(insertIdx, 0, checkboxText);
+      return lines.join("\n");
+    });
+    if (inserted) {
+      new Notice(`Added to inbox: ${text}`);
+    } else {
+      new Notice("Inbox note does not have a Tasks section.");
     }
   }
 

@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import type LifeDashboardPlugin from "../plugin";
 import { DEFAULT_TIME_LOG_PATH } from "../settings";
+import { FileSuggest } from "./file-suggest";
 
 type TextSettingConfig = {
   name: string;
@@ -10,6 +11,7 @@ type TextSettingConfig = {
   setValue: (value: string) => void;
   afterSave?: () => Promise<void>;
   transform?: (value: string) => string;
+  fileSuggest?: boolean;
 };
 
 type TextAreaSettingConfig = {
@@ -158,6 +160,17 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         afterSave: async () => {
           await this.plugin.onTimeLogPathSettingChanged();
         }
+      },
+      {
+        name: "Inbox note path",
+        description: "Vault path to the inbox concern note (e.g., \"Inbox.md\"). Used by the tray Quick Task action.",
+        placeholder: "Inbox.md",
+        getValue: () => this.plugin.settings.inboxNotePath,
+        setValue: (value) => {
+          this.plugin.settings.inboxNotePath = value;
+        },
+        transform: (value) => value.trim(),
+        fileSuggest: true
       }
     ];
 
@@ -287,6 +300,10 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
           event.preventDefault();
           flushPersist();
         });
+
+        if (config.fileSuggest) {
+          new FileSuggest(this.app, text.inputEl);
+        }
 
         return text;
       });
