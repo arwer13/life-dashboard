@@ -36,6 +36,7 @@ type ConcernMapFilterState = {
   fontSize: number;
   colorByPriority: boolean;
   colorByStatus: boolean;
+  showParentLabel: boolean;
 };
 
 type PersistedConcernMapState = {
@@ -114,10 +115,13 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     showStatus: true,
     fontSize: MAP_BASE_FONT_SIZE,
     colorByPriority: false,
-    colorByStatus: false
+    colorByStatus: false,
+    showParentLabel: false
   };
   /** Positions stored as fractions of viewport dimensions. */
   private positions = new Map<string, { rx: number; ry: number }>();
+  /** Inline task path → basename from previous render, used for cross-file move detection. */
+  private inlineBasenames = new Map<string, string>();
   private parentByPath = new Map<string, string>();
   private selectedPaths = new Set<string>();
   private boxElements = new Map<string, HTMLElement>();
@@ -369,14 +373,19 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       rerenderCanvas();
     });
 
-    const colorRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
-    this.renderFlag(colorRow, "Priority colors", this.filterState.colorByPriority, (v) => {
+    const optionsRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
+    this.renderFlag(optionsRow, "Priority colors", this.filterState.colorByPriority, (v) => {
       this.filterState.colorByPriority = v;
       this.persistState();
       rerenderCanvas();
     });
-    this.renderFlag(colorRow, "Status colors", this.filterState.colorByStatus, (v) => {
+    this.renderFlag(optionsRow, "Status colors", this.filterState.colorByStatus, (v) => {
       this.filterState.colorByStatus = v;
+      this.persistState();
+      rerenderCanvas();
+    });
+    this.renderFlag(optionsRow, "Parent", this.filterState.showParentLabel, (v) => {
+      this.filterState.showParentLabel = v;
       this.persistState();
       rerenderCanvas();
     });
@@ -543,7 +552,18 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     this.refSize = { width: vpWidth, height: vpHeight };
 
     this.migrateShiftedInlinePositions(filtered);
+    this.copyPositionsForInlineTwins(filtered);
     this.ensurePositions(filtered);
+
+    // Rebuild basename map, but preserve names for orphaned positions (survives intermediate renders)
+    const newBasenames = new Map<string, string>();
+    for (const task of filtered) {
+      if (isInlineItem(task)) newBasenames.set(task.path, task.basename);
+    }
+    for (const [path, name] of this.inlineBasenames) {
+      if (!newBasenames.has(path) && this.positions.has(path)) newBasenames.set(path, name);
+    }
+    this.inlineBasenames = newBasenames;
 
     this.boxElements.clear();
     for (const task of filtered) {
@@ -644,6 +664,18 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
         cls: "fmo-concern-map-box-priority",
         text: priorityBadge
       });
+    }
+
+    if (this.filterState.showParentLabel) {
+      const parentPath = this.parentByPath.get(task.path);
+      if (parentPath) {
+        box.classList.add("fmo-concern-map-box-has-parent");
+        const parentName = parentPath.replace(/\.md$/, "").split("/").pop() ?? parentPath;
+        box.createEl("div", {
+          cls: "fmo-concern-map-box-parent",
+          text: parentName
+        });
+      }
     }
 
     box.addEventListener("mouseenter", () => {
@@ -896,35 +928,63 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   // ── Positioning ───────────────────────────────────────────────────────
 
   /**
-   * When inline task line numbers shift (e.g., a task is moved between files),
-   * their paths change but the tasks are conceptually the same. Transfer orphaned
-   * positions to the new paths by matching within the same parent file in line order.
+   * When inline task paths change (line shifts, cross-file moves, promotions),
+   * transfer orphaned positions to the new paths.
+   * Phase 1: basename matching (handles cross-file moves and promotions).
+   * Phase 2: per-file line-order matching (handles line shifts within a file).
    */
   private migrateShiftedInlinePositions(filtered: TaskItem[]): void {
     const filteredPaths = new Set(filtered.map((t) => t.path));
 
-    // Collect orphaned inline positions grouped by parent file
-    const orphansByFile = new Map<string, Array<{ path: string; line: number; pos: { rx: number; ry: number } }>>();
+    // Collect all orphaned inline positions
+    type Orphan = { path: string; filePath: string; line: number; pos: { rx: number; ry: number } };
+    const allOrphans: Orphan[] = [];
     for (const [path, pos] of this.positions) {
       if (filteredPaths.has(path)) continue;
       const parsed = parseInlinePath(path);
       if (!parsed) continue;
-      let list = orphansByFile.get(parsed.filePath);
-      if (!list) { list = []; orphansByFile.set(parsed.filePath, list); }
-      list.push({ path, line: parsed.line, pos });
+      allOrphans.push({ path, filePath: parsed.filePath, line: parsed.line, pos });
     }
-    if (orphansByFile.size === 0) return;
+    if (allOrphans.length === 0) return;
 
-    // Collect unpositioned inline tasks grouped by parent file
+    // Phase 1: Basename matching — moved/promoted tasks keep their position
+    const orphansByName = new Map<string, Orphan>();
+    for (const orphan of allOrphans) {
+      const name = this.inlineBasenames.get(orphan.path);
+      if (name && !orphansByName.has(name)) orphansByName.set(name, orphan);
+    }
+
+    const matchedOrphans = new Set<string>();
+    const matchedTasks = new Set<string>();
+
+    for (const task of filtered) {
+      if (this.positions.has(task.path)) continue;
+      const orphan = orphansByName.get(task.basename);
+      if (!orphan) continue;
+      this.positions.set(task.path, orphan.pos);
+      this.positions.delete(orphan.path);
+      matchedOrphans.add(orphan.path);
+      matchedTasks.add(task.path);
+      orphansByName.delete(task.basename);
+    }
+
+    // Phase 2: Per-file line-order matching for remaining shifts
+    const orphansByFile = new Map<string, Orphan[]>();
+    for (const orphan of allOrphans) {
+      if (matchedOrphans.has(orphan.path)) continue;
+      let list = orphansByFile.get(orphan.filePath);
+      if (!list) { list = []; orphansByFile.set(orphan.filePath, list); }
+      list.push(orphan);
+    }
+
     const unposByFile = new Map<string, InlineTaskItem[]>();
     for (const task of filtered) {
-      if (!isInlineItem(task) || this.positions.has(task.path)) continue;
+      if (!isInlineItem(task) || this.positions.has(task.path) || matchedTasks.has(task.path)) continue;
       let list = unposByFile.get(task.parentPath);
       if (!list) { list = []; unposByFile.set(task.parentPath, list); }
       list.push(task);
     }
 
-    // Match orphans to unpositioned tasks by line order within each parent file
     for (const [parentFile, orphans] of orphansByFile) {
       const unpos = unposByFile.get(parentFile);
       if (!unpos || unpos.length === 0) continue;
@@ -936,6 +996,27 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       for (let i = 0; i < count; i++) {
         this.positions.set(unpos[i].path, orphans[i].pos);
         this.positions.delete(orphans[i].path);
+      }
+    }
+  }
+
+  /**
+   * During a cross-file move, the task temporarily exists in both source and target.
+   * The target render sees the new task as unpositioned. Copy the position from the
+   * existing twin so it doesn't get a fresh grid slot before the source is cleaned up.
+   */
+  private copyPositionsForInlineTwins(filtered: TaskItem[]): void {
+    const positioned = new Map<string, { parentPath: string; pos: { rx: number; ry: number } }>();
+    for (const task of filtered) {
+      if (!isInlineItem(task)) continue;
+      const pos = this.positions.get(task.path);
+      if (pos) positioned.set(task.basename, { parentPath: task.parentPath, pos });
+    }
+    for (const task of filtered) {
+      if (!isInlineItem(task) || this.positions.has(task.path)) continue;
+      const twin = positioned.get(task.basename);
+      if (twin && twin.parentPath !== task.parentPath) {
+        this.positions.set(task.path, { rx: twin.pos.rx, ry: twin.pos.ry });
       }
     }
   }
@@ -1029,7 +1110,8 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const showStatus = typeof parsed.filter.showStatus === "boolean" ? parsed.filter.showStatus : true;
     const colorByPriority = typeof parsed.filter.colorByPriority === "boolean" ? parsed.filter.colorByPriority : false;
     const colorByStatus = typeof parsed.filter.colorByStatus === "boolean" ? parsed.filter.colorByStatus : false;
-    this.filterState = { ...parsed.filter, fontSize, showStatus, colorByPriority, colorByStatus };
+    const showParentLabel = typeof parsed.filter.showParentLabel === "boolean" ? parsed.filter.showParentLabel : false;
+    this.filterState = { ...parsed.filter, fontSize, showStatus, colorByPriority, colorByStatus, showParentLabel };
 
     this.positions = new Map();
     for (const [path, pos] of Object.entries(parsed.positions)) {
