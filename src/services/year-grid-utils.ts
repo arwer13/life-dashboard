@@ -14,7 +14,7 @@ export function pad2(n: number): string {
 }
 
 export function toDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
 export function buildYearWeeks(year: number, weekStartsOn: number): YearSlot[][] {

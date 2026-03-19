@@ -169,6 +169,19 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         },
         transform: (value) => value.trim(),
         fileSuggest: true
+      },
+      {
+        name: "Inbox global shortcut",
+        description: "System-wide shortcut to open the Add to inbox window. Uses Electron accelerator format (e.g., CommandOrControl+Alt+Shift+I). Leave empty to disable.",
+        placeholder: "CommandOrControl+Alt+Shift+I",
+        getValue: () => this.plugin.settings.inboxGlobalShortcut,
+        setValue: (value) => {
+          this.plugin.settings.inboxGlobalShortcut = value;
+        },
+        transform: (value) => value.trim(),
+        afterSave: async () => {
+          this.plugin.onInboxGlobalShortcutSettingChanged();
+        }
       }
     ];
 

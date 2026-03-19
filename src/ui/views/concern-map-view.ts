@@ -912,18 +912,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   }
 
   private getOwnSecondsByPath(tasks: TaskItem[]): Map<string, number> {
-    const map = new Map<string, number>();
-    for (const task of tasks) {
-      if (isInlineItem(task)) {
-        map.set(task.path, 0);
-      } else {
-        map.set(
-          task.path,
-          this.plugin.timeData.getTrackedSecondsForRange(task.path, this.filterState.range)
-        );
-      }
-    }
-    return map;
+    return this.plugin.timeData.getOwnSecondsByPath(tasks, this.filterState.range);
   }
 
   // ── Positioning ───────────────────────────────────────────────────────

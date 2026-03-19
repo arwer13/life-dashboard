@@ -202,7 +202,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       }
 
       const queryWithButtonFilters = this.withButtonFilters(query);
-      const textFiltered = this.filterTasksForOutline(tasks, queryWithButtonFilters);
+      const textFiltered = this.filterTasksByQuery(tasks, queryWithButtonFilters);
       const ownSecondsByPath = this.getOwnSecondsByPath(textFiltered, this.outlineTimeRange);
       const matched = this.outlineShowOnlyTrackedThisPeriod
         ? textFiltered.filter(
@@ -327,18 +327,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
-    const ownSecondsByPath = new Map<string, number>();
-    for (const item of tasks) {
-      if (isInlineItem(item)) {
-        ownSecondsByPath.set(item.path, 0);
-        continue;
-      }
-      ownSecondsByPath.set(
-        item.path,
-        this.plugin.timeData.getTrackedSecondsForRange(item.path, range)
-      );
-    }
-    return ownSecondsByPath;
+    return this.plugin.timeData.getOwnSecondsByPath(tasks, range);
   }
 
   private withButtonFilters(query: string): string {
@@ -459,10 +448,6 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     /* eslint-enable obsidianmd/ui/sentence-case */
 
     modal.open();
-  }
-
-  private filterTasksForOutline(tasks: TaskItem[], query: string): TaskItem[] {
-    return this.filterTasksByQuery(tasks, query);
   }
 
   private renderTreeNode(

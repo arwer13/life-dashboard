@@ -98,13 +98,7 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
     const displayText = stripPriorityEmojis(rawText);
     if (!displayText) continue;
 
-    let priority: number | null = null;
-    for (const [emoji, rank] of PRIORITY_EMOJI_MAP) {
-      if (rawText.includes(emoji)) {
-        priority = rank;
-        break;
-      }
-    }
+    const priority = parsePriorityFromText(rawText);
 
     items.push({
       kind: "inline",

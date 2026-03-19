@@ -96,12 +96,34 @@
   font-variant-numeric: tabular-nums;
 }
 
+.frontmatter-outline-view .fmo-timer-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .frontmatter-outline-view .fmo-main-toggle {
   min-width: 100px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 999px;
   padding: 6px 14px;
   font-weight: 600;
+}
+
+.frontmatter-outline-view .fmo-discard-toggle {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.frontmatter-outline-view .fmo-discard-toggle:hover {
+  opacity: 1;
+  border-color: var(--text-error);
+  color: var(--text-error);
 }
 
 .frontmatter-outline-view .fmo-main-adjust {

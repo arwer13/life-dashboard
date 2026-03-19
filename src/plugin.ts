@@ -82,6 +82,10 @@ type ElectronWithRemoteLike = {
   shell?: { beep?: () => void };
   remote?: ElectronMainLike;
 };
+type ElectronGlobalShortcutLike = {
+  register: (accelerator: string, callback: () => void) => boolean;
+  unregister: (accelerator: string) => void;
+};
 const LIFE_DASHBOARD_VIEW_TYPE_SET = new Set<string>(LIFE_DASHBOARD_VIEW_TYPES);
 const PRIORITY_FRONTMATTER_KEY = "priority";
 type ConcernPickerOptions = {
@@ -142,6 +146,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private concernQuickSearchModal: TaskSelectModal | null = null;
   private cachedInlineItems: InlineTaskItem[] = [];
   private inlineTaskCacheGeneration = 0;
+  private registeredGlobalShortcut: string | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -412,6 +417,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.macOsTrayTimerService.syncEnabled(this.settings.macOsTrayTimerEnabled, false);
     this.updateMacOsTrayTimer();
+    this.syncInboxGlobalShortcut();
 
     this.registerInterval(
       window.setInterval(() => {
@@ -421,21 +427,16 @@ export default class LifeDashboardPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.unregisterInboxGlobalShortcut();
     this.macOsTrayTimerService.destroy();
     this.clearPowerMonitorListeners();
     this.closeTimeLogFsWatcher();
 
-    if (this.outlineFilterSaveTimer !== null) {
-      window.clearTimeout(this.outlineFilterSaveTimer);
-      this.outlineFilterSaveTimer = null;
-    }
-    if (this.canvasDraftSaveTimer !== null) {
-      window.clearTimeout(this.canvasDraftSaveTimer);
-      this.canvasDraftSaveTimer = null;
-    }
-    if (this.concernMapSaveTimer !== null) {
-      window.clearTimeout(this.concernMapSaveTimer);
-      this.concernMapSaveTimer = null;
+    for (const field of ["outlineFilterSaveTimer", "canvasDraftSaveTimer", "concernMapSaveTimer"] as const) {
+      if (this[field] !== null) {
+        window.clearTimeout(this[field]);
+        this[field] = null;
+      }
     }
 
     this.subConcernActionEl?.remove();
@@ -479,6 +480,83 @@ export default class LifeDashboardPlugin extends Plugin {
   onMacOsTrayTimerSettingChanged(): void {
     this.macOsTrayTimerService.syncEnabled(this.settings.macOsTrayTimerEnabled, true);
     this.updateMacOsTrayTimer();
+  }
+
+  onInboxGlobalShortcutSettingChanged(): void {
+    this.syncInboxGlobalShortcut();
+  }
+
+  private syncInboxGlobalShortcut(): void {
+    const desired = (this.settings.inboxGlobalShortcut || "").trim();
+    if (desired === this.registeredGlobalShortcut) return;
+
+    this.unregisterInboxGlobalShortcut();
+    if (!desired) return;
+
+    const globalShortcut = this.getElectronGlobalShortcut();
+    if (!globalShortcut) return;
+
+    try {
+      const registered = globalShortcut.register(desired, () => {
+        this.openQuickTaskModal();
+      });
+      if (registered) {
+        this.registeredGlobalShortcut = desired;
+      } else {
+        new Notice(`Global shortcut "${desired}" could not be registered. It may be in use by another application.`);
+      }
+    } catch {
+      new Notice(`Global shortcut "${desired}" is not a valid accelerator format.`);
+    }
+  }
+
+  private unregisterInboxGlobalShortcut(): void {
+    if (!this.registeredGlobalShortcut) return;
+
+    const globalShortcut = this.getElectronGlobalShortcut();
+    if (globalShortcut) {
+      try {
+        globalShortcut.unregister(this.registeredGlobalShortcut);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    this.registeredGlobalShortcut = null;
+  }
+
+  private cachedElectronGlobalShortcut: ElectronGlobalShortcutLike | null | undefined = undefined;
+
+  private getElectronGlobalShortcut(): ElectronGlobalShortcutLike | null {
+    if (this.cachedElectronGlobalShortcut !== undefined) return this.cachedElectronGlobalShortcut;
+
+    const req = (window as unknown as { require?: (id: string) => unknown }).require;
+    if (!req) {
+      this.cachedElectronGlobalShortcut = null;
+      return null;
+    }
+
+    try {
+      const electronMain = req("electron/main") as { globalShortcut?: ElectronGlobalShortcutLike } | undefined;
+      if (electronMain?.globalShortcut) {
+        this.cachedElectronGlobalShortcut = electronMain.globalShortcut;
+        return this.cachedElectronGlobalShortcut;
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const electron = req("electron") as { remote?: { globalShortcut?: ElectronGlobalShortcutLike } } | undefined;
+      if (electron?.remote?.globalShortcut) {
+        this.cachedElectronGlobalShortcut = electron.remote.globalShortcut;
+        return this.cachedElectronGlobalShortcut;
+      }
+    } catch {
+      // ignore
+    }
+
+    this.cachedElectronGlobalShortcut = null;
+    return null;
   }
 
   private async maybeAutoSelectFromActive(): Promise<void> {
@@ -920,6 +998,11 @@ export default class LifeDashboardPlugin extends Plugin {
 
   async stopTracking(): Promise<void> {
     await this.trackingService.stopTracking();
+    await this.maybeAutoSelectFromActive();
+  }
+
+  async discardTracking(): Promise<void> {
+    await this.trackingService.discardTracking();
     await this.maybeAutoSelectFromActive();
   }
 

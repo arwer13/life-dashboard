@@ -566,18 +566,7 @@ export class ConcernTreePanel {
   // ── Tree data methods ─────────────────────────────────────────────────
 
   private getOwnSecondsByPath(tasks: TaskItem[], range: OutlineTimeRange): Map<string, number> {
-    const ownSecondsByPath = new Map<string, number>();
-    for (const task of tasks) {
-      if (isInlineItem(task)) {
-        ownSecondsByPath.set(task.path, 0);
-        continue;
-      }
-      const seconds = this.customWindow
-        ? this.plugin.timeData.getTrackedSecondsForWindow(task.path, this.customWindow)
-        : this.plugin.timeData.getTrackedSecondsForRange(task.path, range);
-      ownSecondsByPath.set(task.path, seconds);
-    }
-    return ownSecondsByPath;
+    return this.plugin.timeData.getOwnSecondsByPath(tasks, range, this.customWindow);
   }
 
   private createLatestTrackedStartResolver(range: OutlineTimeRange): (path: string) => number {

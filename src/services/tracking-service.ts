@@ -101,6 +101,13 @@ export class TrackingService {
     }
   }
 
+  async discardTracking(): Promise<void> {
+    if (!this.deps.settings.activeTrackingStart) return;
+    this.clearActiveState();
+    await this.deps.saveSettings();
+    this.deps.refreshView();
+  }
+
   async flushActiveTrackingOnUnload(): Promise<void> {
     await this.finalizeActiveTracking({
       reloadTotals: false,

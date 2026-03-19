@@ -1,4 +1,5 @@
 import type { TimeLogEntry } from "../models/types";
+import { pad2 } from "./year-grid-utils";
 
 export type OutlineTimeRange = "today" | "todayYesterday" | "week" | "previousWeek" | "month" | "all";
 export type PeriodTooltipRange = OutlineTimeRange | "yesterday";
@@ -80,11 +81,10 @@ export class TimeWindowService {
     const minutes = Math.floor((safe % 3600) / 60);
     const seconds = safe % 60;
 
-    const pad = (n: number): string => String(n).padStart(2, "0");
     if (hours > 0) {
-      return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+      return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
     }
-    return `${minutes}:${pad(seconds)}`;
+    return `${minutes}:${pad2(seconds)}`;
   }
 
   formatShortDuration(totalSeconds: number): string {
@@ -140,12 +140,11 @@ export class TimeWindowService {
   }
 
   private formatDateTime(date: Date): string {
-    const pad = (n: number): string => String(n).padStart(2, "0");
     const yyyy = date.getFullYear();
-    const mm = pad(date.getMonth() + 1);
-    const dd = pad(date.getDate());
-    const hh = pad(date.getHours());
-    const min = pad(date.getMinutes());
+    const mm = pad2(date.getMonth() + 1);
+    const dd = pad2(date.getDate());
+    const hh = pad2(date.getHours());
+    const min = pad2(date.getMinutes());
     return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
   }
 }

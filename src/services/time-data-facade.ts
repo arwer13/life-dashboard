@@ -1,6 +1,7 @@
 import { TFile, type App } from "obsidian";
-import type { TimeLogEntry } from "../models/types";
+import type { TaskItem, TimeLogEntry } from "../models/types";
 import { TimeWindowService, type TimeWindow, type OutlineTimeRange, type PeriodTooltipRange } from "./time-window-service";
+import { pad2 } from "./year-grid-utils";
 
 export class TimeDataFacade {
   private readonly app: App;
@@ -83,7 +84,6 @@ export class TimeDataFacade {
       };
     }
 
-    const pad = (n: number): string => String(n).padStart(2, "0");
     const now = new Date();
     const todayWindow = this.timeWindowService.getWindowForRange("today", now);
     const yesterdayWindow = {
@@ -105,7 +105,7 @@ export class TimeDataFacade {
       .sort((a, b) => a.overlapStartMs - b.overlapStartMs)
       .map(({ entry, overlapSeconds, overlapStartMs }) => {
         const start = new Date(overlapStartMs);
-        const hhmm = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+        const hhmm = `${pad2(start.getHours())}:${pad2(start.getMinutes())}`;
         const label = `${hhmm} ${this.formatShortDuration(overlapSeconds)}`;
         return { label, startMs: entry.startMs };
       });
@@ -153,6 +153,27 @@ export class TimeDataFacade {
 
   getTimeRangeDescription(range: PeriodTooltipRange): string {
     return this.timeWindowService.getTimeRangeDescription(range, new Date());
+  }
+
+  getOwnSecondsByPath(
+    tasks: ReadonlyArray<TaskItem>,
+    range: OutlineTimeRange,
+    customWindow?: TimeWindow
+  ): Map<string, number> {
+    const window = customWindow
+      ?? (range !== "all" ? this.timeWindowService.getWindowForRange(range, new Date()) : undefined);
+    const map = new Map<string, number>();
+    for (const task of tasks) {
+      if (task.kind === "inline") {
+        map.set(task.path, 0);
+        continue;
+      }
+      const seconds = window
+        ? this.sumSecondsInWindow(this.getEntriesForPath(task.path), window)
+        : this.getTrackedSeconds(task.path);
+      map.set(task.path, seconds);
+    }
+    return map;
   }
 
   // --- Internal helpers ---

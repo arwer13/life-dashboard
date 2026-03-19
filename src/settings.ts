@@ -26,6 +26,7 @@ export interface LifeDashboardSettings {
   outlineMaxRows: number;
   concernMapState: string;
   inboxNotePath: string;
+  inboxGlobalShortcut: string;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
@@ -59,4 +60,5 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   outlineMaxRows: 1000,
   concernMapState: "",
   inboxNotePath: "",
+  inboxGlobalShortcut: "CommandOrControl+Alt+Shift+I",
 };

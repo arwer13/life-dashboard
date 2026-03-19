@@ -1,5 +1,6 @@
 import { TFile, setTooltip } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../../models/types";
+import { pad2 } from "../../services/year-grid-utils";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMER, type TaskTreeData } from "../../models/view-types";
 import { LifeDashboardBaseView } from "./base-view";
 
@@ -58,13 +59,26 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       text: this.plugin.timeData.formatClockDuration(this.plugin.getCurrentElapsedSeconds())
     });
 
-    const toggleBtn = timerRing.createEl("button", {
+    const toggleRow = timerRing.createEl("div", { cls: "fmo-timer-toggle-row" });
+    const toggleBtn = toggleRow.createEl("button", {
       cls: "fmo-main-toggle",
       text: isTracking ? "Stop" : "Start"
     });
     toggleBtn.addEventListener("click", () => {
       void (isTracking ? this.plugin.stopTracking() : this.plugin.startTracking());
     });
+
+    if (isTracking) {
+      const discardBtn = toggleRow.createEl("button", {
+        cls: "fmo-discard-toggle",
+        text: "\u2715",
+        attr: { type: "button", "aria-label": "Discard current session" }
+      });
+      setTooltip(discardBtn, "Discard current session without saving");
+      discardBtn.addEventListener("click", () => {
+        void this.plugin.discardTracking();
+      });
+    }
 
     const activeTaskPath = this.plugin.getActiveTaskPath();
     if (activeTaskPath) {
@@ -108,8 +122,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
     const start = Number(this.plugin.settings.activeTrackingStart);
     if (!Number.isFinite(start) || start <= 0) return "--:--";
     const date = new Date(start);
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
   }
 
   private renderConcernPeriodSummary(containerEl: HTMLElement, taskPath: string): void {
