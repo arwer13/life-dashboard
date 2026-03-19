@@ -1,7 +1,6 @@
-import { TFile, setTooltip, type WorkspaceLeaf } from "obsidian";
+import { TFile, setTooltip } from "obsidian";
 import type { TaskItem, TaskTreeNode } from "../../models/types";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMER, type TaskTreeData } from "../../models/view-types";
-import type LifeDashboardPlugin from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 
 const TRACKING_ADJUST_MINUTES = 5;
@@ -14,7 +13,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Life Timer";
+    return "Life timer";
   }
 
   getIcon(): string {
@@ -286,6 +285,7 @@ export class LifeDashboardTimerView extends LifeDashboardBaseView {
       visited.add(current.path);
       chain.push(current);
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const parentRaw = this.app.metadataCache.getFileCache(current)?.frontmatter?.parent;
       const parentPath = this.resolveParentPath(parentRaw, current.path);
       if (!parentPath) break;

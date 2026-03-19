@@ -1,7 +1,6 @@
-import { Notice, TFile, type WorkspaceLeaf } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { isFileItem } from "../../models/types";
 import { VIEW_TYPE_LIFE_DASHBOARD_TIMELOG } from "../../models/view-types";
-import type LifeDashboardPlugin from "../../plugin";
 import { formatTimestampLocal, localTimestampToUTC, parseIntervalToken } from "../../services/time-log-store";
 import { LifeDashboardBaseView } from "./base-view";
 import { TaskSelectModal } from "../task-select-modal";
@@ -12,7 +11,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Time Log";
+    return "Time log";
   }
 
   getIcon(): string {
@@ -30,7 +29,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
 
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Time Log" });
+    headerTop.createEl("h3", { text: "Time log" });
 
     const nameMap = this.plugin.buildNoteIdToBasenameMap();
 
@@ -94,7 +93,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
         this.makeEditable(startEl, startDisplay, (newVal) => {
           const utcStart = localTimestampToUTC(newVal);
           if (!utcStart) {
-            new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time.");
+            new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time."); // eslint-disable-line obsidianmd/ui/sentence-case
             void this.render();
             return;
           }
@@ -176,7 +175,7 @@ export class LifeDashboardTimeLogView extends LifeDashboardBaseView {
   ): void {
     const newToken = `${newStart}T${newDuration}M`;
     if (!parseIntervalToken(newToken)) {
-      new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time.");
+      new Notice("Invalid time format. Use YYYY.MM.DD-HH:MM for start time."); // eslint-disable-line obsidianmd/ui/sentence-case
       void this.render();
       return;
     }

@@ -1,12 +1,11 @@
 import {
   Modal,
   SearchComponent,
-  setTooltip,
-  type WorkspaceLeaf
+  setTooltip
 } from "obsidian";
 import { DISPLAY_VERSION } from "../../version";
 import type { TaskItem, TaskTreeNode } from "../../models/types";
-import { isFileItem, isInlineItem } from "../../models/types";
+import { isInlineItem } from "../../models/types";
 import { buildParentPathMap, collectPathsWithParents } from "../../services/task-tree-builder";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_OUTLINE,
@@ -17,7 +16,6 @@ import {
   type OutlineSortMode,
   type TreeRenderState
 } from "../../models/view-types";
-import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import {
@@ -48,7 +46,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Concerns Outline";
+    return "Concerns outline";
   }
 
   getIcon(): string {
@@ -85,7 +83,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const persistedFilter = this.plugin.getOutlineFilterQuery();
 
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Concerns Outline" });
+    headerTop.createEl("h3", { text: "Concerns outline" });
     headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
 
     const rangeRow = header.createEl("div", { cls: "fmo-outline-range-row" });
@@ -99,7 +97,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       attr: {
         type: "checkbox"
       }
-    }) as HTMLInputElement;
+    });
     trackedOnlyInput.checked = this.outlineShowOnlyTrackedThisPeriod;
     trackedOnlyRow.createEl("span", { text: "Show only tracked this period" });
     setTooltip(
@@ -113,7 +111,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       attr: {
         type: "checkbox"
       }
-    }) as HTMLInputElement;
+    });
     showParentsInput.checked = this.outlineShowParents;
     showParentsRow.createEl("span", { text: "Show parents" });
     setTooltip(showParentsRow, "Include matching concerns' parents and group siblings under shared parents.");
@@ -122,7 +120,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     const showClosedInput = showClosedRow.createEl("input", {
       cls: "fmo-outline-tracked-only-input",
       attr: { type: "checkbox" }
-    }) as HTMLInputElement;
+    });
     showClosedInput.checked = this.outlineShowClosed;
     showClosedRow.createEl("span", { text: "Show closed" });
     setTooltip(showClosedRow, `When off: ${CLOSED_FILTER_QUERY}`);
@@ -162,7 +160,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
       cls: this.outlineStatusDoneFilterEnabled
         ? "fmo-outline-filter-btn fmo-outline-filter-btn-active"
         : "fmo-outline-filter-btn",
-      text: "done",
+      text: "Done",
       attr: {
         type: "button",
         "aria-label": "Toggle status done filter"
@@ -435,12 +433,14 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
 
   private openOutlineFilterHelp(): void {
     const modal = new Modal(this.app);
-    modal.setTitle("Outline Filter Format");
+    modal.setTitle("Outline filter format");
 
     const body = modal.contentEl.createEl("div", { cls: "fmo-filter-help" });
+    // eslint-disable-next-line obsidianmd/ui/sentence-case
     body.createEl("p", { text: "Terms are combined with AND (all terms must match)." });
 
     const list = body.createEl("ul");
+    /* eslint-disable obsidianmd/ui/sentence-case -- filter syntax examples */
     list.createEl("li", { text: "term -> match in file name or path" });
     list.createEl("li", { text: "\"quoted phrase\" -> phrase match in file name or path" });
     list.createEl("li", { text: "file:term -> match only file name" });
@@ -456,6 +456,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
     examples.createEl("li", { text: "\"qq wrapper\" -path:Archive" });
     examples.createEl("li", { text: "file:wrapper -file:old" });
     examples.createEl("li", { text: "prop:type=concern -prop:status=done" });
+    /* eslint-enable obsidianmd/ui/sentence-case */
 
     modal.open();
   }
@@ -505,7 +506,7 @@ export class LifeDashboardOutlineView extends LifeDashboardBaseView {
         attr: {
           type: "button"
         }
-      }) as HTMLButtonElement;
+      });
       setTreeToggleState(toggle, isExpanded, node.item.basename);
 
       toggle.addEventListener("click", () => {

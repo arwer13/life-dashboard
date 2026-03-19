@@ -9,8 +9,7 @@ import {
   toDateKey,
   buildYearWeeks,
   getMonthStartWeekIndex,
-  MONTH_ABBREVIATIONS,
-  type YearSlot
+  MONTH_ABBREVIATIONS
 } from "../../services/year-grid-utils";
 import type LifeDashboardPlugin from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
@@ -46,7 +45,7 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Supplements Grid";
+    return "Supplements grid";
   }
 
   getIcon(): string {

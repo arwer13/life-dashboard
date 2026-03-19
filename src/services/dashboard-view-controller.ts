@@ -58,7 +58,7 @@ export class DashboardViewController {
     const outlineLeaf = await this.ensureViewLeaf(VIEW_TYPE_LIFE_DASHBOARD_OUTLINE, true, true);
     if (!outlineLeaf) return;
 
-    this.app.workspace.revealLeaf(outlineLeaf);
+    void this.app.workspace.revealLeaf(outlineLeaf);
     const canvasLeaf = await this.ensureViewLeaf(
       VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
       false,
@@ -67,7 +67,7 @@ export class DashboardViewController {
     );
     if (!canvasLeaf) return;
 
-    this.app.workspace.revealLeaf(canvasLeaf);
+    void this.app.workspace.revealLeaf(canvasLeaf);
     const calendarLeaf = await this.ensureViewLeaf(
       VIEW_TYPE_LIFE_DASHBOARD_CALENDAR,
       false,
@@ -75,7 +75,7 @@ export class DashboardViewController {
       "tab"
     );
     if (calendarLeaf) {
-      this.app.workspace.revealLeaf(calendarLeaf);
+      void this.app.workspace.revealLeaf(calendarLeaf);
     }
     await this.persistVisibilityState(true);
     this.refreshView();
@@ -172,7 +172,7 @@ export class DashboardViewController {
   ): Promise<void> {
     const leaf = await this.ensureViewLeaf(viewType, false, true, placement);
     if (!leaf) return;
-    this.app.workspace.revealLeaf(leaf);
+    void this.app.workspace.revealLeaf(leaf);
     await this.persistVisibilityState(true);
     this.refreshViewByType(viewType);
   }

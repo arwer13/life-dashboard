@@ -244,7 +244,7 @@ function extractParentCandidates(value: unknown): string[] {
       return;
     }
     if (next == null) return;
-    addCandidate(String(next));
+    addCandidate(String(next as string));
   };
 
   visit(value);

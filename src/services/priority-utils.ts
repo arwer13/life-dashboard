@@ -4,7 +4,7 @@ export type PriorityDigit = "0" | "1" | "2" | "3" | "4";
 
 export function normalizePriorityValue(value: unknown): string | null {
   if (value == null) return null;
-  const normalized = String(value).trim().toLowerCase();
+  const normalized = String(value as string).trim().toLowerCase();
   if (!normalized) return null;
 
   if (isPriorityDigitKey(normalized)) return `p${normalized}`;
@@ -19,7 +19,7 @@ export function normalizePriorityValue(value: unknown): string | null {
 
 export function formatPriorityBadgeText(rawPriority: unknown): string | null {
   if (rawPriority == null) return null;
-  const rawText = String(rawPriority).trim();
+  const rawText = String(rawPriority as string).trim();
   if (!rawText) return null;
 
   const normalized = rawText.toLowerCase();
@@ -92,6 +92,7 @@ export function getItemPriorityRank(item: TaskItem): number {
   // File item: read from frontmatter priority/prio/p
   const fm = item.frontmatter;
   if (!fm) return 100;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   const raw = fm.priority ?? fm.prio ?? fm.p;
   return getPriorityRankFromValue(raw);
 }
@@ -107,7 +108,7 @@ export function getPriorityRankFromValue(value: unknown): number {
     return Math.max(0, value);
   }
 
-  const normalized = String(value).trim().toLowerCase();
+  const normalized = String(value as string).trim().toLowerCase();
   if (!normalized) return 100;
   if (normalized === "urgent") return 0;
   if (normalized === "high") return 1;

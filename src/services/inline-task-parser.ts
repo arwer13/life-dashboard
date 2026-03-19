@@ -65,18 +65,18 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
   let sectionHeadingLevel = 0;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.trimEnd();
+    const line = lines[i].trimEnd();
 
     // Check for any heading
     const headingMatch = ANY_HEADING_RE.exec(line);
     if (headingMatch) {
-      const level = headingMatch[1]!.length;
+      const level = headingMatch[1].length;
 
       // Check if this is a Tasks heading
       const tasksMatch = TASKS_HEADING_RE.exec(line);
       if (tasksMatch) {
         insideTasksSection = true;
-        sectionHeadingLevel = tasksMatch[1]!.length;
+        sectionHeadingLevel = tasksMatch[1].length;
         continue;
       }
 
@@ -94,7 +94,7 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
     const checkboxMatch = UNCHECKED_CHECKBOX_RE.exec(trimmed);
     if (!checkboxMatch) continue;
 
-    const rawText = checkboxMatch[1]!.trim();
+    const rawText = checkboxMatch[1].trim();
     const displayText = stripPriorityEmojis(rawText);
     if (!displayText) continue;
 

@@ -78,6 +78,7 @@ export class LifeDashboardBeancountView extends TextFileView {
     this.highlightEl.empty();
     const text = this.editorEl.value;
     const lines = text.split("\n");
+    // eslint-disable-next-line no-undef
     const frag = createFragment();
 
     for (let i = 0; i < lines.length; i++) {

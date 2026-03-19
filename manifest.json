@@ -5,5 +5,5 @@
   "minAppVersion": "1.11.0",
   "description": "Track time on hierarchical task notes and visualise data across six views: timer, outline, canvas, calendar, time log, and kanban board.",
   "author": "arwer",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }

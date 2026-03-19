@@ -1,13 +1,11 @@
-import { setTooltip, type WorkspaceLeaf } from "obsidian";
+import { setTooltip } from "obsidian";
 import { DISPLAY_VERSION } from "../../version";
 import type { TaskItem } from "../../models/types";
 import {
   VIEW_TYPE_LIFE_DASHBOARD_CANVAS,
   OUTLINE_RANGE_OPTIONS,
-  OUTLINE_SORT_OPTIONS,
   type OutlineSortMode
 } from "../../models/view-types";
-import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel } from "../concern-tree-panel";
@@ -78,7 +76,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Concerns Canvas";
+    return "Concerns canvas";
   }
 
   getIcon(): string {
@@ -102,7 +100,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
 
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Concerns Canvas (draft)" });
+    headerTop.createEl("h3", { text: "Concerns canvas (draft)" });
     headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
 
     const toolbar = header.createEl("div", { cls: "fmo-canvas-toolbar" });
@@ -420,7 +418,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         type: "button",
         "aria-label": `Move ${tree.title}`
       }
-    }) as HTMLButtonElement;
+    });
     setTooltip(dragHandle, "Drag tree card");
 
     const titleInput = header.createEl("input", {
@@ -429,7 +427,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         type: "text",
         "aria-label": "Tree title"
       }
-    }) as HTMLInputElement;
+    });
     titleInput.value = tree.title;
     titleInput.addEventListener("change", () => {
       tree.title = titleInput.value.trim() || "Concern tree";
@@ -518,7 +516,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
       const card = cardEl as HTMLElement;
       const id = card.dataset.treeId?.trim();
       if (!id) return;
-      const preview = card.querySelector(".fmo-tree-panel-preview") as HTMLElement | null;
+      const preview = card.querySelector(".fmo-tree-panel-preview");
       if (!preview) return;
       foundAny = true;
       next.set(id, preview.scrollTop);
@@ -585,7 +583,7 @@ export class LifeDashboardConcernCanvasView extends LifeDashboardBaseView {
         type: "button",
         "aria-label": `Resize ${tree.title}`
       }
-    }) as HTMLButtonElement;
+    });
     setTooltip(resizeHandle, "Resize tree card");
 
     resizeHandle.addEventListener("pointerdown", (evt: PointerEvent) => {

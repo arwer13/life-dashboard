@@ -1,3 +1,4 @@
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { Decoration, DecorationSet, WidgetType } from "@codemirror/view";
 import type { EditorState, Extension } from "@codemirror/state";
 import { editorInfoField } from "obsidian";

@@ -4,18 +4,24 @@
   "private": true,
   "description": "Obsidian Life Dashboard plugin development helpers",
   "scripts": {
-    "build": "node esbuild.config.mjs production",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "deploy": "node scripts/sync-plugin.mjs",
     "dev": "node scripts/sync-plugin.mjs --watch",
     "release": "node scripts/sync-plugin.mjs --release",
     "build:plugin": "node esbuild.config.mjs production",
     "build:watch": "node esbuild.config.mjs watch",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "lint": "eslint .",
+    "version": "node version-bump.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
     "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-obsidianmd": "^0.1.9",
+    "globals": "^16.0.0",
     "obsidian": "^1.8.4",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.0.0"
   }
 }

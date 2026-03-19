@@ -10,7 +10,6 @@ import {
   CLOSED_FILTER_QUERY,
   type OutlineSortMode
 } from "../../models/view-types";
-import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import {
@@ -137,7 +136,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Concern Map";
+    return "Concern map";
   }
 
   getIcon(): string {
@@ -177,7 +176,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Concern Map" });
+    headerTop.createEl("h3", { text: "Concern map" });
     headerTop.createEl("span", { cls: "fmo-version", text: `v${DISPLAY_VERSION}` });
 
     const controlsRow = header.createEl("div", { cls: "fmo-concern-map-controls-row" });
@@ -237,7 +236,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     const rootRow = controls.createEl("label", { cls: "fmo-tree-panel-root-row" });
     rootRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Root" });
-    const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
+    const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" });
     rootSelect.createEl("option", { value: "", text: "All concerns" });
     for (const task of fileItems) {
       rootSelect.createEl("option", { value: task.path, text: task.basename });
@@ -253,7 +252,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     const rangeRow = optionsGrid.createEl("label", { cls: "fmo-tree-panel-option" });
     rangeRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Range" });
-    const rangeSelect = rangeRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
+    const rangeSelect = rangeRow.createEl("select", { cls: "fmo-outline-sort-select" });
     for (const option of OUTLINE_RANGE_OPTIONS) {
       rangeSelect.createEl("option", { value: option.value, text: option.label });
     }
@@ -266,7 +265,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     const sortRow = optionsGrid.createEl("label", { cls: "fmo-tree-panel-option" });
     sortRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Sort" });
-    const sortSelect = sortRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
+    const sortSelect = sortRow.createEl("select", { cls: "fmo-outline-sort-select" });
     for (const option of OUTLINE_SORT_OPTIONS) {
       sortSelect.createEl("option", { value: option.value, text: option.label });
     }
@@ -332,7 +331,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const input = row.createEl("input", {
       cls: "fmo-outline-tracked-only-input",
       attr: { type: "checkbox" }
-    }) as HTMLInputElement;
+    });
     input.checked = checked;
     row.createEl("span", { text: label });
     input.addEventListener("change", () => {
@@ -357,7 +356,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const sizeSlider = sizeLabel.createEl("input", {
       cls: "fmo-concern-map-size-slider",
       attr: { type: "range", min: String(MAP_MIN_FONT_SIZE), max: String(MAP_MAX_FONT_SIZE), step: "1" }
-    }) as HTMLInputElement;
+    });
     sizeSlider.value = String(this.filterState.fontSize);
     sizeSlider.addEventListener("input", () => {
       this.filterState.fontSize = Number(sizeSlider.value);
@@ -630,6 +629,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     // ── Coloring ──
     const rank = getItemPriorityRank(task);
     const hasPriority = rank < 100;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rawStatus = isFileItem(task) ? task.frontmatter?.status : undefined;
     const statusStr = rawStatus != null ? String(rawStatus).trim() : "";
     const byP = this.filterState.colorByPriority;
@@ -820,6 +820,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
         marquee.style.top = `${top}px`;
         marquee.style.width = `${width}px`;
         marquee.style.height = `${height}px`;
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         marquee.style.display = "block";
 
         const boxW = this.getScaledBoxWidth();

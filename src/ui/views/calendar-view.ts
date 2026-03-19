@@ -11,7 +11,6 @@ import type {
   HealthTrackingDay,
   HealthTrackingRangeSnapshot
 } from "../../services/health-tracking-service";
-import type LifeDashboardPlugin from "../../plugin";
 import type { OutlineTimeRange, TimeWindow } from "../../plugin";
 import { LifeDashboardBaseView } from "./base-view";
 import { ConcernTreePanel, type ConcernTreePanelState } from "../concern-tree-panel";
@@ -21,8 +20,7 @@ import {
   buildYearWeeks,
   getMonthStartWeekIndex,
   MONTH_ABBREVIATIONS,
-  pad2,
-  type YearSlot
+  pad2
 } from "../../services/year-grid-utils";
 
 type CalendarPeriod = "today" | "week" | "month" | "year";
@@ -156,7 +154,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
   }
 
   getDisplayText(): string {
-    return "Concerns Calendar";
+    return "Concerns calendar";
   }
 
   getIcon(): string {
@@ -234,7 +232,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     // Header with title and period toggle
     const header = contentEl.createEl("div", { cls: "fmo-header" });
     const headerTop = header.createEl("div", { cls: "fmo-header-top" });
-    headerTop.createEl("h3", { text: "Concerns Calendar" });
+    headerTop.createEl("h3", { text: "Concerns calendar" });
 
     const rangeRow = header.createEl("div", { cls: "fmo-outline-range-row" });
     for (const option of CALENDAR_PERIOD_OPTIONS) {
@@ -562,11 +560,11 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
     axisHead.createEl("div", { cls: "fmo-calendar-week-axis-spacer", text: "\u00a0" });
     axisHead.createEl("div", {
       cls: "fmo-calendar-week-axis-label",
-      text: "sleep"
+      text: "Sleep"
     });
     axisHead.createEl("div", {
       cls: "fmo-calendar-week-axis-label",
-      text: "steps"
+      text: "Steps"
     });
     axisHead.createEl("div", { cls: "fmo-calendar-week-axis-total-spacer", text: "\u00a0" });
   }
@@ -892,10 +890,13 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       (delta, startHeight) => {
         const scale = Math.max(MIN_ZOOM / this.zoom, Math.min(MAX_ZOOM / this.zoom, (startHeight + delta) / startHeight));
         gridEl.style.transform = `scaleY(${scale})`;
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         gridEl.style.transformOrigin = "top";
       },
       (delta, startHeight) => {
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         gridEl.style.transform = "";
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         gridEl.style.transformOrigin = "";
         if (Math.abs(delta) < 3) return;
         this.zoom = this.zoom * ((startHeight + delta) / startHeight);
@@ -954,6 +955,7 @@ export class LifeDashboardCalendarView extends LifeDashboardBaseView {
       if (highlightedPaths) {
         bar.style.opacity = highlightedPaths.has(bar.dataset.path!) ? "1" : "0.2";
       } else {
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment
         bar.style.opacity = "";
       }
     }

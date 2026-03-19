@@ -165,45 +165,45 @@ export default class LifeDashboardPlugin extends Plugin {
     this.registerEditorExtension(createSubConcernsExtension(this));
     this.registerEditorExtension(createCheckboxPromoteExtension(this));
 
-    this.addRibbonIcon("list-tree", "Open Life Dashboard", () => {
+    this.addRibbonIcon("list-tree", "Open all views", () => {
       void this.activateView();
     });
 
-    this.addRibbonIcon("network", "Open Concerns Canvas", () => {
+    this.addRibbonIcon("network", "Open concerns canvas", () => {
       void this.viewController.activateCanvasView();
     });
 
-    this.addRibbonIcon("timer", "Open Timer", () => {
+    this.addRibbonIcon("timer", "Open timer", () => {
       void this.viewController.activateTimerView();
     });
 
-    this.addRibbonIcon("list", "Open Concerns Outline", () => {
+    this.addRibbonIcon("list", "Open concerns outline", () => {
       void this.viewController.activateOutlineView();
     });
 
-    this.addRibbonIcon("calendar", "Open Concerns Calendar", () => {
+    this.addRibbonIcon("calendar", "Open concerns calendar", () => {
       void this.viewController.activateCalendarView();
     });
 
-    this.addRibbonIcon("history", "Open Time Log", () => {
+    this.addRibbonIcon("history", "Open time log", () => {
       void this.viewController.activateTimeLogView();
     });
 
-    this.addRibbonIcon("gantt-chart", "Open Timeline", () => {
+    this.addRibbonIcon("gantt-chart", "Open timeline", () => {
       void this.viewController.activateTimelineView();
     });
 
-    this.addRibbonIcon("pill", "Open Supplements Grid", () => {
+    this.addRibbonIcon("pill", "Open supplements grid", () => {
       void this.viewController.activateSupplementsView();
     });
 
-    this.addRibbonIcon("map", "Open Concern Map", () => {
+    this.addRibbonIcon("map", "Open concern map", () => {
       void this.viewController.activateConcernMapView();
     });
 
     this.addCommand({
-      id: "open-life-dashboard",
-      name: "Open Life Dashboard",
+      id: "open-all-views",
+      name: "Open all views",
       callback: () => {
         void this.activateView();
       }
@@ -211,7 +211,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-concerns-canvas",
-      name: "Open Concerns Canvas",
+      name: "Open concerns canvas",
       callback: () => {
         void this.viewController.activateCanvasView();
       }
@@ -219,7 +219,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-timer",
-      name: "Open Timer",
+      name: "Open timer",
       callback: () => {
         void this.viewController.activateTimerView();
       }
@@ -227,7 +227,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-concerns-outline",
-      name: "Open Concerns Outline",
+      name: "Open concerns outline",
       callback: () => {
         void this.viewController.activateOutlineView();
       }
@@ -235,7 +235,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-calendar",
-      name: "Open Concerns Calendar",
+      name: "Open concerns calendar",
       callback: () => {
         void this.viewController.activateCalendarView();
       }
@@ -243,7 +243,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-time-log",
-      name: "Open Time Log",
+      name: "Open time log",
       callback: () => {
         void this.viewController.activateTimeLogView();
       }
@@ -251,7 +251,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-timeline",
-      name: "Open Timeline",
+      name: "Open timeline",
       callback: () => {
         void this.viewController.activateTimelineView();
       }
@@ -259,7 +259,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-supplements",
-      name: "Open Supplements Grid",
+      name: "Open supplements grid",
       callback: () => {
         void this.viewController.activateSupplementsView();
       }
@@ -267,7 +267,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "open-concern-map",
-      name: "Open Concern Map",
+      name: "Open concern map",
       callback: () => {
         void this.viewController.activateConcernMapView();
       }
@@ -275,7 +275,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "select-concern",
-      name: "Quick Open Concern",
+      name: "Quick open concern",
       callback: () => {
         this.openConcernQuickSearch();
       }
@@ -315,7 +315,7 @@ export default class LifeDashboardPlugin extends Plugin {
 
     this.addCommand({
       id: "create-concerns-kanban",
-      name: "Create Concerns Kanban board",
+      name: "Create concerns kanban board",
       callback: () => {
         void this.createConcernsKanbanBase();
       }
@@ -420,7 +420,7 @@ export default class LifeDashboardPlugin extends Plugin {
     );
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     this.macOsTrayTimerService.destroy();
     this.clearPowerMonitorListeners();
     this.closeTimeLogFsWatcher();
@@ -437,14 +437,19 @@ export default class LifeDashboardPlugin extends Plugin {
       window.clearTimeout(this.concernMapSaveTimer);
       this.concernMapSaveTimer = null;
     }
-    await this.saveSettings();
 
     this.subConcernActionEl?.remove();
     this.subConcernActionEl = null;
     this.subConcernActionFilePath = null;
 
-    await this.trackingService.flushActiveTrackingOnUnload();
-    await this.persistVisibilityState(true);
+    // Best-effort persistence: Obsidian's onunload is synchronous so these
+    // writes are fire-and-forget. Settings and tracking state are also saved
+    // eagerly on every change, so this is a final-flush safety net.
+    void (async () => {
+      await this.saveSettings();
+      await this.trackingService.flushActiveTrackingOnUnload();
+      await this.persistVisibilityState(true);
+    })();
   }
 
   getTaskTreeItems(): TaskItem[] {
@@ -771,7 +776,7 @@ export default class LifeDashboardPlugin extends Plugin {
     }
 
     return {
-      modifiers: [...hotkey.modifiers].sort() as Hotkey["modifiers"],
+      modifiers: [...hotkey.modifiers].sort(),
       key: this.normalizeHotkeyKey(key) ?? key
     };
   }
@@ -995,7 +1000,7 @@ export default class LifeDashboardPlugin extends Plugin {
         const current =
           currentRaw == null
             ? ""
-            : String(currentRaw).trim().toLowerCase();
+            : `${currentRaw as string | number}`.trim().toLowerCase();
         if (current === normalizedPriority) return false;
         fm[PRIORITY_FRONTMATTER_KEY] = normalizedPriority;
         return true;
@@ -1256,6 +1261,7 @@ export default class LifeDashboardPlugin extends Plugin {
   private sanitizeFileName(text: string): string {
     return text
       .replace(/[\\/:*?"<>|]/g, "-")
+      // eslint-disable-next-line no-control-regex
       .replace(/[\x00-\x1F\x7F]/g, "-")
       .replace(/^[\s.]+|[\s.]+$/g, "")
       .replace(/-{2,}/g, "-")
@@ -1323,15 +1329,15 @@ export default class LifeDashboardPlugin extends Plugin {
     let lastCheckboxLine = -1;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!.trimEnd();
+      const line = lines[i].trimEnd();
       const headingMatch = ANY_HEADING_RE.exec(line);
 
       if (headingMatch) {
-        const level = headingMatch[1]!.length;
+        const level = headingMatch[1].length;
         const tasksMatch = TASKS_HEADING_RE.exec(line);
         if (tasksMatch) {
           insideTasksSection = true;
-          sectionHeadingLevel = tasksMatch[1]!.length;
+          sectionHeadingLevel = tasksMatch[1].length;
           lastCheckboxLine = i;
           continue;
         }
@@ -1379,7 +1385,7 @@ export default class LifeDashboardPlugin extends Plugin {
     const targetContent = await this.app.vault.read(targetFile);
     const insertIdx = this.findTasksSectionInsertLine(targetContent);
     if (insertIdx < 0) {
-      new Notice("Target does not have a Tasks section. Move aborted.");
+      new Notice("Target does not have a tasks section. Move aborted.");
       return;
     }
     const targetLines = targetContent.split("\n");
@@ -1416,10 +1422,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
   private updateSubConcernHeaderButton(): void {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const activePath = activeView?.file?.path ?? null;
-    const isConcern = activePath != null
-      && activeView!.file != null
-      && this.taskFilterService.fileMatchesTaskFilter(activeView!.file);
+    const activeFile = activeView?.file ?? null;
+    const activePath = activeFile?.path ?? null;
+    const isConcern = activeFile != null
+      && this.taskFilterService.fileMatchesTaskFilter(activeFile);
     const targetPath = isConcern ? activePath : null;
 
     if (targetPath === this.subConcernActionFilePath) return;
@@ -1434,7 +1440,7 @@ export default class LifeDashboardPlugin extends Plugin {
     if (!actionsEl) return;
 
     const file = activeView.file;
-    const btn = createEl("a", {
+    const btn = activeView.containerEl.createEl("a", {
       cls: "view-action clickable-icon",
       attr: { "aria-label": "Create sub-concern" }
     });
@@ -1737,7 +1743,7 @@ export default class LifeDashboardPlugin extends Plugin {
     if (!("getBasePath" in adapter) || typeof adapter.getBasePath !== "function") return;
 
     const timeLogPath = this.getNormalizedTimeLogPath();
-    const basePath = adapter.getBasePath() as string;
+    const basePath = (adapter as unknown as { getBasePath: () => string }).getBasePath();
     const fs = this.requireNode<typeof import("fs")>("fs");
     const path = this.requireNode<typeof import("path")>("path");
     if (!fs || !path) return;
@@ -2134,7 +2140,7 @@ export default class LifeDashboardPlugin extends Plugin {
       const req = (window as unknown as { require?: (id: string) => unknown }).require;
       if (!req) return false;
 
-      /* eslint-disable @typescript-eslint/no-explicit-any */
+      /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
       let BrowserWindow: any, screen: any;
       try {
         const m = req("electron/main") as any;
@@ -2149,7 +2155,6 @@ export default class LifeDashboardPlugin extends Plugin {
         } catch { /* ignore */ }
       }
       if (!BrowserWindow || !screen) return false;
-      /* eslint-enable @typescript-eslint/no-explicit-any */
 
       const display = screen.getPrimaryDisplay();
       const width = 480;
@@ -2225,6 +2230,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
         win.webContents.focus();
       });
       win.on("blur", () => { if (!win.isDestroyed()) win.close(); });
+      /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 
       return true;
     } catch {
@@ -2235,7 +2241,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
   private async addQuickTaskToInbox(text: string, priorityEmoji: string | null): Promise<void> {
     const inboxPath = this.settings.inboxNotePath;
     if (!inboxPath) {
-      new Notice("No inbox note configured. Set it in Life Dashboard settings.");
+      new Notice("No inbox note configured. Set it in plugin settings.");
       return;
     }
 
@@ -2260,7 +2266,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
     if (inserted) {
       new Notice(`Added to inbox: ${text}`);
     } else {
-      new Notice("Inbox note does not have a Tasks section.");
+      new Notice("Inbox note does not have a tasks section.");
     }
   }
 
@@ -2286,11 +2292,13 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
     const generated = this.generateConcernId();
 
     try {
+      /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
       await this.app.fileManager.processFrontMatter(file, (fm) => {
         const current = this.getTaskIdFromFrontmatter(fm);
         if (current) return;
         fm.id = generated;
       });
+      /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access */
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       new Notice(`Could not update frontmatter id: ${message}`);
@@ -2302,6 +2310,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
   }
 
   private async loadSettings(): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.settings.timeLogPath = this.getNormalizedTimeLogPath();
   }

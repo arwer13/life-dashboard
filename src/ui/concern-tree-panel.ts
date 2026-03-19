@@ -4,7 +4,6 @@ import { isFileItem, isInlineItem } from "../models/types";
 import {
   type OutlineSortMode,
   type TaskTreeData,
-  type TaskTreeBuildOptions,
   type TreeRenderState,
   OUTLINE_RANGE_OPTIONS,
   OUTLINE_SORT_OPTIONS,
@@ -167,7 +166,7 @@ export class ConcernTreePanel {
     if (!this.hideControls.root) {
       const rootRow = controls.createEl("label", { cls: "fmo-tree-panel-root-row" });
       rootRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Root" });
-      const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" }) as HTMLSelectElement;
+      const rootSelect = rootRow.createEl("select", { cls: "fmo-outline-sort-select" });
       rootSelect.createEl("option", { value: "", text: "All concerns" });
       for (const task of tasksByName) {
         rootSelect.createEl("option", {
@@ -189,7 +188,7 @@ export class ConcernTreePanel {
       rangeRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Range" });
       const rangeSelect = rangeRow.createEl("select", {
         cls: "fmo-outline-sort-select"
-      }) as HTMLSelectElement;
+      });
       for (const option of OUTLINE_RANGE_OPTIONS) {
         rangeSelect.createEl("option", { value: option.value, text: option.label });
       }
@@ -205,7 +204,7 @@ export class ConcernTreePanel {
       sortRow.createEl("span", { cls: "fmo-tree-panel-control-label", text: "Sort" });
       const sortSelect = sortRow.createEl("select", {
         cls: "fmo-outline-sort-select"
-      }) as HTMLSelectElement;
+      });
       for (const option of OUTLINE_SORT_OPTIONS) {
         sortSelect.createEl("option", { value: option.value, text: option.label });
       }
@@ -223,7 +222,7 @@ export class ConcernTreePanel {
       const trackedOnlyInput = trackedOnlyRow.createEl("input", {
         cls: "fmo-outline-tracked-only-input",
         attr: { type: "checkbox" }
-      }) as HTMLInputElement;
+      });
       trackedOnlyInput.checked = this.state.trackedOnly;
       trackedOnlyRow.createEl("span", { text: "Tracked only" });
       trackedOnlyInput.addEventListener("change", () => {
@@ -237,7 +236,7 @@ export class ConcernTreePanel {
       const showParentsInput = showParentsRow.createEl("input", {
         cls: "fmo-outline-tracked-only-input",
         attr: { type: "checkbox" }
-      }) as HTMLInputElement;
+      });
       showParentsInput.checked = this.state.showParents;
       showParentsRow.createEl("span", { text: "Parents" });
       showParentsInput.addEventListener("change", () => {
@@ -250,7 +249,7 @@ export class ConcernTreePanel {
     const showInlineInput = showInlineRow.createEl("input", {
       cls: "fmo-outline-tracked-only-input",
       attr: { type: "checkbox" }
-    }) as HTMLInputElement;
+    });
     showInlineInput.checked = this.state.showInlineTasks;
     showInlineRow.createEl("span", { text: "Inline tasks" });
     showInlineInput.addEventListener("change", () => {
@@ -262,7 +261,7 @@ export class ConcernTreePanel {
     const priorityOnlyInput = priorityOnlyRow.createEl("input", {
       cls: "fmo-outline-tracked-only-input",
       attr: { type: "checkbox" }
-    }) as HTMLInputElement;
+    });
     priorityOnlyInput.checked = this.state.priorityOnly;
     priorityOnlyRow.createEl("span", { text: "Priority only" });
     priorityOnlyInput.addEventListener("change", () => {
@@ -274,7 +273,7 @@ export class ConcernTreePanel {
     const showClosedInput = showClosedRow.createEl("input", {
       cls: "fmo-outline-tracked-only-input",
       attr: { type: "checkbox" }
-    }) as HTMLInputElement;
+    });
     showClosedInput.checked = this.state.showClosed;
     showClosedRow.createEl("span", { text: "Show closed" });
     setTooltip(showClosedRow, `When off: ${CLOSED_FILTER_QUERY}`);
@@ -495,7 +494,7 @@ export class ConcernTreePanel {
         attr: {
           type: "button"
         }
-      }) as HTMLButtonElement;
+      });
       setTreeToggleState(toggle, !isCollapsed, node.item.basename);
       toggle.addEventListener("click", () => {
         if (this.state.collapsedNodePaths.has(node.path)) {

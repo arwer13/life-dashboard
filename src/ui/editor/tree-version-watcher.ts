@@ -1,4 +1,6 @@
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { editorInfoField } from "obsidian";
 import type LifeDashboardPlugin from "../../plugin";

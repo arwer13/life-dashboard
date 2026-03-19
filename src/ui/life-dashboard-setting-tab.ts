@@ -53,8 +53,6 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Life Dashboard Settings" });
-
     const refreshFilters = (): Promise<void> => this.plugin.postFilterSettingsChanged();
 
     const textSettings: TextSettingConfig[] = [
@@ -233,7 +231,7 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
     });
   }
 
-  private createDebouncedPersist(afterSave?: () => void): {
+  private createDebouncedPersist(afterSave?: () => Promise<void>): {
     schedulePersist: () => void;
     flushPersist: () => void;
   } {

@@ -1,15 +1,27 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "baseUrl": "src",
+    "inlineSourceMap": true,
+    "inlineSources": true,
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
+    "target": "ES6",
+    "allowJs": true,
     "noImplicitAny": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "isolatedModules": true,
+    "strictNullChecks": true,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
+    "useUnknownInCatchVariables": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": ["node", "obsidian"],
-    "lib": ["DOM", "ES2020"]
+    "lib": ["DOM", "DOM.Iterable", "ES5", "ES6", "ES7"]
   },
-  "include": ["src/**/*.ts", "esbuild.config.mjs"]
+  "include": ["src/**/*.ts"]
 }

@@ -233,6 +233,7 @@ export class MacOsTrayTimerService {
   }
 
   private isMacOsDesktop(): boolean {
+    // eslint-disable-next-line no-undef
     return typeof process !== "undefined" && process.platform === "darwin";
   }
 
@@ -276,7 +277,7 @@ export class MacOsTrayTimerService {
     return null;
   }
 
-  private createTrayIcon(nativeImage: ElectronNativeImageLike | null): unknown | null {
+  private createTrayIcon(nativeImage: ElectronNativeImageLike | null): unknown {
     if (nativeImage?.createFromDataURL) {
       return nativeImage.createFromDataURL(TRANSPARENT_TRAY_PNG_DATA_URL);
     }

@@ -109,7 +109,7 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
 
   onOpen(): void {
     this.isModalOpen = true;
-    super.onOpen();
+    void super.onOpen();
     this.applySearchMode(true);
   }
 
@@ -199,12 +199,14 @@ export class TaskSelectModal extends FuzzySuggestModal<TFile> {
   }
 
   private moveSelection(direction: 1 | -1): void {
+    /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
     const chooser = (this as any).chooser;
     if (!chooser?.values?.length) return;
     const count: number = chooser.values.length;
     const current: number = chooser.selectedItem ?? 0;
     const next = Math.min(Math.max(current + direction, 0), count - 1);
     chooser.setSelectedItem(next, true);
+    /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any */
   }
 
   private registerCycleHotkeys(): void {

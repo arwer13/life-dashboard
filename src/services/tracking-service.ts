@@ -53,7 +53,7 @@ export class TrackingService {
     }
 
     if (!taskPath) {
-      new Notice("Select a task first (Change task...) or open a task note.");
+      new Notice("Select a task first (change task...) or open a task note.");
       return;
     }
 
@@ -65,7 +65,7 @@ export class TrackingService {
 
     const taskId = await this.deps.ensureTaskIdForFile(taskFile);
     if (!taskId) {
-      new Notice("Could not prepare task id for tracking.");
+      new Notice("Could not prepare task ID for tracking.");
       return;
     }
 

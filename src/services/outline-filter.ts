@@ -122,6 +122,6 @@ export function flattenFrontmatterValues(value: unknown): string[] {
   try {
     return [JSON.stringify(value)];
   } catch {
-    return [String(value)];
+    return [String(value as string)];
   }
 }
