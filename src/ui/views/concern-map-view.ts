@@ -34,6 +34,8 @@ type ConcernMapFilterState = {
   showClosed: boolean;
   showStatus: boolean;
   fontSize: number;
+  colorByPriority: boolean;
+  colorByStatus: boolean;
 };
 
 type PersistedConcernMapState = {
@@ -54,6 +56,39 @@ const CONCERN_MAP_VERSION = 2;
 const DRAG_THRESHOLD = 4;
 const DEFAULT_REF_WIDTH = 600;
 const DEFAULT_REF_HEIGHT = 400;
+
+// ── Box coloring ──────────────────────────────────────────────────────
+
+const PRIORITY_HUES: Record<number, number> = { 0: 355, 1: 28, 2: 52, 3: 210, 4: 260 };
+
+const STATUS_HUES: Record<string, number> = {
+  done: 130, completed: 130,
+  rejected: 0, cancelled: 0,
+  "in-progress": 210, active: 210,
+  blocked: 35, waiting: 35,
+};
+
+function priorityBg(rank: number): string {
+  const hue = PRIORITY_HUES[rank] ?? 260;
+  return `hsla(${hue}, 55%, 68%, 0.18)`;
+}
+
+function priorityBorder(rank: number): string {
+  const hue = PRIORITY_HUES[rank] ?? 260;
+  return `hsla(${hue}, 60%, 60%, 0.5)`;
+}
+
+function statusBg(status: string): string {
+  const key = status.toLowerCase();
+  const hue = STATUS_HUES[key] ?? hashToHue(key);
+  return `hsla(${hue}, 55%, 68%, 0.18)`;
+}
+
+function hashToHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return ((h % 360) + 360) % 360;
+}
 
 function isRelativePosition(value: unknown): value is { rx: number; ry: number } {
   if (typeof value !== "object" || value === null) return false;
@@ -77,7 +112,9 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     priorityOnly: true,
     showClosed: false,
     showStatus: true,
-    fontSize: MAP_BASE_FONT_SIZE
+    fontSize: MAP_BASE_FONT_SIZE,
+    colorByPriority: false,
+    colorByStatus: false
   };
   /** Positions stored as fractions of viewport dimensions. */
   private positions = new Map<string, { rx: number; ry: number }>();
@@ -332,6 +369,18 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       rerenderCanvas();
     });
 
+    const colorRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
+    this.renderFlag(colorRow, "Priority colors", this.filterState.colorByPriority, (v) => {
+      this.filterState.colorByPriority = v;
+      this.persistState();
+      rerenderCanvas();
+    });
+    this.renderFlag(colorRow, "Status colors", this.filterState.colorByStatus, (v) => {
+      this.filterState.colorByStatus = v;
+      this.persistState();
+      rerenderCanvas();
+    });
+
     const buttonsRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
 
     const resetBtn = buttonsRow.createEl("button", {
@@ -558,20 +607,35 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     this.boxElements.set(task.path, box);
 
+    // ── Coloring ──
+    const rank = getItemPriorityRank(task);
+    const hasPriority = rank < 100;
+    const rawStatus = isFileItem(task) ? task.frontmatter?.status : undefined;
+    const statusStr = rawStatus != null ? String(rawStatus).trim() : "";
+    const byP = this.filterState.colorByPriority;
+    const byS = this.filterState.colorByStatus;
+
+    if (byP && byS) {
+      // Both: left border = priority, background = status (fallback to priority if no status)
+      if (hasPriority) box.style.borderLeft = `3px solid ${priorityBorder(rank)}`;
+      if (statusStr) box.style.background = statusBg(statusStr);
+      else if (hasPriority) box.style.background = priorityBg(rank);
+    } else if (byP && hasPriority) {
+      box.style.background = priorityBg(rank);
+    } else if (byS && statusStr) {
+      box.style.background = statusBg(statusStr);
+    }
+
     const nameEl = box.createEl("span", {
       cls: "fmo-concern-map-box-name",
       text: task.basename
     });
 
-    if (this.filterState.showStatus && isFileItem(task)) {
-      const raw = task.frontmatter?.status;
-      const statusLabel = raw != null ? String(raw).trim() : "";
-      if (statusLabel) {
-        nameEl.createEl("span", {
-          cls: "fmo-concern-map-box-status",
-          text: ` ${statusLabel}`
-        });
-      }
+    if (this.filterState.showStatus && isFileItem(task) && statusStr) {
+      nameEl.createEl("span", {
+        cls: "fmo-concern-map-box-status",
+        text: ` ${statusStr}`
+      });
     }
 
     const priorityBadge = getItemPriorityBadge(task);
@@ -963,7 +1027,9 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       ? Math.max(MAP_MIN_FONT_SIZE, Math.min(MAP_MAX_FONT_SIZE, parsed.filter.fontSize))
       : MAP_BASE_FONT_SIZE;
     const showStatus = typeof parsed.filter.showStatus === "boolean" ? parsed.filter.showStatus : true;
-    this.filterState = { ...parsed.filter, fontSize, showStatus };
+    const colorByPriority = typeof parsed.filter.colorByPriority === "boolean" ? parsed.filter.colorByPriority : false;
+    const colorByStatus = typeof parsed.filter.colorByStatus === "boolean" ? parsed.filter.colorByStatus : false;
+    this.filterState = { ...parsed.filter, fontSize, showStatus, colorByPriority, colorByStatus };
 
     this.positions = new Map();
     for (const [path, pos] of Object.entries(parsed.positions)) {
