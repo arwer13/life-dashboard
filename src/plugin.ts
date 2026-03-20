@@ -1717,7 +1717,8 @@ export default class LifeDashboardPlugin extends Plugin {
       isTracking,
       elapsedLabel: this.timeData.formatClockDuration(elapsedSeconds),
       taskLabel: this.getMacOsTrayTaskLabel(),
-      recentConcerns
+      recentConcerns,
+      inboxShortcut: this.registeredGlobalShortcut ?? undefined
     });
   }
 
@@ -2227,20 +2228,23 @@ export default class LifeDashboardPlugin extends Plugin {
       if (!req) return false;
 
       /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
-      let BrowserWindow: any, screen: any;
+      let BrowserWindow: any, screen: any, app: any;
       try {
         const m = req("electron/main") as any;
         BrowserWindow = m?.BrowserWindow;
         screen = m?.screen;
+        app = m?.app;
       } catch { /* ignore */ }
       if (!BrowserWindow) {
         try {
           const e = req("electron") as any;
           BrowserWindow = e?.BrowserWindow ?? e?.remote?.BrowserWindow;
           screen = e?.screen ?? e?.remote?.screen;
+          app = e?.app ?? e?.remote?.app;
         } catch { /* ignore */ }
       }
       if (!BrowserWindow || !screen) return false;
+      const wasObsidianFocused = BrowserWindow.getAllWindows().some((w: any) => !w.isDestroyed() && w.isFocused());
 
       const display = screen.getPrimaryDisplay();
       const width = 480;
@@ -2316,6 +2320,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
         win.webContents.focus();
       });
       win.on("blur", () => { if (!win.isDestroyed()) win.close(); });
+      win.on("closed", () => { if (!wasObsidianFocused && app?.hide) app.hide(); });
       /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument */
 
       return true;

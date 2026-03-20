@@ -13,6 +13,7 @@ type ElectronMenuItemTemplateLike = {
   label?: string;
   type?: "separator";
   enabled?: boolean;
+  accelerator?: string;
   click?: () => void;
 };
 
@@ -59,6 +60,7 @@ export type MacOsTrayTimerViewModel = {
   elapsedLabel: string;
   taskLabel: string;
   recentConcerns: MacOsTrayRecentConcern[];
+  inboxShortcut?: string;
 };
 
 type MacOsTrayTimerActions = {
@@ -149,6 +151,7 @@ export class MacOsTrayTimerService {
       { type: "separator" },
       {
         label: "Add to inbox...",
+        accelerator: model.inboxShortcut,
         click: this.actions.quickAddTask
       }
     ];
