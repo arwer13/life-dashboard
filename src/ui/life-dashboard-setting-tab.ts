@@ -1,6 +1,6 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import type LifeDashboardPlugin from "../plugin";
-import { DEFAULT_TIME_LOG_PATH } from "../settings";
+import { DEFAULT_TIME_LOG_PATH, DEFAULT_SUPPLEMENTS_FILE_PATH } from "../settings";
 import { FileSuggest } from "./file-suggest";
 
 type TextSettingConfig = {
@@ -54,17 +54,20 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     const refreshFilters = (): Promise<void> => this.plugin.postFilterSettingsChanged();
+    const refreshView = async (): Promise<void> => { this.plugin.refreshView(); };
 
-    const textSettings: TextSettingConfig[] = [
+    // ── Concern filtering ──────────────────────────────────
+
+    new Setting(containerEl).setName("Concern filtering").setHeading();
+
+    for (const config of [
       {
         name: "Task property name",
         description: "Frontmatter key used to identify task notes.",
         placeholder: "type",
         getValue: () => this.plugin.settings.propertyName,
-        setValue: (value) => {
-          this.plugin.settings.propertyName = value;
-        },
-        transform: (value) => value.trim(),
+        setValue: (value: string) => { this.plugin.settings.propertyName = value; },
+        transform: (value: string) => value.trim(),
         afterSave: refreshFilters
       },
       {
@@ -72,9 +75,7 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         description: "Required value for task notes. Leave empty to include any note with the property.",
         placeholder: "concen",
         getValue: () => this.plugin.settings.propertyValue,
-        setValue: (value) => {
-          this.plugin.settings.propertyValue = value;
-        },
+        setValue: (value: string) => { this.plugin.settings.propertyValue = value; },
         afterSave: refreshFilters
       },
       {
@@ -82,10 +83,8 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         description: "Optional second frontmatter key to filter task notes.",
         placeholder: "status",
         getValue: () => this.plugin.settings.additionalFilterPropertyName,
-        setValue: (value) => {
-          this.plugin.settings.additionalFilterPropertyName = value;
-        },
-        transform: (value) => value.trim(),
+        setValue: (value: string) => { this.plugin.settings.additionalFilterPropertyName = value; },
+        transform: (value: string) => value.trim(),
         afterSave: refreshFilters
       },
       {
@@ -93,101 +92,47 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
         description: "Optional second filter value. Leave empty to require only additional property presence.",
         placeholder: "active",
         getValue: () => this.plugin.settings.additionalFilterPropertyValue,
-        setValue: (value) => {
-          this.plugin.settings.additionalFilterPropertyValue = value;
-        },
+        setValue: (value: string) => { this.plugin.settings.additionalFilterPropertyValue = value; },
         afterSave: refreshFilters
-      },
-      {
-        name: "Kanban default column property",
-        description: "Frontmatter property used for kanban columns when creating a new board view.",
-        placeholder: "status",
-        getValue: () => this.plugin.settings.kanbanDefaultColumnProperty,
-        setValue: (value) => {
-          this.plugin.settings.kanbanDefaultColumnProperty = value;
-        },
-        transform: (value) => value.trim() || "status"
-      },
-      {
-        name: "Kanban default swimlane property",
-        description: "Frontmatter property used for kanban swimlanes when creating a new board view. Leave empty to disable swimlanes by default.",
-        placeholder: "priority",
-        getValue: () => this.plugin.settings.kanbanDefaultSwimlaneProperty,
-        setValue: (value) => {
-          this.plugin.settings.kanbanDefaultSwimlaneProperty = value;
-        },
-        transform: (value) => value.trim()
-      },
-      {
-        name: "Minimum trackable time (minutes)",
-        description: "Sessions shorter than this are discarded when pressing Stop.",
-        placeholder: "2",
-        getValue: () => String(this.plugin.settings.minimumTrackableMinutes),
-        setValue: (value) => {
-          const parsed = Number.parseInt(value, 10);
-          this.plugin.settings.minimumTrackableMinutes = Number.isFinite(parsed) && parsed >= 1 ? parsed : 2;
-        },
-        transform: (value) => value.trim(),
-        afterSave: async () => {
-          this.plugin.refreshView();
-        }
-      },
-      {
-        name: "Outline max rows",
-        description: "Maximum number of rows displayed in canvas/outline tree panels before truncating.",
-        placeholder: "1000",
-        getValue: () => String(this.plugin.settings.outlineMaxRows),
-        setValue: (value) => {
-          const parsed = Number.parseInt(value, 10);
-          this.plugin.settings.outlineMaxRows = Number.isFinite(parsed) && parsed >= 50 ? parsed : 1000;
-        },
-        transform: (value) => value.trim(),
-        afterSave: async () => {
-          this.plugin.refreshView();
-        }
-      },
-      {
-        name: "Time log file path",
-        description: "JSON file path in vault where time entries are stored.",
-        placeholder: DEFAULT_TIME_LOG_PATH,
-        getValue: () => this.plugin.settings.timeLogPath,
-        setValue: (value) => {
-          this.plugin.settings.timeLogPath = value;
-        },
-        transform: (value) => value.trim() || DEFAULT_TIME_LOG_PATH,
-        afterSave: async () => {
-          await this.plugin.onTimeLogPathSettingChanged();
-        }
-      },
-      {
-        name: "Inbox note path",
-        description: "Vault path to the inbox concern note (e.g., \"Inbox.md\"). Used by the tray Quick Task action.",
-        placeholder: "Inbox.md",
-        getValue: () => this.plugin.settings.inboxNotePath,
-        setValue: (value) => {
-          this.plugin.settings.inboxNotePath = value;
-        },
-        transform: (value) => value.trim(),
-        fileSuggest: true
-      },
-      {
-        name: "Inbox global shortcut",
-        description: "System-wide shortcut to open the Add to inbox window. Uses Electron accelerator format (e.g., CommandOrControl+Alt+Shift+I). Leave empty to disable.",
-        placeholder: "CommandOrControl+Alt+Shift+I",
-        getValue: () => this.plugin.settings.inboxGlobalShortcut,
-        setValue: (value) => {
-          this.plugin.settings.inboxGlobalShortcut = value;
-        },
-        transform: (value) => value.trim(),
-        afterSave: async () => {
-          this.plugin.onInboxGlobalShortcutSettingChanged();
-        }
       }
-    ];
-
-    for (const config of textSettings) {
+    ] satisfies TextSettingConfig[]) {
       this.addTextSetting(containerEl, config);
     }
+
+    this.addToggleSetting(containerEl, {
+      name: "Case sensitive",
+      description: "If enabled, value matching is case sensitive for all filters.",
+      getValue: () => this.plugin.settings.caseSensitive,
+      setValue: (value) => { this.plugin.settings.caseSensitive = value; },
+      afterSave: refreshFilters
+    });
+
+    // ── Time tracking ──────────────────────────────────────
+
+    new Setting(containerEl).setName("Time tracking").setHeading();
+
+    this.addTextSetting(containerEl, {
+      name: "Time log file path",
+      description: "JSON file path in vault where time entries are stored.",
+      placeholder: DEFAULT_TIME_LOG_PATH,
+      getValue: () => this.plugin.settings.timeLogPath,
+      setValue: (value) => { this.plugin.settings.timeLogPath = value; },
+      transform: (value) => value.trim() || DEFAULT_TIME_LOG_PATH,
+      afterSave: async () => { await this.plugin.onTimeLogPathSettingChanged(); }
+    });
+
+    this.addTextSetting(containerEl, {
+      name: "Minimum trackable time (minutes)",
+      description: "Sessions shorter than this are discarded when pressing Stop.",
+      placeholder: "2",
+      getValue: () => String(this.plugin.settings.minimumTrackableMinutes),
+      setValue: (value) => {
+        const parsed = Number.parseInt(value, 10);
+        this.plugin.settings.minimumTrackableMinutes = Number.isFinite(parsed) && parsed >= 1 ? parsed : 2;
+      },
+      transform: (value) => value.trim(),
+      afterSave: refreshView
+    });
 
     this.addTextAreaSetting(containerEl, {
       name: "Timer notifications",
@@ -196,12 +141,8 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
       placeholder:
         "30m \"Hey, the time is up!\"\n35m \"You don't wanna miss the opportunity!\"",
       getValue: () => this.plugin.settings.timerNotificationRules,
-      setValue: (value) => {
-        this.plugin.settings.timerNotificationRules = value;
-      },
-      afterSave: async () => {
-        this.plugin.refreshView();
-      }
+      setValue: (value) => { this.plugin.settings.timerNotificationRules = value; },
+      afterSave: refreshView
     });
 
     this.addToggleSetting(containerEl, {
@@ -209,22 +150,86 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
       description:
         "Shows the running timer in the macOS menu bar while Obsidian is open. Requires desktop Obsidian on macOS.",
       getValue: () => this.plugin.settings.macOsTrayTimerEnabled,
-      setValue: (value) => {
-        this.plugin.settings.macOsTrayTimerEnabled = value;
-      },
-      afterSave: async () => {
-        this.plugin.onMacOsTrayTimerSettingChanged();
-      }
+      setValue: (value) => { this.plugin.settings.macOsTrayTimerEnabled = value; },
+      afterSave: async () => { this.plugin.onMacOsTrayTimerSettingChanged(); }
     });
 
-    this.addToggleSetting(containerEl, {
-      name: "Case sensitive",
-      description: "If enabled, value matching is case sensitive for all filters.",
-      getValue: () => this.plugin.settings.caseSensitive,
+    // ── Kanban ─────────────────────────────────────────────
+
+    new Setting(containerEl).setName("Kanban").setHeading();
+
+    this.addTextSetting(containerEl, {
+      name: "Default column property",
+      description: "Frontmatter property used for kanban columns when creating a new board view.",
+      placeholder: "status",
+      getValue: () => this.plugin.settings.kanbanDefaultColumnProperty,
+      setValue: (value) => { this.plugin.settings.kanbanDefaultColumnProperty = value; },
+      transform: (value) => value.trim() || "status"
+    });
+
+    this.addTextSetting(containerEl, {
+      name: "Default swimlane property",
+      description: "Frontmatter property used for kanban swimlanes when creating a new board view. Leave empty to disable swimlanes by default.",
+      placeholder: "priority",
+      getValue: () => this.plugin.settings.kanbanDefaultSwimlaneProperty,
+      setValue: (value) => { this.plugin.settings.kanbanDefaultSwimlaneProperty = value; },
+      transform: (value) => value.trim()
+    });
+
+    // ── Supplements ────────────────────────────────────────
+
+    new Setting(containerEl).setName("Supplements").setHeading();
+
+    this.addTextSetting(containerEl, {
+      name: "Supplements file path",
+      description: "Vault path to the markdown file with supplement definitions and log.",
+      placeholder: DEFAULT_SUPPLEMENTS_FILE_PATH,
+      getValue: () => this.plugin.settings.supplementsFilePath,
+      setValue: (value) => { this.plugin.settings.supplementsFilePath = value; },
+      transform: (value) => value.trim() || DEFAULT_SUPPLEMENTS_FILE_PATH,
+      fileSuggest: true,
+      afterSave: async () => { await this.plugin.reloadSupplementsAndRefresh(); }
+    });
+
+    // ── Inbox ──────────────────────────────────────────────
+
+    new Setting(containerEl).setName("Inbox").setHeading();
+
+    this.addTextSetting(containerEl, {
+      name: "Inbox note path",
+      description: "Vault path to the inbox concern note (e.g., \"Inbox.md\"). Used by the tray Quick Task action.",
+      placeholder: "Inbox.md",
+      getValue: () => this.plugin.settings.inboxNotePath,
+      setValue: (value) => { this.plugin.settings.inboxNotePath = value; },
+      transform: (value) => value.trim(),
+      fileSuggest: true
+    });
+
+    this.addTextSetting(containerEl, {
+      name: "Inbox global shortcut",
+      description: "System-wide shortcut to open the Add to inbox window. Uses Electron accelerator format (e.g., CommandOrControl+Alt+Shift+I). Leave empty to disable.",
+      placeholder: "CommandOrControl+Alt+Shift+I",
+      getValue: () => this.plugin.settings.inboxGlobalShortcut,
+      setValue: (value) => { this.plugin.settings.inboxGlobalShortcut = value; },
+      transform: (value) => value.trim(),
+      afterSave: async () => { this.plugin.onInboxGlobalShortcutSettingChanged(); }
+    });
+
+    // ── General ────────────────────────────────────────────
+
+    new Setting(containerEl).setName("General").setHeading();
+
+    this.addTextSetting(containerEl, {
+      name: "Outline max rows",
+      description: "Maximum number of rows displayed in canvas/outline tree panels before truncating.",
+      placeholder: "1000",
+      getValue: () => String(this.plugin.settings.outlineMaxRows),
       setValue: (value) => {
-        this.plugin.settings.caseSensitive = value;
+        const parsed = Number.parseInt(value, 10);
+        this.plugin.settings.outlineMaxRows = Number.isFinite(parsed) && parsed >= 50 ? parsed : 1000;
       },
-      afterSave: refreshFilters
+      transform: (value) => value.trim(),
+      afterSave: refreshView
     });
 
     this.addDropdownSetting(containerEl, {
@@ -238,9 +243,7 @@ export class LifeDashboardSettingTab extends PluginSettingTab {
       setValue: (value) => {
         this.plugin.settings.weekStartsOn = value === "sunday" ? "sunday" : "monday";
       },
-      afterSave: async () => {
-        this.plugin.refreshView();
-      }
+      afterSave: refreshView
     });
   }
 

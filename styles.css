@@ -2487,3 +2487,49 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   outline: 1px solid var(--text-muted);
   outline-offset: -1px;
 }
+
+.fmo-supplements-raw-log {
+  margin-top: 1.5em;
+  padding-top: 1em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.fmo-supplements-raw-log-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.fmo-supplements-raw-log-title {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.fmo-supplements-raw-log-pre {
+  margin: 0;
+  padding: 0.5em;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.fmo-supplements-raw-log-line {
+  white-space: pre;
+}
+
+.fmo-supplements-raw-log-key {
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.fmo-supplements-raw-log-pre.is-highlight-active .fmo-supplements-raw-log-key:not(.is-highlighted) {
+  opacity: 0.25;
+}
+
+.fmo-supplements-raw-log-pre.is-highlight-active .fmo-supplements-raw-log-key.is-highlighted {
+  opacity: 1;
+  background: var(--background-modifier-hover);
+}

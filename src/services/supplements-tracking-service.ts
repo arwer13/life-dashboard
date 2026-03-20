@@ -1,18 +1,19 @@
 import { TFile, type App } from "obsidian";
 
-const SUPPLEMENTS_FILE_PATH = "supplements-intake.md";
-
 export type SupplementDef = {
   key: string;
   ingredient: string;
   brand: string;
-  unit: string;
-  amount: number;
+  ingredientUnit: string;
+  ingredientAmount: number;
+  supplementUnit: string;
+  supplementAmount: number;
 };
 
 export type SupplementLogDay = {
   date: string;
   taken: string[];
+  takenRaw: string[];
 };
 
 export type SupplementsSnapshot = {
@@ -22,12 +23,14 @@ export type SupplementsSnapshot = {
 
 export class SupplementsTrackingService {
   private readonly app: App;
+  private readonly getFilePath: () => string;
   private snapshot: SupplementsSnapshot = { definitions: new Map(), log: [] };
   private loaded = false;
   private loadPromise: Promise<void> | null = null;
 
-  constructor(app: App) {
+  constructor(app: App, getFilePath: () => string) {
     this.app = app;
+    this.getFilePath = getFilePath;
   }
 
   async ensureLoaded(): Promise<void> {
@@ -59,11 +62,11 @@ export class SupplementsTrackingService {
   }
 
   matchesPath(path: string): boolean {
-    return path === SUPPLEMENTS_FILE_PATH;
+    return path === this.getFilePath();
   }
 
   private async loadInternal(): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(SUPPLEMENTS_FILE_PATH);
+    const file = this.app.vault.getAbstractFileByPath(this.getFilePath());
     if (!(file instanceof TFile)) {
       this.snapshot = { definitions: new Map(), log: [] };
       return;
@@ -121,24 +124,27 @@ export class SupplementsTrackingService {
         const key = cells[columnMap["key"]] ?? "";
         const ingredient = cells[columnMap["ingredient"]] ?? "";
         const brand = cells[columnMap["brand"]] ?? "";
-        const unit = cells[columnMap["unit"]] ?? "";
-        const amount = Number(cells[columnMap["amount"]] ?? "0");
+        const ingredientUnit = cells[columnMap["ingredient_unit"]] ?? "";
+        const ingredientAmount = Number(cells[columnMap["ingredient_amount"]] ?? "0");
+        const supplementUnit = cells[columnMap["supplement_unit"]] ?? "";
+        const supplementAmount = Number(cells[columnMap["supplement_amount"]] ?? "0");
 
         if (key) {
-          definitions.set(key, { key, ingredient, brand, unit, amount });
+          definitions.set(key, { key, ingredient, brand, ingredientUnit, ingredientAmount, supplementUnit, supplementAmount });
         }
       }
 
       if (section === "log") {
         const date = cells[columnMap["date"]] ?? "";
-        const takenRaw = cells[columnMap["taken"]] ?? "";
-        const taken = takenRaw
+        const takenCell = cells[columnMap["taken"]] ?? "";
+        const takenRaw = takenCell
           .split(",")
           .map((k) => k.trim())
           .filter((k) => k.length > 0);
+        const taken = takenRaw.map((k) => k.replace(/@.*$/, ""));
 
         if (date) {
-          log.push({ date, taken });
+          log.push({ date, taken, takenRaw });
         }
       }
     }

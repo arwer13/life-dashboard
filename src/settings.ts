@@ -27,9 +27,11 @@ export interface LifeDashboardSettings {
   concernMapState: string;
   inboxNotePath: string;
   inboxGlobalShortcut: string;
+  supplementsFilePath: string;
 }
 
 export const DEFAULT_TIME_LOG_PATH = "Data/time/time-tracked.json";
+export const DEFAULT_SUPPLEMENTS_FILE_PATH = "supplements-intake.md";
 export const CURRENT_TIME_LOG_SCHEMA_VERSION = 1;
 
 export const DEFAULT_SETTINGS: LifeDashboardSettings = {
@@ -61,4 +63,5 @@ export const DEFAULT_SETTINGS: LifeDashboardSettings = {
   concernMapState: "",
   inboxNotePath: "",
   inboxGlobalShortcut: "CommandOrControl+Alt+Shift+I",
+  supplementsFilePath: DEFAULT_SUPPLEMENTS_FILE_PATH,
 };

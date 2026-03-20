@@ -1599,7 +1599,10 @@ export default class LifeDashboardPlugin extends Plugin {
     this.timeData = new TimeDataFacade(this.app, this.timeWindowService);
     this.timerNotificationService = new TimerNotificationService();
     this.healthTrackingService = new HealthTrackingService(this.app);
-    this.supplementsTrackingService = new SupplementsTrackingService(this.app);
+    this.supplementsTrackingService = new SupplementsTrackingService(
+      this.app,
+      () => this.settings.supplementsFilePath
+    );
     this.macOsTrayTimerService = new MacOsTrayTimerService({
       openTimer: () => {
         void this.viewController.activateTimerView();
@@ -2099,7 +2102,7 @@ export default class LifeDashboardPlugin extends Plugin {
     return this.supplementsTrackingService.matchesPath(path);
   }
 
-  private async reloadSupplementsAndRefresh(): Promise<void> {
+  async reloadSupplementsAndRefresh(): Promise<void> {
     await this.supplementsTrackingService.reload();
     this.viewController.refreshViewByType(VIEW_TYPE_LIFE_DASHBOARD_SUPPLEMENTS);
   }

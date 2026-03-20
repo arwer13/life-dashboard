@@ -17,6 +17,7 @@ import { LifeDashboardBaseView } from "./base-view";
 type DayCell = {
   date: string;
   taken: string[];
+  takenRaw: string[];
   hue: number;
 };
 
@@ -29,12 +30,16 @@ type IngredientGroup = {
 /** Maximum hue rotation (degrees) when the supplement set fully changes between days. */
 const HUE_STEP_MAX_DEGREES = 50;
 const HUE_START = 210;
+const DOSE_SUFFIX_RE = /^@([\d.]+)\s*[a-zA-Z]*\*(\d+)$/;
 
 export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
   private currentYear = new Date().getFullYear();
   private cellElements = new Map<string, HTMLElement>();
+  private logKeyElements: HTMLElement[] = [];
   private dayCells = new Map<string, DayCell>();
+  private definitions = new Map<string, SupplementDef>();
   private gridWrapper: HTMLElement | null = null;
+  private logWrapper: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: LifeDashboardPlugin) {
     super(leaf, plugin);
@@ -58,8 +63,11 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
 
   async onClose(): Promise<void> {
     this.cellElements.clear();
+    this.logKeyElements = [];
     this.dayCells.clear();
+    this.definitions.clear();
     this.gridWrapper = null;
+    this.logWrapper = null;
   }
 
   async render(): Promise<void> {
@@ -74,22 +82,25 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
     if (snapshot.log.length === 0) {
       container.createDiv({
         cls: "fmo-empty",
-        text: "No supplement data found in supplements-intake.md"
+        text: `No supplement data found in ${this.plugin.settings.supplementsFilePath}`
       });
       return;
     }
 
     this.renderYearNav(container);
+    this.definitions = snapshot.definitions;
     this.dayCells = this.computeDayCells(snapshot);
 
     const layout = container.createDiv({ cls: "fmo-supplements-layout" });
 
     const sidebar = layout.createDiv({ cls: "fmo-supplements-sidebar" });
-    const groups = this.buildIngredientGroups(snapshot.definitions);
+    const groups = this.buildIngredientGroups(this.definitions);
     this.renderIngredientTree(sidebar, groups);
 
     this.gridWrapper = layout.createDiv({ cls: "fmo-supplements-year-wrapper" });
     this.renderYearGrid(this.gridWrapper);
+
+    this.renderRawLog(container);
   }
 
   private renderYearNav(container: HTMLElement): void {
@@ -144,6 +155,7 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
       const dateKey = toDateKey(cursor);
       const logDay = logByDate.get(dateKey);
       const taken = logDay?.taken ?? [];
+      const takenRaw = logDay?.takenRaw ?? [];
       const currSorted = [...taken].sort().join(",");
 
       if (
@@ -169,6 +181,7 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
       dayCells.set(dateKey, {
         date: dateKey,
         taken,
+        takenRaw,
         hue: taken.length > 0 ? currentHue : -1
       });
     }
@@ -187,9 +200,13 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
         groupMap.set(def.ingredient, group);
       }
       group.keys.push(def.key);
+      const doseLabel =
+        def.ingredientUnit === def.supplementUnit && def.ingredientAmount === def.supplementAmount
+          ? `${def.ingredientAmount}${def.ingredientUnit}`
+          : `${def.ingredientAmount}${def.ingredientUnit} · ${def.supplementAmount}${def.supplementUnit}`;
       group.children.push({
         key: def.key,
-        label: `${def.brand} ${def.amount}${def.unit}`
+        label: `${def.brand} ${doseLabel}`
       });
     }
     return [...groupMap.values()];
@@ -260,6 +277,7 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
   private highlightDaysWithAnyKey(keys: string[]): void {
     if (!this.gridWrapper) return;
     this.gridWrapper.addClass("is-highlight-active");
+    this.logWrapper?.addClass("is-highlight-active");
 
     const keySet = new Set(keys);
     for (const [dateKey, el] of this.cellElements) {
@@ -268,12 +286,21 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
         el.addClass("is-highlighted");
       }
     }
+    for (const el of this.logKeyElements) {
+      if (keySet.has(el.dataset.key!)) {
+        el.addClass("is-highlighted");
+      }
+    }
   }
 
   private clearHighlight(): void {
     if (!this.gridWrapper) return;
     this.gridWrapper.removeClass("is-highlight-active");
+    this.logWrapper?.removeClass("is-highlight-active");
     for (const el of this.cellElements.values()) {
+      el.removeClass("is-highlighted");
+    }
+    for (const el of this.logKeyElements) {
       el.removeClass("is-highlighted");
     }
   }
@@ -357,12 +384,71 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
     }
   }
 
+  private renderRawLog(container: HTMLElement): void {
+    this.logKeyElements = [];
+
+    const section = container.createDiv({ cls: "fmo-supplements-raw-log" });
+    const header = section.createDiv({ cls: "fmo-supplements-raw-log-header" });
+    header.createDiv({ text: "Log", cls: "fmo-supplements-raw-log-title" });
+    const openBtn = header.createEl("button", {
+      cls: "fmo-supplements-raw-log-open clickable-icon",
+      attr: { "aria-label": "Open log note" }
+    });
+    openBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+    openBtn.addEventListener("click", () => {
+      void this.plugin.openFile(this.plugin.settings.supplementsFilePath);
+    });
+
+    this.logWrapper = section.createDiv({ cls: "fmo-supplements-raw-log-pre" });
+
+    const entries = Array.from(this.dayCells.values())
+      .filter((c) => c.taken.length > 0)
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+    for (const cell of entries) {
+      const line = this.logWrapper.createDiv({ cls: "fmo-supplements-raw-log-line" });
+      line.createSpan({ text: `${cell.date}  `, cls: "fmo-supplements-raw-log-date" });
+      for (let i = 0; i < cell.taken.length; i++) {
+        if (i > 0) line.appendText(", ");
+        const key = cell.taken[i];
+        const raw = cell.takenRaw[i] ?? key;
+        const def = this.definitions.get(key);
+        const span = line.createSpan({
+          text: def ? this.formatIngredientDose(def, raw, key) : raw,
+          cls: "fmo-supplements-raw-log-key"
+        });
+        span.dataset.key = cell.taken[i];
+        this.logKeyElements.push(span);
+      }
+    }
+  }
+
+  /** Convert a raw log entry like `key@5ml*2` into ingredient-unit dose like `Ingredient 4800mg`. */
+  private formatIngredientDose(def: SupplementDef, raw: string, key: string): string {
+    if (raw === key) return def.ingredient;
+
+    const suffix = raw.slice(key.length); // e.g. "@7.5ml*1"
+    const m = suffix.match(DOSE_SUFFIX_RE);
+    if (!m || def.supplementAmount <= 0) return `${def.ingredient}${suffix}`;
+
+    const suppAmount = parseFloat(m[1]);
+    const times = parseInt(m[2], 10);
+    const servings = (suppAmount * times) / def.supplementAmount;
+    const ingredientTotal = servings * def.ingredientAmount;
+    const display = Number.isInteger(ingredientTotal) ? ingredientTotal : ingredientTotal.toFixed(1);
+    return `${def.ingredient} ${display}${def.ingredientUnit}`;
+  }
+
   private buildTooltip(
     cell: DayCell | undefined,
     dateKey: string
   ): string {
     if (!cell || cell.taken.length === 0) return dateKey;
-    return `${dateKey}\n${cell.taken.join("\n")}`;
+    const lines = cell.taken.map((key) => {
+      const def = this.definitions.get(key);
+      return def ? def.ingredient : key;
+    });
+    return `${dateKey}\n${lines.join("\n")}`;
   }
 
   private parseDate(dateStr: string): Date {
