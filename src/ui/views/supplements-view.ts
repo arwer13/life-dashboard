@@ -36,6 +36,9 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
   private currentYear = new Date().getFullYear();
   private cellElements = new Map<string, HTMLElement>();
   private logKeyElements: HTMLElement[] = [];
+  private logLineElements = new Map<string, HTMLElement>();
+  private highlightedLogLine: HTMLElement | null = null;
+  private scrollRafId: number | null = null;
   private dayCells = new Map<string, DayCell>();
   private definitions = new Map<string, SupplementDef>();
   private gridWrapper: HTMLElement | null = null;
@@ -64,6 +67,10 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
   async onClose(): Promise<void> {
     this.cellElements.clear();
     this.logKeyElements = [];
+    this.logLineElements.clear();
+    this.highlightedLogLine = null;
+    if (this.scrollRafId !== null) cancelAnimationFrame(this.scrollRafId);
+    this.scrollRafId = null;
     this.dayCells.clear();
     this.definitions.clear();
     this.gridWrapper = null;
@@ -305,6 +312,26 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
     }
   }
 
+  private highlightLogLine(dateKey: string): void {
+    const line = this.logLineElements.get(dateKey);
+    if (!line) return;
+    this.clearLogLineHighlight();
+    this.logWrapper?.addClass("is-line-highlight-active");
+    line.addClass("is-highlighted");
+    this.highlightedLogLine = line;
+    if (this.scrollRafId !== null) cancelAnimationFrame(this.scrollRafId);
+    this.scrollRafId = requestAnimationFrame(() => {
+      this.scrollRafId = null;
+      line.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  private clearLogLineHighlight(): void {
+    this.logWrapper?.removeClass("is-line-highlight-active");
+    this.highlightedLogLine?.removeClass("is-highlighted");
+    this.highlightedLogLine = null;
+  }
+
   private renderYearGrid(wrapper: HTMLElement): void {
     this.cellElements.clear();
 
@@ -380,12 +407,20 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
         }
 
         cellEl.title = this.buildTooltip(dayCell, slot.key);
+
+        cellEl.addEventListener("mouseenter", () => {
+          this.highlightLogLine(slot.key);
+        });
+        cellEl.addEventListener("mouseleave", () => {
+          this.clearLogLineHighlight();
+        });
       }
     }
   }
 
   private renderRawLog(container: HTMLElement): void {
     this.logKeyElements = [];
+    this.logLineElements.clear();
 
     const section = container.createDiv({ cls: "fmo-supplements-raw-log" });
     const header = section.createDiv({ cls: "fmo-supplements-raw-log-header" });
@@ -407,6 +442,7 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
 
     for (const cell of entries) {
       const line = this.logWrapper.createDiv({ cls: "fmo-supplements-raw-log-line" });
+      this.logLineElements.set(cell.date, line);
       line.createSpan({ text: `${cell.date}  `, cls: "fmo-supplements-raw-log-date" });
       for (let i = 0; i < cell.taken.length; i++) {
         if (i > 0) line.appendText(", ");
@@ -444,9 +480,10 @@ export class LifeDashboardSupplementsView extends LifeDashboardBaseView {
     dateKey: string
   ): string {
     if (!cell || cell.taken.length === 0) return dateKey;
-    const lines = cell.taken.map((key) => {
+    const lines = cell.taken.map((key, i) => {
+      const raw = cell.takenRaw[i] ?? key;
       const def = this.definitions.get(key);
-      return def ? def.ingredient : key;
+      return def ? this.formatIngredientDose(def, raw, key) : raw;
     });
     return `${dateKey}\n${lines.join("\n")}`;
   }

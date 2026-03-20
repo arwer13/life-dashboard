@@ -2533,3 +2533,11 @@ body.fmo-calendar-resizing .fmo-calendar-divider {
   opacity: 1;
   background: var(--background-modifier-hover);
 }
+
+.fmo-supplements-raw-log-pre.is-line-highlight-active .fmo-supplements-raw-log-line:not(.is-highlighted) {
+  opacity: 0.25;
+}
+
+.fmo-supplements-raw-log-pre.is-line-highlight-active .fmo-supplements-raw-log-line.is-highlighted {
+  background: var(--background-modifier-hover);
+}
