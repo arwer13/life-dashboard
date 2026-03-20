@@ -4,3 +4,4 @@ node_modules/
 .DS_Store
 main.js
 main.js.map
+/test-data
