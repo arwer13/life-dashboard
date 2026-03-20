@@ -36,6 +36,43 @@ export function parsePriorityFromText(text: string): number | null {
   return null;
 }
 
+// ── Inline task IDs ──────────────────────────────────────────────────
+
+const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const INLINE_ID_LEN = 6;
+const INLINE_ID_RE = /\s+\$([0-9A-Za-z]{6})$/;
+
+/**
+ * Generate a `$XXXXXX` inline task ID — base62 encoding of the current Unix
+ * timestamp in seconds. For new tasks this captures the creation time; for
+ * pre-existing tasks that receive an ID later it captures the assignment time.
+ */
+export function generateInlineTaskId(): string {
+  let n = Math.floor(Date.now() / 1000);
+  let result = "";
+  while (n > 0) {
+    result = BASE62[n % 62] + result;
+    n = Math.floor(n / 62);
+  }
+  return "$" + result.padStart(INLINE_ID_LEN, "0");
+}
+
+/** Strip the trailing `$XXXXXX` inline ID from text and return both parts. */
+export function splitInlineId(text: string): { body: string; inlineId: string } {
+  const m = INLINE_ID_RE.exec(text);
+  if (m) return { body: text.slice(0, m.index), inlineId: m[1] };
+  return { body: text, inlineId: "" };
+}
+
+/** Apply a transform to the text body while preserving the trailing `$XXXXXX` inline ID. */
+export function transformPreservingInlineId(text: string, fn: (body: string) => string): string {
+  const { body, inlineId } = splitInlineId(text);
+  const transformed = fn(body);
+  return inlineId ? `${transformed} $${inlineId}` : transformed;
+}
+
+// ── Synthetic paths ─────────────────────────────────────────────────
+
 /** Synthetic path separator for inline checkbox items. */
 export const INLINE_CHECKBOX_PATH_SEP = "#checkbox:";
 
@@ -95,10 +132,11 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
     if (!checkboxMatch) continue;
 
     const rawText = checkboxMatch[1].trim();
-    const displayText = stripPriorityEmojis(rawText);
+    const { body, inlineId } = splitInlineId(rawText);
+    const displayText = stripPriorityEmojis(body);
     if (!displayText) continue;
 
-    const priority = parsePriorityFromText(rawText);
+    const priority = parsePriorityFromText(body);
 
     items.push({
       kind: "inline",
@@ -108,6 +146,7 @@ export function parseInlineTasksForFile(parentPath: string, content: string): In
       text: rawText,
       line: i,
       priority,
+      inlineId,
     });
   }
 

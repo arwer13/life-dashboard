@@ -1,7 +1,7 @@
 import { MarkdownView, Notice, Plugin, TAbstractFile, TFile, normalizePath, setIcon, type FrontMatterCache, type Hotkey, type WorkspaceLeaf } from "obsidian";
 import type { ListEntry, TaskItem, InlineTaskItem, TimeLogByNoteId } from "./models/types";
 import { isFileItem } from "./models/types";
-import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, parsePriorityFromText, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP, TASKS_HEADING_RE, ANY_HEADING_RE } from "./services/inline-task-parser";
+import { parseInlineTasksForFile, parseInlinePath, stripPriorityEmojis, parsePriorityFromText, PRIORITY_DIGIT_TO_EMOJI, INLINE_CHECKBOX_PATH_SEP, TASKS_HEADING_RE, ANY_HEADING_RE, generateInlineTaskId, splitInlineId, transformPreservingInlineId } from "./services/inline-task-parser";
 import {
   DEFAULT_TIME_LOG_PATH,
   DEFAULT_SETTINGS,
@@ -1108,14 +1108,18 @@ export default class LifeDashboardPlugin extends Plugin {
     if (path.includes(INLINE_CHECKBOX_PATH_SEP)) {
       const emoji = PRIORITY_DIGIT_TO_EMOJI.get(digit);
       if (!emoji) return false;
-      return this.modifyInlineTaskLine(path, (text) => `${stripPriorityEmojis(text)} ${emoji}`);
+      return this.modifyInlineTaskLine(path, (text) =>
+        transformPreservingInlineId(text, (body) => `${stripPriorityEmojis(body)} ${emoji}`)
+      );
     }
     return this.setConcernPriority(path, digit);
   }
 
   async clearPriorityForPath(path: string): Promise<boolean> {
     if (path.includes(INLINE_CHECKBOX_PATH_SEP)) {
-      return this.modifyInlineTaskLine(path, stripPriorityEmojis);
+      return this.modifyInlineTaskLine(path, (text) =>
+        transformPreservingInlineId(text, stripPriorityEmojis)
+      );
     }
     return this.clearConcernPriority(path);
   }
@@ -1147,6 +1151,19 @@ export default class LifeDashboardPlugin extends Plugin {
         );
       }
     });
+  }
+
+  /** Ensure an inline task has a `$XXXXXX` ID suffix; returns the ID or "" on failure. */
+  async ensureInlineTaskId(inlinePath: string): Promise<string> {
+    let assignedId = "";
+    await this.modifyInlineTaskLine(inlinePath, (text) => {
+      const { inlineId } = splitInlineId(text);
+      if (inlineId) { assignedId = inlineId; return text; }
+      const id = generateInlineTaskId();
+      assignedId = id.slice(1); // strip leading $
+      return `${text} ${id}`;
+    });
+    return assignedId;
   }
 
   private async modifyInlineTaskLine(
@@ -1365,9 +1382,10 @@ export default class LifeDashboardPlugin extends Plugin {
 
     const indent = match[1];
     const rawText = match[2].trim();
-    const priorityRank = parsePriorityFromText(rawText);
+    const { body: textWithoutId } = splitInlineId(rawText);
+    const priorityRank = parsePriorityFromText(textWithoutId);
     const priority = priorityRank != null ? `p${priorityRank}` : undefined;
-    const cleanText = stripPriorityEmojis(rawText);
+    const cleanText = stripPriorityEmojis(textWithoutId);
     const safeName = this.sanitizeFileName(cleanText);
 
     this.openConcernPicker({
@@ -2343,7 +2361,7 @@ function sub(){const t=document.getElementById('t').value.trim();if(!t)return;do
     }
 
     const prefix = priorityEmoji ? `${priorityEmoji} ` : "";
-    const checkboxText = `- [ ] ${prefix}${text}`;
+    const checkboxText = `- [ ] ${prefix}${text} ${generateInlineTaskId()}`;
 
     let inserted = false;
     await this.app.vault.process(file, (content) => {

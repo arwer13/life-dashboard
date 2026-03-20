@@ -33,29 +33,68 @@ type ConcernMapFilterState = {
   showClosed: boolean;
   showStatus: boolean;
   fontSize: number;
+  boxScale: number;
+  boxPadding: number;
   colorByPriority: boolean;
   colorByStatus: boolean;
   showParentLabel: boolean;
 };
 
+type BoxPosition = { rx: number; ry: number; groupId?: string };
+
 type PersistedConcernMapState = {
-  version: 2;
-  positions: Record<string, { rx: number; ry: number }>;
+  version: 2 | 3;
+  positions: Record<string, BoxPosition>;
+  groups?: Record<string, Omit<GroupContainer, "id">>;
   filter: ConcernMapFilterState;
+};
+
+type GroupContainer = {
+  id: string;
+  title: string;
+  rx: number;
+  ry: number;
+  rw: number;
+  rh: number;
+  color: number;
 };
 
 const MAP_BASE_BOX_WIDTH = 126;
 const MAP_BASE_BOX_HEIGHT = 56;
 const MAP_BASE_FONT_SIZE = 13;
-const MAP_MIN_FONT_SIZE = 9;
-const MAP_MAX_FONT_SIZE = 20;
+const MAP_MIN_FONT_SIZE = 8;
+const MAP_MAX_FONT_SIZE = 18;
+const MAP_BASE_BOX_SCALE = 100;
+const MAP_MIN_BOX_SCALE = 60;
+const MAP_MAX_BOX_SCALE = 200;
+const MAP_BASE_BOX_PADDING = 8;
+const MAP_MIN_BOX_PADDING = 2;
+const MAP_MAX_BOX_PADDING = 16;
 const MAP_GRID_GAP_X = 20;
 const MAP_GRID_GAP_Y = 16;
 const MAP_GRID_PADDING = 24;
-const CONCERN_MAP_VERSION = 2;
+const CONCERN_MAP_VERSION = 3;
 const DRAG_THRESHOLD = 4;
 const DEFAULT_REF_WIDTH = 600;
 const DEFAULT_REF_HEIGHT = 400;
+
+// ── Group containers ─────────────────────────────────────────────────
+
+const GROUP_PALETTE_HUES = [210, 150, 35, 280, 355, 180];
+const GROUP_DEFAULT_RW = 0.25;
+const GROUP_DEFAULT_RH = 0.3;
+const GROUP_MIN_PX_W = 100;
+const GROUP_MIN_PX_H = 60;
+
+function groupBg(colorIdx: number): string {
+  const hue = GROUP_PALETTE_HUES[colorIdx % GROUP_PALETTE_HUES.length];
+  return `hsla(${hue}, 40%, 72%, 0.18)`;
+}
+
+function groupBorder(colorIdx: number): string {
+  const hue = GROUP_PALETTE_HUES[colorIdx % GROUP_PALETTE_HUES.length];
+  return `hsla(${hue}, 40%, 62%, 0.35)`;
+}
 
 // ── Box coloring ──────────────────────────────────────────────────────
 
@@ -90,13 +129,24 @@ function hashToHue(s: string): number {
   return ((h % 360) + 360) % 360;
 }
 
-function isRelativePosition(value: unknown): value is { rx: number; ry: number } {
+function isRelativePosition(value: unknown): value is BoxPosition {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
   return (
     typeof obj.rx === "number" && Number.isFinite(obj.rx) &&
-    typeof obj.ry === "number" && Number.isFinite(obj.ry)
+    typeof obj.ry === "number" && Number.isFinite(obj.ry) &&
+    (obj.groupId === undefined || typeof obj.groupId === "string")
   );
+}
+
+/** Extract the frontmatter id from a task's frontmatter, or "" if none. */
+function getFrontmatterId(task: TaskItem): string {
+  if (!isFileItem(task)) return "";
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const id = task.frontmatter?.id;
+  if (id == null) return "";
+  if (typeof id !== "string" && typeof id !== "number") return "";
+  return String(id).trim();
 }
 
 
@@ -113,19 +163,27 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     showClosed: false,
     showStatus: true,
     fontSize: MAP_BASE_FONT_SIZE,
+    boxScale: MAP_BASE_BOX_SCALE,
+    boxPadding: MAP_BASE_BOX_PADDING,
     colorByPriority: false,
     colorByStatus: false,
     showParentLabel: false
   };
   /** Positions stored as fractions of viewport dimensions. */
-  private positions = new Map<string, { rx: number; ry: number }>();
+  private positions = new Map<string, BoxPosition>();
   /** Inline task path → basename from previous render, used for cross-file move detection. */
   private inlineBasenames = new Map<string, string>();
   private parentByPath = new Map<string, string>();
   private selectedPaths = new Set<string>();
   private boxElements = new Map<string, HTMLElement>();
+  private groups = new Map<string, GroupContainer>();
+  private groupElements = new Map<string, HTMLElement>();
+  /** Maps task path → stable storage ID (frontmatter id for files, parentId#checkbox:line for inline). */
+  private pathToStableId = new Map<string, string>();
   private hoveredConcernPath: string | null = null;
-  private stateLoaded = false;
+  private rerenderCanvas: (() => void) | null = null;
+  /** Raw JSON from last loadPersistedState — skip re-parse when unchanged. */
+  private lastLoadedStateRaw = "";
   private keydownRegistered = false;
   private viewportScroll = { left: 0, top: 0 };
   private refSize = { width: DEFAULT_REF_WIDTH, height: DEFAULT_REF_HEIGHT };
@@ -151,6 +209,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   async onClose(): Promise<void> {
     this.hoveredConcernPath = null;
     this.boxElements.clear();
+    this.groupElements.clear();
     this.selectedPaths.clear();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -163,12 +222,13 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     contentEl.addClass("frontmatter-outline-view");
     contentEl.addClass("fmo-concern-map-view");
 
-    if (!this.stateLoaded) {
-      this.loadPersistedState();
-      this.stateLoaded = true;
-    }
-
     const tasks = this.plugin.getTaskTreeItems();
+    this.buildStableIdMaps(tasks);
+    // Always reload persisted state (ID-keyed) and resolve to current paths.
+    // This ensures file renames are handled: persisted data has ID keys,
+    // buildStableIdMaps has the new paths, and resolvePositionKeys bridges them.
+    this.loadPersistedState();
+    this.resolvePositionKeys();
     this.parentByPath = buildParentPathMap(
       tasks,
       (parentRaw, sourcePath) => this.resolveParentPath(parentRaw, sourcePath)
@@ -190,10 +250,69 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       const count = this.renderCanvasContent(canvasArea, tasks);
       countSpan.setText(`${count} concern${count === 1 ? "" : "s"}`);
     };
+    this.rerenderCanvas = rerenderCanvas;
 
     this.renderControls(controlsRow, tasks, rerenderCanvas);
     countSpan = this.renderCanvasTools(controlsRow, canvasArea, tasks, rerenderCanvas);
     rerenderCanvas();
+
+    // After rendering, ensure displayed tasks have stable IDs.
+    // Missing IDs are added asynchronously; the file changes trigger a new render.
+    void this.ensureMissingStableIds(tasks);
+  }
+
+  /**
+   * For each task on the map that lacks a stable ID, add one:
+   * - File concerns without frontmatter `id` → ensureTaskId
+   * - Inline tasks without `$XXXXXX` suffix → ensureInlineTaskId
+   * Only processes tasks that have a position on the map.
+   */
+  private ensureIdsInFlight = false;
+  private async ensureMissingStableIds(tasks: TaskItem[]): Promise<void> {
+    if (this.ensureIdsInFlight) return;
+    this.ensureIdsInFlight = true;
+    try {
+      // Collect position key migrations needed for inline tasks
+      const keyMigrations = new Map<string, string>();
+
+      for (const task of tasks) {
+        if (!this.positions.has(task.path)) continue;
+        if (isFileItem(task) && !getFrontmatterId(task)) {
+          await this.plugin.ensureTaskId(task.file);
+        } else if (isInlineItem(task) && !task.inlineId) {
+          const parentId = this.pathToStableId.get(task.parentPath);
+          const oldKey = parentId ? `${parentId}#${task.line}` : undefined;
+          const newInlineId = await this.plugin.ensureInlineTaskId(task.path);
+          if (newInlineId && oldKey && parentId) {
+            const newKey = `${parentId}#${newInlineId}`;
+            if (oldKey !== newKey) keyMigrations.set(oldKey, newKey);
+          }
+        }
+      }
+
+      // Batch-migrate position keys in persisted state (structured replacement)
+      if (keyMigrations.size > 0) {
+        const raw = this.plugin.getConcernMapState().trim();
+        if (raw) {
+          try {
+            const state = JSON.parse(raw) as { positions?: Record<string, unknown> };
+            if (state.positions) {
+              for (const [oldKey, newKey] of keyMigrations) {
+                if (oldKey in state.positions && !(newKey in state.positions)) {
+                  state.positions[newKey] = state.positions[oldKey];
+                  delete state.positions[oldKey];
+                }
+              }
+              const updated = JSON.stringify(state);
+              this.plugin.setConcernMapState(updated);
+              this.lastLoadedStateRaw = updated;
+            }
+          } catch { /* corrupt state — skip migration */ }
+        }
+      }
+    } finally {
+      this.ensureIdsInFlight = false;
+    }
   }
 
   // ── Coordinate conversion ─────────────────────────────────────────────
@@ -220,6 +339,122 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
   private toRelY(py: number): number {
     return py / this.usableHeight();
+  }
+
+  // ── Group helpers ────────────────────────────────────────────────────
+
+  private getGroupPixelRect(group: GroupContainer): { x: number; y: number; w: number; h: number } {
+    return {
+      x: this.toPixelX(group.rx),
+      y: this.toPixelY(group.ry),
+      w: group.rw * this.refSize.width,
+      h: group.rh * this.refSize.height,
+    };
+  }
+
+  private getAbsolutePixelPos(path: string): { px: number; py: number } | null {
+    const pos = this.positions.get(path);
+    if (!pos) return null;
+    if (pos.groupId) {
+      const group = this.groups.get(pos.groupId);
+      if (group) {
+        const r = this.getGroupPixelRect(group);
+        return { px: r.x + pos.rx * r.w, py: r.y + pos.ry * r.h };
+      }
+      // Stale groupId — treat as ungrouped (cleaned up on next persist)
+    }
+    return { px: this.toPixelX(pos.rx), py: this.toPixelY(pos.ry) };
+  }
+
+  private findGroupAtPoint(px: number, py: number): GroupContainer | null {
+    for (const group of this.groups.values()) {
+      const r = this.getGroupPixelRect(group);
+      if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  private deleteGroup(groupId: string): void {
+    const group = this.groups.get(groupId);
+    const r = group ? this.getGroupPixelRect(group) : null;
+    for (const [, pos] of this.positions) {
+      if (pos.groupId !== groupId) continue;
+      if (r) {
+        pos.rx = this.toRelX(r.x + pos.rx * r.w);
+        pos.ry = this.toRelY(r.y + pos.ry * r.h);
+      }
+      delete pos.groupId;
+    }
+    this.groups.delete(groupId);
+  }
+
+  private repositionGroupChildren(group: GroupContainer): void {
+    const r = this.getGroupPixelRect(group);
+    for (const [path, pos] of this.positions) {
+      if (pos.groupId !== group.id) continue;
+      const boxEl = this.boxElements.get(path);
+      if (!boxEl) continue;
+      boxEl.style.left = `${r.x + pos.rx * r.w}px`;
+      boxEl.style.top = `${r.y + pos.ry * r.h}px`;
+    }
+  }
+
+  /**
+   * Build path↔stableId maps for all tasks. For file concerns the stable ID
+   * is the frontmatter `id`; for inline tasks it is `parentId#inlineId`.
+   */
+  private buildStableIdMaps(tasks: TaskItem[]): void {
+    this.pathToStableId.clear();
+    // First pass: file items (needed to resolve parent IDs for inline tasks)
+    const fileIdByPath = new Map<string, string>();
+    for (const task of tasks) {
+      if (!isFileItem(task)) continue;
+      const id = getFrontmatterId(task);
+      if (!id) continue;
+      fileIdByPath.set(task.path, id);
+      this.pathToStableId.set(task.path, id);
+    }
+    // Second pass: inline items — use inlineId when available, fall back to line
+    for (const task of tasks) {
+      if (!isInlineItem(task)) continue;
+      const parentId = fileIdByPath.get(task.parentPath);
+      if (!parentId) continue;
+      const suffix = task.inlineId || String(task.line);
+      this.pathToStableId.set(task.path, `${parentId}#${suffix}`);
+    }
+  }
+
+  /**
+   * Translate position keys from stable IDs to runtime paths.
+   * Handles: (1) v3 data keyed by IDs → resolve to current paths,
+   *          (2) v2 data keyed by paths → kept as-is (compatible),
+   *          (3) file renames → orphaned old-path keys matched to new paths via ID.
+   */
+  private resolvePositionKeys(): void {
+    const idToPath = new Map<string, string>();
+    for (const [path, id] of this.pathToStableId) {
+      idToPath.set(id, path);
+    }
+
+    const toAdd: [string, BoxPosition][] = [];
+    const toDelete: string[] = [];
+    for (const [key, pos] of this.positions) {
+      const pathFromId = idToPath.get(key);
+      if (pathFromId && pathFromId !== key) {
+        toDelete.push(key);
+        toAdd.push([pathFromId, pos]);
+      }
+    }
+    for (const key of toDelete) this.positions.delete(key);
+    for (const [path, pos] of toAdd) {
+      if (!this.positions.has(path)) this.positions.set(path, pos);
+    }
+  }
+
+  private nextGroupId(): string {
+    return `g${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   }
 
   // ── Controls ──────────────────────────────────────────────────────────
@@ -351,25 +586,39 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const tools = controlsRow.createEl("div", { cls: "fmo-concern-map-tools" });
     const countSpan = tools.createEl("span", { cls: "fmo-subheader" });
 
-    const sizeLabel = tools.createEl("label", { cls: "fmo-concern-map-size-label" });
-    sizeLabel.createEl("span", { text: "Size" });
-    const sizeSlider = sizeLabel.createEl("input", {
-      cls: "fmo-concern-map-size-slider",
-      attr: { type: "range", min: String(MAP_MIN_FONT_SIZE), max: String(MAP_MAX_FONT_SIZE), step: "1" }
+    const slidersRow = tools.createEl("div", { cls: "fmo-concern-map-sliders-row" });
+    let stageEl: HTMLElement | null = null;
+    const getStage = (): HTMLElement | null => stageEl ??= canvasArea.querySelector<HTMLElement>(".fmo-concern-map-stage");
+
+    const makeSlider = (
+      label: string, min: number, max: number, step: number, value: number,
+      onInput: (v: number) => void, needsRerender?: boolean
+    ): void => {
+      const wrap = slidersRow.createEl("label", { cls: "fmo-concern-map-size-label" });
+      wrap.createEl("span", { text: label });
+      const input = wrap.createEl("input", {
+        cls: "fmo-concern-map-size-slider",
+        attr: { type: "range", min: String(min), max: String(max), step: String(step) }
+      });
+      input.value = String(value);
+      input.addEventListener("input", () => onInput(Number(input.value)));
+      input.addEventListener("change", () => {
+        this.persistState();
+        if (needsRerender) rerenderCanvas();
+      });
+    };
+
+    makeSlider("Size", MAP_MIN_BOX_SCALE, MAP_MAX_BOX_SCALE, 5, this.filterState.boxScale, (v) => {
+      this.filterState.boxScale = v;
+      getStage()?.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
+    }, true);
+    makeSlider("Pad", MAP_MIN_BOX_PADDING, MAP_MAX_BOX_PADDING, 1, this.filterState.boxPadding, (v) => {
+      this.filterState.boxPadding = v;
+      getStage()?.style.setProperty("--map-box-padding", `${v}px`);
     });
-    sizeSlider.value = String(this.filterState.fontSize);
-    sizeSlider.addEventListener("input", () => {
-      this.filterState.fontSize = Number(sizeSlider.value);
-      const stageEl = canvasArea.querySelector<HTMLElement>(".fmo-concern-map-stage");
-      if (stageEl) {
-        stageEl.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
-        stageEl.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
-      }
-    });
-    sizeSlider.addEventListener("change", () => {
-      this.filterState.fontSize = Number(sizeSlider.value);
-      this.persistState();
-      rerenderCanvas();
+    makeSlider("Font", MAP_MIN_FONT_SIZE, MAP_MAX_FONT_SIZE, 1, this.filterState.fontSize, (v) => {
+      this.filterState.fontSize = v;
+      getStage()?.style.setProperty("--map-font-size", `${v}px`);
     });
 
     const optionsRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
@@ -391,6 +640,36 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     const buttonsRow = tools.createEl("div", { cls: "fmo-concern-map-tools-buttons" });
 
+    const addGroupBtn = buttonsRow.createEl("button", {
+      cls: "fmo-outline-range-btn",
+      text: "Add group",
+      attr: { type: "button" }
+    });
+    setTooltip(addGroupBtn, "Create a visual group container on the map.");
+    addGroupBtn.addEventListener("click", () => {
+      const viewport = canvasArea.querySelector<HTMLElement>(".fmo-concern-map-viewport");
+      const vpW = viewport?.clientWidth ?? this.refSize.width;
+      const vpH = viewport?.clientHeight ?? this.refSize.height;
+      const scrollL = viewport?.scrollLeft ?? 0;
+      const scrollT = viewport?.scrollTop ?? 0;
+      const gw = GROUP_DEFAULT_RW * this.refSize.width;
+      const gh = GROUP_DEFAULT_RH * this.refSize.height;
+      const centerPx = scrollL + vpW / 2 - gw / 2;
+      const centerPy = scrollT + vpH / 2 - gh / 2;
+      const id = this.nextGroupId();
+      this.groups.set(id, {
+        id,
+        title: "Group",
+        rx: this.toRelX(Math.max(0, centerPx)),
+        ry: this.toRelY(Math.max(0, centerPy)),
+        rw: GROUP_DEFAULT_RW,
+        rh: GROUP_DEFAULT_RH,
+        color: this.groups.size % GROUP_PALETTE_HUES.length,
+      });
+      this.persistState();
+      rerenderCanvas();
+    });
+
     const resetBtn = buttonsRow.createEl("button", {
       cls: "fmo-outline-range-btn",
       text: "Reset positions",
@@ -399,6 +678,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     setTooltip(resetBtn, "Re-arrange all boxes into a grid.");
     resetBtn.addEventListener("click", () => {
       this.positions.clear();
+      this.groups.clear();
       rerenderCanvas();
     });
 
@@ -432,7 +712,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const items: { path: string; x: number; y: number }[] = [];
     for (const task of filtered) {
       const pos = this.positions.get(task.path);
-      if (!pos) continue;
+      if (!pos || pos.groupId) continue;
       items.push({ path: task.path, x: this.toPixelX(pos.rx), y: this.toPixelY(pos.ry) });
     }
     return items;
@@ -526,7 +806,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   // ── Canvas ────────────────────────────────────────────────────────────
 
   private getScale(): number {
-    return this.filterState.fontSize / MAP_BASE_FONT_SIZE;
+    return this.filterState.boxScale / MAP_BASE_BOX_SCALE;
   }
 
   private getScaledBoxWidth(): number {
@@ -544,6 +824,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const stage = viewport.createEl("div", { cls: "fmo-concern-map-stage" });
     stage.style.setProperty("--map-font-size", `${this.filterState.fontSize}px`);
     stage.style.setProperty("--map-box-width", `${this.getScaledBoxWidth()}px`);
+    stage.style.setProperty("--map-box-padding", `${this.filterState.boxPadding}px`);
 
     // Update reference size from viewport (used for fraction↔pixel conversion)
     const vpWidth = viewport.clientWidth || this.contentEl.clientWidth || DEFAULT_REF_WIDTH;
@@ -563,6 +844,11 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       if (!newBasenames.has(path) && this.positions.has(path)) newBasenames.set(path, name);
     }
     this.inlineBasenames = newBasenames;
+
+    this.groupElements.clear();
+    for (const group of this.groups.values()) {
+      this.renderGroup(stage, group);
+    }
 
     this.boxElements.clear();
     for (const task of filtered) {
@@ -592,13 +878,20 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
         if (Math.abs(newW - this.refSize.width) < 1 && Math.abs(newH - this.refSize.height) < 1) return;
 
         this.refSize = { width: newW, height: newH };
-        const uw = this.usableWidth();
-        const uh = this.usableHeight();
+        for (const [id, el] of this.groupElements) {
+          const group = this.groups.get(id);
+          if (!group) continue;
+          const r = this.getGroupPixelRect(group);
+          el.style.left = `${r.x}px`;
+          el.style.top = `${r.y}px`;
+          el.style.width = `${r.w}px`;
+          el.style.height = `${r.h}px`;
+        }
         for (const [path, el] of this.boxElements) {
-          const pos = this.positions.get(path);
-          if (!pos) continue;
-          el.style.left = `${pos.rx * uw}px`;
-          el.style.top = `${pos.ry * uh}px`;
+          const abs = this.getAbsolutePixelPos(path);
+          if (!abs) continue;
+          el.style.left = `${abs.px}px`;
+          el.style.top = `${abs.py}px`;
         }
       });
     } else {
@@ -611,8 +904,10 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     const pos = this.positions.get(task.path);
     if (!pos) return;
 
-    const px = this.toPixelX(pos.rx);
-    const py = this.toPixelY(pos.ry);
+    const abs = this.getAbsolutePixelPos(task.path);
+    if (!abs) return;
+    const px = abs.px;
+    const py = abs.py;
 
     const isInline = isInlineItem(task);
     const box = stageEl.createEl("div", {
@@ -678,6 +973,9 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       }
     }
 
+    const tooltipText = isInlineItem(task) ? task.text : task.basename;
+    setTooltip(box, tooltipText);
+
     box.addEventListener("mouseenter", () => {
       this.hoveredConcernPath = task.path;
     });
@@ -690,10 +988,152 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
     this.attachBoxInteraction(box, task, pos);
   }
 
+  // ── Group rendering ──────────────────────────────────────────────────
+
+  private renderGroup(stageEl: HTMLElement, group: GroupContainer): void {
+    const r = this.getGroupPixelRect(group);
+    const el = stageEl.createEl("div", { cls: "fmo-concern-map-group" });
+    el.style.left = `${r.x}px`;
+    el.style.top = `${r.y}px`;
+    el.style.width = `${r.w}px`;
+    el.style.height = `${r.h}px`;
+    el.style.background = groupBg(group.color);
+    el.style.borderColor = groupBorder(group.color);
+
+    this.groupElements.set(group.id, el);
+
+    const header = el.createEl("div", { cls: "fmo-concern-map-group-header" });
+    const titleEl = header.createEl("span", {
+      cls: "fmo-concern-map-group-title",
+      text: group.title,
+    });
+    titleEl.setAttribute("contenteditable", "false");
+
+    titleEl.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      titleEl.setAttribute("contenteditable", "true");
+      titleEl.focus();
+      const range = document.createRange();
+      range.selectNodeContents(titleEl);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+    titleEl.addEventListener("blur", () => {
+      titleEl.setAttribute("contenteditable", "false");
+      group.title = titleEl.textContent?.trim() || "Group";
+      this.persistState();
+    });
+    titleEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); titleEl.blur(); }
+      if (e.key === "Escape") { titleEl.textContent = group.title; titleEl.blur(); }
+    });
+
+    const closeBtn = header.createEl("button", {
+      cls: "fmo-concern-map-group-close",
+      text: "\u00d7",
+      attr: { type: "button" },
+    });
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.deleteGroup(group.id);
+      this.persistState();
+      this.rerenderCanvas?.();
+    });
+
+    el.createEl("div", { cls: "fmo-concern-map-group-resize" });
+    this.attachGroupInteraction(el, group);
+  }
+
+  private attachGroupInteraction(el: HTMLElement, group: GroupContainer): void {
+    const resizeHandle = el.querySelector<HTMLElement>(".fmo-concern-map-group-resize");
+
+    // Resize via bottom-right handle
+    resizeHandle?.addEventListener("pointerdown", (evt: PointerEvent) => {
+      if (evt.button !== 0) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      const startX = evt.clientX;
+      const startY = evt.clientY;
+      const startW = group.rw * this.refSize.width;
+      const startH = group.rh * this.refSize.height;
+
+      // Pre-compute content-aware minimum: blocks have proportional positions,
+      // so shrinking moves them inward. The limit is when any block's far edge
+      // reaches the group boundary: pos.rx * W + boxW = W → W = boxW / (1 - pos.rx)
+      const boxW = this.getScaledBoxWidth();
+      const boxH = this.getScaledBoxHeight();
+      let minContentW = GROUP_MIN_PX_W;
+      let minContentH = GROUP_MIN_PX_H;
+      for (const [, pos] of this.positions) {
+        if (pos.groupId !== group.id) continue;
+        if (pos.rx < 1) minContentW = Math.max(minContentW, boxW / (1 - pos.rx));
+        if (pos.ry < 1) minContentH = Math.max(minContentH, boxH / (1 - pos.ry));
+      }
+
+      let resized = false;
+      const onMove = (moveEvt: PointerEvent): void => {
+        resized = true;
+        const newW = Math.max(minContentW, startW + (moveEvt.clientX - startX));
+        const newH = Math.max(minContentH, startH + (moveEvt.clientY - startY));
+        group.rw = newW / this.refSize.width;
+        group.rh = newH / this.refSize.height;
+        el.style.width = `${newW}px`;
+        el.style.height = `${newH}px`;
+        this.repositionGroupChildren(group);
+      };
+      const stop = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        if (resized) this.persistState();
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", stop, { once: true });
+      window.addEventListener("pointercancel", stop, { once: true });
+    });
+
+    // Move group via header area only (body clicks fall through for marquee selection)
+    const header = el.querySelector<HTMLElement>(".fmo-concern-map-group-header");
+    header?.addEventListener("pointerdown", (evt: PointerEvent) => {
+      if (evt.button !== 0) return;
+      const target = evt.target as HTMLElement;
+      if (target.closest(".fmo-concern-map-group-close")) return;
+      if (target.getAttribute("contenteditable") === "true") return;
+      evt.preventDefault();
+      evt.stopPropagation();
+
+      const startX = evt.clientX;
+      const startY = evt.clientY;
+      const startPx = this.toPixelX(group.rx);
+      const startPy = this.toPixelY(group.ry);
+      let dragging = false;
+
+      const onMove = (moveEvt: PointerEvent): void => {
+        const dx = moveEvt.clientX - startX;
+        const dy = moveEvt.clientY - startY;
+        if (!dragging && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+        dragging = true;
+        const newPx = Math.max(0, startPx + dx);
+        const newPy = Math.max(0, startPy + dy);
+        group.rx = this.toRelX(newPx);
+        group.ry = this.toRelY(newPy);
+        el.style.left = `${newPx}px`;
+        el.style.top = `${newPy}px`;
+        this.repositionGroupChildren(group);
+      };
+      const stop = (): void => {
+        window.removeEventListener("pointermove", onMove);
+        if (dragging) this.persistState();
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", stop, { once: true });
+      window.addEventListener("pointercancel", stop, { once: true });
+    });
+  }
+
   private attachBoxInteraction(
     boxEl: HTMLElement,
     task: TaskItem,
-    pos: { rx: number; ry: number }
+    pos: BoxPosition
   ): void {
     boxEl.addEventListener("pointerdown", (evt: PointerEvent) => {
       if (evt.button !== 0) return;
@@ -721,13 +1161,13 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
       const startX = evt.clientX;
       const startY = evt.clientY;
 
-      // Snapshot start pixel positions and usable dimensions for stable fraction conversion
+      // Snapshot absolute pixel positions for all selected blocks
       const dragUsableW = this.usableWidth();
       const dragUsableH = this.usableHeight();
       const startPixels = new Map<string, { px: number; py: number }>();
       for (const path of this.selectedPaths) {
-        const p = this.positions.get(path);
-        if (p) startPixels.set(path, { px: p.rx * dragUsableW, py: p.ry * dragUsableH });
+        const abs = this.getAbsolutePixelPos(path);
+        if (abs) startPixels.set(path, abs);
       }
 
       let dragging = false;
@@ -736,7 +1176,15 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
         const dx = moveEvt.clientX - startX;
         const dy = moveEvt.clientY - startY;
         if (!dragging && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
-        dragging = true;
+
+        if (!dragging) {
+          dragging = true;
+          // Lift all selected blocks out of groups for the duration of drag
+          for (const path of startPixels.keys()) {
+            const p = this.positions.get(path);
+            if (p?.groupId) delete p.groupId;
+          }
+        }
 
         for (const [path, start] of startPixels) {
           const p = this.positions.get(path);
@@ -758,6 +1206,24 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
           this.boxElements.get(path)?.classList.remove("fmo-concern-map-box-dragging");
         }
         if (dragging) {
+          // Check group containment for each dragged block
+          const boxW = this.getScaledBoxWidth();
+          const boxH = this.getScaledBoxHeight();
+          for (const path of startPixels.keys()) {
+            const p = this.positions.get(path);
+            if (!p) continue;
+            const absPx = p.rx * dragUsableW;
+            const absPy = p.ry * dragUsableH;
+            const centerX = absPx + boxW / 2;
+            const centerY = absPy + boxH / 2;
+            const targetGroup = this.findGroupAtPoint(centerX, centerY);
+            if (targetGroup) {
+              const r = this.getGroupPixelRect(targetGroup);
+              p.rx = (absPx - r.x) / r.w;
+              p.ry = (absPy - r.y) / r.h;
+              p.groupId = targetGroup.id;
+            }
+          }
           this.persistState();
         } else if (!isMultiKey && wasSelected) {
           this.selectedPaths.clear();
@@ -790,7 +1256,9 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   private attachMarqueeSelection(stageEl: HTMLElement): void {
     stageEl.addEventListener("pointerdown", (evt: PointerEvent) => {
       if (evt.button !== 0) return;
-      if (evt.target !== stageEl) return;
+      // Allow marquee from stage or group body (but not from boxes, headers, or resize handles)
+      const target = evt.target as HTMLElement;
+      if (target !== stageEl && !target.classList.contains("fmo-concern-map-group")) return;
       evt.preventDefault();
 
       const isAdditive = evt.ctrlKey || evt.metaKey;
@@ -830,11 +1298,9 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
         this.selectedPaths = new Set(basePaths);
         for (const [path] of this.boxElements) {
-          const pos = this.positions.get(path);
-          if (!pos) continue;
-          const bx = this.toPixelX(pos.rx);
-          const by = this.toPixelY(pos.ry);
-          if (bx < marqueeRight && bx + boxW > left && by < marqueeBottom && by + boxH > top) {
+          const abs = this.getAbsolutePixelPos(path);
+          if (!abs) continue;
+          if (abs.px < marqueeRight && abs.px + boxW > left && abs.py < marqueeBottom && abs.py + boxH > top) {
             this.selectedPaths.add(path);
           }
         }
@@ -1023,11 +1489,11 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     // Build set of occupied grid cells from existing positions
     const occupied = new Set<string>();
-    for (const pos of this.positions.values()) {
-      const px = this.toPixelX(pos.rx);
-      const py = this.toPixelY(pos.ry);
-      const col = Math.round((px - MAP_GRID_PADDING) / cellW);
-      const row = Math.round((py - MAP_GRID_PADDING) / cellH);
+    for (const [path] of this.positions) {
+      const abs = this.getAbsolutePixelPos(path);
+      if (!abs) continue;
+      const col = Math.round((abs.px - MAP_GRID_PADDING) / cellW);
+      const row = Math.round((abs.py - MAP_GRID_PADDING) / cellH);
       if (col >= 0 && row >= 0) occupied.add(`${col},${row}`);
     }
 
@@ -1084,6 +1550,10 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   private loadPersistedState(): void {
     const raw = this.plugin.getConcernMapState().trim();
     if (!raw) return;
+    // Skip re-parse if the persisted data hasn't changed (avoids clobbering
+    // in-memory state during mid-drag when an unrelated vault event triggers render)
+    if (raw === this.lastLoadedStateRaw) return;
+    this.lastLoadedStateRaw = raw;
 
     let parsed: unknown;
     try {
@@ -1094,35 +1564,77 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
 
     if (!this.isPersistedState(parsed)) return;
 
-    const fontSize = typeof parsed.filter.fontSize === "number" && Number.isFinite(parsed.filter.fontSize)
-      ? Math.max(MAP_MIN_FONT_SIZE, Math.min(MAP_MAX_FONT_SIZE, parsed.filter.fontSize))
-      : MAP_BASE_FONT_SIZE;
-    const showStatus = typeof parsed.filter.showStatus === "boolean" ? parsed.filter.showStatus : true;
-    const colorByPriority = typeof parsed.filter.colorByPriority === "boolean" ? parsed.filter.colorByPriority : false;
-    const colorByStatus = typeof parsed.filter.colorByStatus === "boolean" ? parsed.filter.colorByStatus : false;
-    const showParentLabel = typeof parsed.filter.showParentLabel === "boolean" ? parsed.filter.showParentLabel : false;
-    this.filterState = { ...parsed.filter, fontSize, showStatus, colorByPriority, colorByStatus, showParentLabel };
+    const clampNum = (v: unknown, min: number, max: number, def: number): number =>
+      typeof v === "number" && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : def;
+    const optBool = (v: unknown, def: boolean): boolean => typeof v === "boolean" ? v : def;
+    const f = parsed.filter as Record<string, unknown>;
+
+    const fontSize = clampNum(f.fontSize, MAP_MIN_FONT_SIZE, MAP_MAX_FONT_SIZE, MAP_BASE_FONT_SIZE);
+    const boxScale = clampNum(f.boxScale, MAP_MIN_BOX_SCALE, MAP_MAX_BOX_SCALE, MAP_BASE_BOX_SCALE);
+    const boxPadding = clampNum(f.boxPadding, MAP_MIN_BOX_PADDING, MAP_MAX_BOX_PADDING, MAP_BASE_BOX_PADDING);
+    const showStatus = optBool(f.showStatus, true);
+    const colorByPriority = optBool(f.colorByPriority, false);
+    const colorByStatus = optBool(f.colorByStatus, false);
+    const showParentLabel = optBool(f.showParentLabel, false);
+    this.filterState = { ...parsed.filter, fontSize, boxScale, boxPadding, showStatus, colorByPriority, colorByStatus, showParentLabel };
 
     this.positions = new Map();
     for (const [path, pos] of Object.entries(parsed.positions)) {
       if (isRelativePosition(pos)) {
-        this.positions.set(path, { rx: pos.rx, ry: pos.ry });
+        const entry: BoxPosition = { rx: pos.rx, ry: pos.ry };
+        if (pos.groupId) entry.groupId = pos.groupId;
+        this.positions.set(path, entry);
       }
+    }
+
+    this.groups = new Map();
+    if (parsed.groups) {
+      for (const [id, g] of Object.entries(parsed.groups)) {
+        if (
+          typeof g.title === "string" &&
+          typeof g.rx === "number" && Number.isFinite(g.rx) &&
+          typeof g.ry === "number" && Number.isFinite(g.ry) &&
+          typeof g.rw === "number" && Number.isFinite(g.rw) &&
+          typeof g.rh === "number" && Number.isFinite(g.rh) &&
+          typeof g.color === "number" && Number.isFinite(g.color)
+        ) {
+          this.groups.set(id, { id, title: g.title, rx: g.rx, ry: g.ry, rw: g.rw, rh: g.rh, color: g.color });
+        }
+      }
+    }
+
+    // Clean stale groupId references
+    for (const pos of this.positions.values()) {
+      if (pos.groupId && !this.groups.has(pos.groupId)) delete pos.groupId;
     }
   }
 
   private persistState(): void {
-    const positions: Record<string, { rx: number; ry: number }> = {};
+    const r4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+    const positions: Record<string, BoxPosition> = {};
     for (const [path, pos] of this.positions) {
-      positions[path] = {
-        rx: Math.round(pos.rx * 10000) / 10000,
-        ry: Math.round(pos.ry * 10000) / 10000
+      // Persist using stable ID when available, fall back to path
+      const key = this.pathToStableId.get(path) ?? path;
+      const entry: BoxPosition = { rx: r4(pos.rx), ry: r4(pos.ry) };
+      if (pos.groupId) entry.groupId = pos.groupId;
+      positions[key] = entry;
+    }
+
+    const groups: Record<string, Omit<GroupContainer, "id">> = {};
+    for (const [id, g] of this.groups) {
+      groups[id] = {
+        title: g.title,
+        rx: r4(g.rx), ry: r4(g.ry),
+        rw: r4(g.rw), rh: r4(g.rh),
+        color: g.color,
       };
     }
 
     const state: PersistedConcernMapState = {
       version: CONCERN_MAP_VERSION,
       positions,
+      groups: Object.keys(groups).length > 0 ? groups : undefined,
       filter: { ...this.filterState }
     };
     this.plugin.setConcernMapState(JSON.stringify(state));
@@ -1131,7 +1643,7 @@ export class LifeDashboardConcernMapView extends LifeDashboardBaseView {
   private isPersistedState(value: unknown): value is PersistedConcernMapState {
     if (typeof value !== "object" || value === null) return false;
     const obj = value as Record<string, unknown>;
-    if (obj.version !== CONCERN_MAP_VERSION) return false;
+    if (obj.version !== 2 && obj.version !== CONCERN_MAP_VERSION) return false;
     if (typeof obj.positions !== "object" || obj.positions === null) return false;
     if (typeof obj.filter !== "object" || obj.filter === null) return false;
 

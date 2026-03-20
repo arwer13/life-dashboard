@@ -12,11 +12,12 @@ export interface FileTaskItem {
 export interface InlineTaskItem {
   kind: "inline";
   path: string;        // synthetic key: "${parentPath}#checkbox:${line}"
-  basename: string;    // display text (checkbox text stripped of priority emoji)
+  basename: string;    // display text (stripped of priority emoji and inline ID)
   parentPath: string;  // concern file containing the checkbox
-  text: string;        // raw checkbox text (with priority emoji)
+  text: string;        // raw checkbox text (with priority emoji, with inline ID)
   line: number;        // 0-based line number in the source file
   priority: number | null;  // numeric rank (0=highest..4=lowest), null if unset
+  inlineId: string;    // base62 ID suffix (without $), or "" if none
 }
 
 export type TaskItem = FileTaskItem | InlineTaskItem;

@@ -951,6 +951,11 @@ body.fmo-resizing-h * {
   gap: 6px;
 }
 
+.frontmatter-outline-view .fmo-concern-map-sliders-row {
+  display: flex;
+  gap: 12px;
+}
+
 .frontmatter-outline-view .fmo-concern-map-size-label {
   display: inline-flex;
   align-items: center;
@@ -960,7 +965,7 @@ body.fmo-resizing-h * {
 }
 
 .frontmatter-outline-view .fmo-concern-map-size-slider {
-  width: 80px;
+  width: 160px;
 }
 
 .frontmatter-outline-view .fmo-concern-map-canvas-area {
@@ -1001,7 +1006,7 @@ body.fmo-resizing-h * {
   gap: 6px;
   width: var(--map-box-width, 126px);
   min-height: auto;
-  padding: 8px 10px;
+  padding: var(--map-box-padding, 8px) calc(var(--map-box-padding, 8px) + 2px);
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   background: var(--background-primary);
@@ -1011,6 +1016,7 @@ body.fmo-resizing-h * {
   line-height: 1.4;
   box-sizing: border-box;
   transition: border-color 0.15s, box-shadow 0.15s;
+  z-index: 1;
 }
 
 .frontmatter-outline-view .fmo-concern-map-box:hover {
@@ -1085,6 +1091,74 @@ body.fmo-resizing-h * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Concern Map: Group containers ────────────────────────── */
+
+.frontmatter-outline-view .fmo-concern-map-group {
+  position: absolute;
+  border: 1.5px dashed;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  z-index: 0;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: grab;
+  user-select: none;
+  min-height: 24px;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-title[contenteditable="true"] {
+  outline: none;
+  border-bottom: 1px solid var(--interactive-accent);
+  white-space: pre;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-close {
+  opacity: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 2px;
+  transition: opacity 0.15s;
+  background: none;
+  border: none;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group:hover .fmo-concern-map-group-close {
+  opacity: 0.5;
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-close:hover {
+  opacity: 1 !important;
+  color: var(--text-error);
+}
+
+.frontmatter-outline-view .fmo-concern-map-group-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
 }
 
 /* ── Calendar: Layout ─────────────────────────────────────── */
