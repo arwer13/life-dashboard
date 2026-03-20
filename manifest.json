@@ -3,7 +3,7 @@
   "name": "Life Dashboard",
   "version": "0.1.1",
   "minAppVersion": "1.11.0",
-  "description": "Track time on hierarchical task notes and visualise data across six views: timer, outline, canvas, calendar, time log, and kanban board.",
+  "description": "Track time on hierarchical concern notes and visualize progress across timer, outline, calendar, canvas, concern map, timeline, and kanban views.",
   "author": "arwer",
   "isDesktopOnly": true
 }
